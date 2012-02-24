@@ -3,7 +3,7 @@
 #include <stddef.h>	/* NULL size_t */
 #include <stdlib.h>	/* malloc(3) free(3) */
 
-#include <string.h>	/* memset(3) */
+#include <string.h>	/* memset(3) strerror(3) */
 
 #include <time.h>	/* struct timespec clock_gettime(3) */
 
@@ -211,6 +211,12 @@ static void pool_put(struct pool *P, void *p) {
 #define HAVE_KQUEUE __FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__
 #define HAVE_EPOLL __linux__
 
+#if HAVE_EPOLL
+#include <sys/epoll.h>
+#else
+#include <sys/event.h>
+
+
 #define KPOLL_MAXWAIT 32
 
 #if HAVE_EPOLL
@@ -239,17 +245,30 @@ static int kpoll_init(struct kpoll *kp) {
 	int error;
 
 #if HAVE_EPOLL
+#if defined EPOLL_CLOEXEC
+	if (-1 == (kp->fd = epoll_create1(EPOLL_CLOEXEC)))
+		return errno;
+
+	return 0;
+#else
 	if (-1 == (kp->fd = epoll_create(32)))
 		return errno;
-#else
-	if (-1 == (kp->fd = kqueue()))
-		return errno;
-#endif	
 
 	if ((error = setcloexec(kp->fd)))
 		return error;
 
 	return 0;
+#endif
+#else
+	if (-1 == (kp->fd = kqueue()))
+		return errno;
+
+	if ((error = setcloexec(kp->fd)))
+		return error;
+
+	return 0;
+#endif	
+
 } /* kpoll_init() */
 
 
@@ -366,10 +385,12 @@ static inline void *kpoll_udata(const kpoll_event_t *event) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#define CQUEUE_CLASS "Continuation Queue"
+
 typedef int luaref_t;
 
 struct event;
-struct group;
+struct thread;
 struct fileno;
 struct cqueue;
 
@@ -380,8 +401,8 @@ struct event {
 
 	luaref_t object;
 
-	struct group *group;
-	LIST_ENTRY(, group) gle;
+	struct thread *thread;
+	LIST_ENTRY(, thread) tle;
 
 	struct fileno *fileno;
 	LIST_ENTRY(, fileno) fle;
@@ -400,8 +421,8 @@ struct fileno {
 }; /* struct fileno */
 
 
-struct group {
-	struct luacq_queue *cqueue;
+struct thread {
+	struct cqueue *cqueue;
 
 	enum {
 		LUACQ_COROUTINE,
@@ -411,40 +432,145 @@ struct group {
 	luaref_t ref;
 	lua_State *L; /* only for coroutines */
 
-	LIST_HEAD(, luacq_event) events;
-	LIST_ENTRY(, luacq_group) le;
-}; /* struct group */
+	LIST_HEAD(, event) events;
+	LIST_ENTRY(, thread) le;
+}; /* struct thread */
 
 
 struct cqueue {
 	struct kpoll kp;
 
-	struct {
-		luaref_t ref; /* ephemeron table global registry index */
-		int index; /* if non-0, stack index of our ephemeron registry table */
-	} ephemeron;
+	luaref_t registry; /* ephemeron table global registry index */
 
 	LLRB_HEAD(table, fileno) table;
 
 	struct {
-		struct pool fileno, group;
+		struct pool fileno, thread;
 	} pool;
+
+	LIST_HEAD(, thread) polling, pending;
 }; /* struct cqueue */
+
+
+struct callinfo {
+	int self; /* stack index of cqueue object */
+	int registry; /* stack index of ephemeron registry table */
+}; /* struct callinfo */
+
+
+static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) {
+	struct cqueue *Q = luaL_checkudata(L, index, CQUEUE_CLASS);
+
+	I->self = lua_absindex(L, index);
+
+	lua_rawgeti(L, LUA_REGISTRYINDEX, Q->anchors);
+	lua_pushvalue(L, I->self);
+	lua_getttable(L, -2);
+	lua_replace(L, -2);
+	I->registry = lua_absindex(L, -1);
+
+	return Q;
+} /* cqueue_enter() */
+
+
+static int cqueue_ref(lua_State *L, struct callinfo *I, int index) {
+	lua_pushvalue(L, index);
+	return luaL_ref(L, I->registry);
+} /* cqueue_ref() */
+
+
+static void cqueue_unref(lua_State *L, struct callinfo *I, luaref_t *ref) {
+	luaL_unref(L, I->registry, *ref);
+	*ref = LUA_NOREF;
+} /* cqueue_unref() */
 
 
 static void cqueue_preinit(struct cqueue *Q) {
 	kpoll_preinit(&Q->kp);
 
-	Q->ephemeron.ref = LUA_NOREF;
-	Q->ephemeron.index = 0;
+	Q->registry = LUA_NOREF;
 
 	LLRB_INIT(&Q->table);
 
 	pool_init(&Q->pool.fileno, sizeof (struct fileno));
-	pool_init(&Q->pool.group, sizeof (struct group));
+	pool_init(&Q->pool.thread, sizeof (struct thread));
 } /* cqueue_preinit() */
 
 
-static void cqueue_init(lua_State *L, struct cqueue *Q) {
-	
+static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
+	int error;
+
+	index = lua_absindex(L, index);
+
+	if ((error = kpoll_init(&Q->kp)))
+		luaL_error(L, "unable to initialize continuation queue: %s", strerror(error));
+
+	/*
+	 * create ephemeron table
+	 */
+	lua_newtable(L);
+	lua_newtable(L);
+	lua_pushstring(L, "k");
+	lua_setfield(L, -2, "__mode");
+	lua_setmetatable(L, -2);
+
+	/*
+	 * create our registry table, indexed in our ephemeron table by
+	 * a reference to our self.
+	 */
+	lua_pushvalue(Q, index);
+	lua_newtable(L);
+	lua_settable(L, -3);
+
+	/*
+	 * anchor our ephemeron table in the global registry
+	 */
+	Q->registry = luaL_ref(L, LUA_REGISTRYINDEX);
 } /* cqueue_init() */
+
+
+static void cqueue_destroy(lua_State *L, struct cqueue *Q) {
+	kpoll_destroy(&Q->kp);
+
+	pool_destroy(&Q->pool.fileno);
+	pool_destroy(&Q->pool.thread);
+
+	luaL_unref(L, LUA_REGISTRYINDEX, Q->registry);
+	Q->registry = LUA_NOREF;
+} /* cqueue_destroy() */
+
+
+static int cqueue_new(lua_State *L) {
+	struct cqueue *Q;
+
+	Q = lua_newuserdata(L, sizeof *Q);
+
+	cqueue_preinit(Q);
+
+	luaL_getmetatable(L, CQUEUE_CLASS);
+	lua_setmetatable(L, -2);
+
+	cqueue_init(L, Q, -1);
+
+	return 1;
+} /* cqueue_new() */
+
+
+static int cqueue__gc(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+
+	cqueue_destroy(L, Q);
+
+	return 0;
+} /* cqueue__gc() */
+
+
+static int cqueue_attach(lua_State *L) {
+	struct cqueue *Q;
+	struct callinfo I;
+
+	Q = cqueue_enter(L, &I, 1);
+	luaL_checktype(L, 2, LUA_TTHREAD);
+
+	
+} /* cqueue_attach() */
