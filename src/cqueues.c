@@ -9,13 +9,23 @@
 
 #include <errno.h>	/* errno */
 
+#include <sys/queue.h>	/* LIST */
 #include <sys/time.h>	/* struct timeval */
 
 #include <unistd.h>	/* close(2) */
 
 #include <fcntl.h>	/* F_SETFD FD_CLOEXEC fcntl(2) */
 
+#include <poll.h>	/* POLLIN POLLOUT */
+
 #include <math.h>	/* isnormal(3) signbit(3) */
+
+#include <lua.h>
+#include <lauxlib.h>
+
+#include "llrb.h"
+
+
 
 
 /*
@@ -45,7 +55,7 @@ static inline int f2ms(const double f) {
 			return INT_MAX;
 
 		return ((int)f * 1000) + ((int)(f * 1000.0) % 1000);
-	} else if (f == 0.0)
+	} else if (f == 0.0) {
 		return 0;
 	} else
 		return -1;
@@ -188,7 +198,7 @@ static void pool_destroy(struct pool *P) {
 static void *pool_get(struct pool *P, int *error) {
 	void *p;
 
-	if (!(p = P->head)
+	if (!(p = P->head))
 		return make(P->size, error);
 
 	P->head = *(void **)p;
@@ -212,9 +222,10 @@ static void pool_put(struct pool *P, void *p) {
 #define HAVE_EPOLL __linux__
 
 #if HAVE_EPOLL
-#include <sys/epoll.h>
+#include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
 #else
-#include <sys/event.h>
+#include <sys/event.h>	/* EVFILT_READ EVFILT_WRITE EV_SET EV_ADD EV_DELETE struct kevent kqueue(2) kevent(2) */
+#endif
 
 
 #define KPOLL_MAXWAIT 32
@@ -222,7 +233,7 @@ static void pool_put(struct pool *P, void *p) {
 #if HAVE_EPOLL
 typedef struct epoll_event kpoll_event_t;
 #else
-typedef struct event kpoll_event_t;
+typedef struct kevent kpoll_event_t;
 #endif
 
 struct kpoll {
@@ -278,7 +289,7 @@ static void kpoll_destroy(struct kpoll *kp) {
 } /* kpoll_destroy() */
 
 
-static void kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void *udata) {
+static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void *udata) {
 #if HAVE_EPOLL
 	struct epoll_event event;
 	int op;
@@ -402,10 +413,10 @@ struct event {
 	luaref_t object;
 
 	struct thread *thread;
-	LIST_ENTRY(, thread) tle;
+	LIST_ENTRY(thread) tle;
 
 	struct fileno *fileno;
-	LIST_ENTRY(, fileno) fle;
+	LIST_ENTRY(fileno) fle;
 }; /* struct event */
 
 
@@ -417,7 +428,7 @@ struct fileno {
 
 	struct luacq_queue *cqueue;
 
-	LLRB_ENTRY(luacq_fileno) rbe;
+	LLRB_ENTRY(fileno) rbe;
 }; /* struct fileno */
 
 
@@ -433,7 +444,7 @@ struct thread {
 	lua_State *L; /* only for coroutines */
 
 	LIST_HEAD(, event) events;
-	LIST_ENTRY(, thread) le;
+	LIST_ENTRY(thread) le;
 }; /* struct thread */
 
 
@@ -463,9 +474,9 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 
 	I->self = lua_absindex(L, index);
 
-	lua_rawgeti(L, LUA_REGISTRYINDEX, Q->anchors);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, Q->registry);
 	lua_pushvalue(L, I->self);
-	lua_getttable(L, -2);
+	lua_gettable(L, -2);
 	lua_replace(L, -2);
 	I->registry = lua_absindex(L, -1);
 
@@ -518,7 +529,7 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	 * create our registry table, indexed in our ephemeron table by
 	 * a reference to our self.
 	 */
-	lua_pushvalue(Q, index);
+	lua_pushvalue(L, index);
 	lua_newtable(L);
 	lua_settable(L, -3);
 

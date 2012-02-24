@@ -11,16 +11,16 @@ d := $(CURDIR)
 all: $(d)/cqueues.so
 
 
-CPPFLAGS_$(d) := -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_BSD_SOURCE $(DESTDIR)$(includedir)/lua/5.2
+CPPFLAGS_$(d) := -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_BSD_SOURCE -I$(DESTDIR)$(includedir)/lua/5.2
 DFLAGS_$(d)   := -Wall -g
 CFLAGS_$(d)   := -O2 -std=gnu99 -fPIC $(DFLAGS_$(d))
 
 UNAME_$(d) := $(shell uname -s)
 
 ifeq ($(UNAME_$(d)), Linux)
-LDFLAGS_$(d) := -L$(DESTDIR)$(libdir) -llua5.2 -lrt -lm
+LDFLAGS_$(d) := -L$(DESTDIR)$(libdir) -llua52 -lrt -lm
 else
-LDFLAGS_$(d) := -L$(DESTDIR)$(libdir) -llua5.2
+LDFLAGS_$(d) := -L$(DESTDIR)$(libdir) -llua52
 endif
 
 ifeq ($(UNAME_$(d)), Darwin)
@@ -31,7 +31,7 @@ endif
 
 
 $(d)/cqueues.so: $(d)/cqueues.c
-	$(CC) $(CFLAGS_$(@D)) $(CPPFLAGS_$(@D)) -o $< $(SOFLAGS_$(@D)) $(LDFLAGS_$(@D))
+	$(CC) $(CFLAGS_$(@D)) $(CPPFLAGS_$(@D)) -o $@ $< $(SOFLAGS_$(@D)) $(LDFLAGS_$(@D))
 
 
 .PHONY: clean clean~ $(d)/clean $(d)/clean~
