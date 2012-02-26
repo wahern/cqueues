@@ -18,7 +18,7 @@
 
 #include <poll.h>	/* POLLIN POLLOUT */
 
-#include <math.h>	/* isnormal(3) signbit(3) */
+#include <math.h>	/* NAN isnormal(3) signbit(3) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -34,6 +34,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define MIN(a, b) (((a) < (b))? (a) : (b))
+#define MAX(a, b) (((a) > (b))? (a) : (b))
 
 #define countof(a) (sizeof (a) / sizeof *(a))
 
@@ -41,6 +42,8 @@
 static int setcloexec(int fd) {
 	if (-1 == fcntl(fd, F_SETFD, FD_CLOEXEC))
 		return errno;
+
+	return 0;
 } /* setcloexec() */
 
 
@@ -177,13 +180,14 @@ static void *make(size_t size, int *error) {
 
 
 struct pool {
-	size_t size;
+	size_t size, count;
 	void *head;
 }; /* pool */
 
 static void pool_init(struct pool *P, size_t size) {
-	P->size = size;
-	P->head = NULL;
+	P->size  = MAX(size, sizeof (void **));
+	P->count = 0;
+	P->head  = NULL;
 } /* pool_init() */
 
 static void pool_destroy(struct pool *P) {
@@ -192,25 +196,52 @@ static void pool_destroy(struct pool *P) {
 	while ((p = P->head)) {
 		P->head = *(void **)p;
 		free(p);
+		P->count--;
 	}
 } /* pool_destroy() */
-
-static void *pool_get(struct pool *P, int *error) {
-	void *p;
-
-	if (!(p = P->head))
-		return make(P->size, error);
-
-	P->head = *(void **)p;
-
-	return p;
-} /* pool_get() */
 
 static void pool_put(struct pool *P, void *p) {
 	*(void **)p = P->head;
 	P->head = p;
 } /* pool_put() */
 
+static int pool_grow(struct pool *P, size_t n) {
+	void *p;
+	int error;
+
+	while (n--) {
+		if (P->count + 1 == 0)
+			return ENOMEM;
+
+		if (!(p = make(P->size, &error)))
+			return error;
+
+		P->count++;
+
+		pool_put(P, p);
+	}
+
+	return 0;
+} /* pool_grow() */
+
+static void *pool_get(struct pool *P, int *_error) {
+	void *p;
+	int error;
+
+	if (!(p = P->head)) {
+		error = pool_grow(P, MAX(1, P->count));
+
+		if (!(p = P->head)) {
+			*_error = error;
+
+			return NULL;
+		}
+	}
+
+	P->head = *(void **)p;
+
+	return p;
+} /* pool_get() */
 
 
 /*
@@ -228,6 +259,8 @@ static void pool_put(struct pool *P, void *p) {
 #endif
 
 
+#define KPOLL_FOREACH(ke, kp) for (ke = (kp)->pending.event; ke < &(kp)->pending.event[(kp)->pending.count]; ke++)
+
 #define KPOLL_MAXWAIT 32
 
 #if HAVE_EPOLL
@@ -241,7 +274,7 @@ struct kpoll {
 
 	struct {
 		kpoll_event_t event[KPOLL_MAXWAIT];
-		size_t i, count;
+		size_t count;
 	} pending;
 }; /* struct kpoll */
 
@@ -375,7 +408,6 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 		return errno;
 
 	kp->pending.count = n;
-	kp->pending.i = 0;
 
 	return 0;
 #endif
@@ -389,6 +421,16 @@ static inline void *kpoll_udata(const kpoll_event_t *event) {
 	return event->udata;
 #endif
 } /* kpoll_udata() */
+
+
+static inline short kpoll_pending(const kpoll_event_t *event) {
+#if HAVE_EPOLL
+	return event->events;
+#else
+	return (event->ident == EVFILT_READ)? POLLIN : (event->ident == EVFILT_WRITE)? POLLOUT : 0;
+#endif
+} /* kpoll_pending() */
+
 
 
 /*
@@ -408,15 +450,18 @@ struct cqueue;
 
 struct event {
 	int fd;
-	short state;
+	short events;
+	double timeout;
 
-	luaref_t object;
+	_Bool pending;
+
+	int index;
 
 	struct thread *thread;
-	LIST_ENTRY(thread) tle;
+	LIST_ENTRY(event) tle;
 
 	struct fileno *fileno;
-	LIST_ENTRY(fileno) fle;
+	LIST_ENTRY(event) fle;
 }; /* struct event */
 
 
@@ -424,26 +469,23 @@ struct fileno {
 	int fd;
 	short state;
 
-	LIST_HEAD(, luacq_event) events;
-
-	struct luacq_queue *cqueue;
+	LIST_HEAD(, event) events;
 
 	LLRB_ENTRY(fileno) rbe;
+
+	LIST_ENTRY(fileno) le;
 }; /* struct fileno */
 
 
 struct thread {
 	struct cqueue *cqueue;
 
-	enum {
-		LUACQ_COROUTINE,
-		LUACQ_CLOSURE,
-	} type;
-
 	luaref_t ref;
 	lua_State *L; /* only for coroutines */
 
 	LIST_HEAD(, event) events;
+	unsigned count;
+
 	LIST_ENTRY(thread) le;
 }; /* struct thread */
 
@@ -453,14 +495,27 @@ struct cqueue {
 
 	luaref_t registry; /* ephemeron table global registry index */
 
-	LLRB_HEAD(table, fileno) table;
+	struct {
+		LLRB_HEAD(table, fileno) table;
+		LIST_HEAD(, fileno) polling, outstanding, inactive;
+	} fileno;
 
 	struct {
-		struct pool fileno, thread;
+		struct pool fileno, thread, event;
 	} pool;
 
-	LIST_HEAD(, thread) polling, pending;
+	struct {
+		LIST_HEAD(, thread) polling, pending;
+		unsigned count;
+	} thread;
 }; /* struct cqueue */
+
+
+static inline int fileno_cmp(const struct fileno *const a, const struct fileno *const b) {
+	return a->fd - b->fd;
+} /* filno_cmp() */
+
+LLRB_GENERATE(table, fileno, rbe, fileno_cmp)
 
 
 struct callinfo {
@@ -497,14 +552,15 @@ static void cqueue_unref(lua_State *L, struct callinfo *I, luaref_t *ref) {
 
 
 static void cqueue_preinit(struct cqueue *Q) {
+	memset(Q, 0, sizeof *Q);
+
 	kpoll_preinit(&Q->kp);
 
 	Q->registry = LUA_NOREF;
 
-	LLRB_INIT(&Q->table);
-
 	pool_init(&Q->pool.fileno, sizeof (struct fileno));
 	pool_init(&Q->pool.thread, sizeof (struct thread));
+	pool_init(&Q->pool.event, sizeof (struct event));
 } /* cqueue_preinit() */
 
 
@@ -545,6 +601,7 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q) {
 
 	pool_destroy(&Q->pool.fileno);
 	pool_destroy(&Q->pool.thread);
+	pool_destroy(&Q->pool.event);
 
 	luaL_unref(L, LUA_REGISTRYINDEX, Q->registry);
 	Q->registry = LUA_NOREF;
@@ -576,12 +633,440 @@ static int cqueue__gc(lua_State *L) {
 } /* cqueue__gc() */
 
 
-static int cqueue_attach(lua_State *L) {
-	struct cqueue *Q;
+static struct fileno *fileno_get(struct cqueue *Q, int fd, int *error) {
+	struct fileno key, *fileno;
+
+	key.fd = fd;
+
+	if (!(fileno = LLRB_FIND(table, &Q->fileno.table, &key))) {
+		if (!(fileno = pool_get(&Q->pool.fileno, error)))
+			return NULL;
+
+		fileno->fd = fd;
+		fileno->state = 0;
+		LIST_INIT(&fileno->events);
+
+		LIST_INSERT_HEAD(&Q->fileno.inactive, fileno, le);
+		LLRB_INSERT(table, &Q->fileno.table, fileno);
+	}
+
+	return fileno;
+} /* fileno_get() */
+
+
+static int fileno_update(struct cqueue *Q, struct fileno *fileno) {
+	struct event *event;
+	short events = 0;
+	int error;
+
+	LIST_FOREACH(event, &fileno->events, fle) {
+		events |= event->events;
+	}
+
+	if ((error = kpoll_ctl(&Q->kp, fileno->fd, &fileno->state, events, fileno)))
+		return error;
+
+	LIST_REMOVE(fileno, le);
+
+	if (fileno->state)
+		LIST_INSERT_HEAD(&Q->fileno.polling, fileno, le);
+	else
+		LIST_INSERT_HEAD(&Q->fileno.inactive, fileno, le);
+
+	return 0;
+} /* fileno_update() */
+
+
+
+static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
+	int status;
+
+	index = lua_absindex(L, index);
+
+	lua_getfield(L, index, field);
+
+	if (lua_isfunction(L, -1)) {
+		lua_pushvalue(L, index);
+
+		if (LUA_OK != (status = lua_pcall(L, 1, 1, 0)))
+			return status;
+
+		if (!lua_isnil(L, -1) && lua_type(L, -1) != rtype) {
+			lua_pushfstring(L, "%s method: %s expected, got %s", field, lua_typename(L, rtype), luaL_typename(L, -1));
+
+			return LUA_ERRRUN;
+		}
+	} else {
+		lua_pop(L, 1);
+		lua_pushnil(L);
+	}
+
+	return LUA_OK;
+} /* object_pcall() */
+
+
+static int object_getinfo(lua_State *L, struct thread *T, int index, struct event *event) {
+	int status;
+	const char *mode;
+
+	lua_pushvalue(T->L, index);
+	lua_xmove(T->L, L, 1);
+
+	if (LUA_OK != (status = object_pcall(L, -1, "pollfd", LUA_TNUMBER)))
+		goto error;
+
+	event->fd = luaL_optinteger(L, -1, -1);
+
+	lua_pop(L, 1); /* pop fd */
+
+	if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TSTRING)))
+		goto error;
+
+	mode = luaL_optstring(L, -1, "");
+	event->events = 0;
+
+	while (*mode) {
+		if (*mode == 'r')
+			event->events |= POLLIN;
+		else if (*mode == 'w')
+			event->events |= POLLOUT;
+		mode++;
+	}
+
+	lua_pop(L, 1); /* pop event mode */
+
+	if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER)))
+		goto error;
+
+	event->timeout = luaL_optnumber(L, -1, NAN);
+
+	lua_pop(L, 1); /* pop timeout */
+
+	lua_pop(L, 1); /* pop object */
+
+	return 1;
+error:
+	return status;
+} /* object_getinfo() */
+
+
+static void event_init(struct event *event, struct thread *T, int index) {
+	memset(event, 0, sizeof *event);
+
+	event->fd = -1;
+	event->timeout = NAN;
+
+	event->index = index;
+
+	LIST_INSERT_HEAD(&T->events, event, tle);
+	event->thread = T;
+} /* event_init() */
+
+
+static int event_add(lua_State *L, struct cqueue *Q, struct thread *T, int index) {
+	struct event *event;
+	struct fileno *fileno;
+	int error, status;
+
+	if (!(event = pool_get(&Q->pool.event, &error)))
+		goto error;
+
+	event_init(event, T, index);
+
+	if (LUA_OK != (status = object_getinfo(L, T, index, event)))
+		return status;
+
+	if (event->fd != -1 && event->events) {
+		if (!(fileno = fileno_get(Q, event->fd, &error)))
+			goto error;
+
+		LIST_INSERT_HEAD(&fileno->events, event, fle);
+		event->fileno = fileno;
+
+		LIST_REMOVE(fileno, le);
+		LIST_INSERT_HEAD(&Q->fileno.outstanding, fileno, le);
+	}
+
+	return LUA_OK;
+error:
+	lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+
+	return LUA_ERRRUN;
+} /* event_add() */
+
+
+static void event_del(struct cqueue *Q, struct event *event) {
+	if (event->fileno) {
+		LIST_REMOVE(event->fileno, le);
+		LIST_INSERT_HEAD(&Q->fileno.outstanding, event->fileno, le);
+
+		LIST_REMOVE(event, fle);
+	}
+
+	LIST_REMOVE(event, tle);
+
+	pool_put(&Q->pool.event, event);
+} /* event_del() */
+
+
+static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
+	struct thread *T;
+	int error;
+
+	index = lua_absindex(L, index);
+
+	if (!(T = pool_get(&Q->pool.thread, &error)))
+		luaL_error(L, "internal error in continuation queue: %s", strerror(error));
+
+	memset(T, 0, sizeof *T);
+
+	T->cqueue = Q;
+	T->ref = LUA_NOREF;
+	LIST_INIT(&T->events);
+
+	T->ref = cqueue_ref(L, I, index);
+	T->L = lua_tothread(L, index);
+
+	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
+	Q->thread.count++;
+} /* thread_add() */
+
+
+static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
+	struct event *event;
+
+	while ((event = LIST_FIRST(&T->events))) {
+		event_del(Q, event);
+	}
+
+	T->cqueue = NULL;
+	cqueue_unref(L, I, &T->ref);
+	T->L = NULL;
+
+	LIST_REMOVE(T, le);
+	Q->thread.count--;
+
+	pool_put(&Q->pool.thread, T);
+} /* thread_del() */
+
+
+static int cqueue_update(lua_State *L, struct cqueue *Q) {
+	struct fileno *fileno, *next;
+	int error;
+
+	for (fileno = LIST_FIRST(&Q->fileno.outstanding); fileno; fileno = next) {
+		next = LIST_NEXT(fileno, le);
+
+		if ((error = fileno_update(Q, fileno)))
+			goto error;
+	}
+
+	return LUA_OK;
+error:
+	lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+
+	return LUA_ERRRUN;
+} /* cqueue_update() */
+
+
+static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
+	int otop, ntop, nargs, status, index;
+	struct event *event;
+
+	otop = lua_gettop(T->L);
+	nargs = 0;
+
+	while((event = LIST_FIRST(&T->events))) {
+		if (event->pending) {
+			lua_pushvalue(T->L, event->index);
+			nargs++;
+		}
+
+		event_del(Q, event);
+	}
+
+	switch ((status = lua_resume(T->L, L, nargs))) {
+	case LUA_YIELD:
+		ntop = lua_gettop(T->L);
+		nargs = ntop - otop;
+
+		for (index = otop + 1; index <= ntop; index++) {
+			if (LUA_OK != (status = event_add(L, Q, T, index)))
+				goto error;
+		}
+
+		if (LUA_OK != (status = cqueue_update(L, Q)))
+			goto error;
+
+		for (index = 1; index <= otop && index <= nargs; index++, ntop--)
+			lua_replace(T->L, index);
+
+		lua_settop(T->L, nargs);
+
+		if (!LIST_EMPTY(&T->events)) {
+			LIST_REMOVE(T, le);
+			LIST_INSERT_HEAD(&Q->thread.polling, T, le);
+		}
+
+		break;
+	case LUA_OK:
+		if (LUA_OK != (status = cqueue_update(L, Q)))
+			goto error;
+
+		thread_del(L, Q, I, T);
+
+		break;
+	default:
+		if (LUA_OK != (status = cqueue_update(L, Q)))
+			goto error;
+error:
+		thread_del(L, Q, I, T);
+
+		return status;
+	} /* switch() */
+
+	return LUA_OK;
+} /* cqueue_resume() */
+
+
+static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+	kpoll_event_t *ke;
+	struct fileno *fileno;
+	struct event *event;
+	struct thread *T, *nxt;
+	short events;
+
+	KPOLL_FOREACH(ke, &Q->kp) {
+		fileno = kpoll_udata(ke);
+		events = kpoll_pending(ke);
+
+		LIST_FOREACH(event, &fileno->events, fle) {
+			if (event->events & events)
+				event->pending = 1;
+
+			LIST_REMOVE(event->thread, le);
+			LIST_INSERT_HEAD(&Q->thread.pending, event->thread, le);
+		}
+	}
+
+	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
+		nxt = LIST_NEXT(T, le);
+		cqueue_resume(L, Q, I, T);
+	}
+} /* cqueue_process() */
+
+
+static int cqueue_step(lua_State *L) {
 	struct callinfo I;
+	struct cqueue *Q; 
+	double timeout;
+	int error;
+
+	Q = cqueue_enter(L, &I, 1);
+
+	timeout = luaL_optnumber(L, 2, NAN);
+
+	if ((error = kpoll_wait(&Q->kp, timeout)))
+		return luaL_error(L, "internal error in continuation queue: %s", strerror(error));
+
+	cqueue_process(L, Q, &I);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* cqueue_step() */
+
+
+static int cqueue_attach(lua_State *L) {
+	struct callinfo I;
+	struct cqueue *Q;
 
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TTHREAD);
 
-	
+	thread_add(L, Q, &I, 2);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* cqueue_attach() */
+
+
+static int cqueue_wrap(lua_State *L) {
+	struct callinfo I;
+	struct cqueue *Q;
+	struct lua_State *newL;
+
+	Q = cqueue_enter(L, &I, 1);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+
+	newL = lua_newthread(L);
+	lua_pushvalue(L, 2);
+	lua_xmove(L, newL, 1);
+
+	thread_add(L, Q, &I, -1);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* cqueue_wrap() */
+
+
+static int cqueue_empty(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+
+	lua_pushboolean(L, !Q->thread.count);
+
+	return 1;
+} /* cqueue_empty() */
+
+
+static int cqueue_count(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+
+	lua_pushnumber(L, Q->thread.count);
+
+	return 1;
+} /* cqueue_count() */
+
+
+static const luaL_Reg cqueue_methods[] = {
+	{ "step",   &cqueue_step },
+	{ "attach", &cqueue_attach },
+	{ "wrap",   &cqueue_wrap },
+	{ "empty",  &cqueue_empty },
+	{ "count",  &cqueue_count },
+	{ NULL,     NULL }
+}; /* cqueue_methods[] */
+
+
+static const luaL_Reg cqueue_metatable[] = {
+	{ "__gc", &cqueue__gc },
+	{ NULL,   NULL }
+}; /* cqueue_metatable[] */
+
+
+static const luaL_Reg cqueues_globals[] = {
+	{ "new", &cqueue_new },
+	{ NULL,  NULL }
+}; /* cqueues_globals[] */
+
+
+int luaopen_cqueues(lua_State *L) {
+	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
+		luaL_setfuncs(L, cqueue_metatable, 0);
+
+		lua_newtable(L);
+		luaL_setfuncs(L, cqueue_methods, 0);
+		lua_setfield(L, -2, "__index");
+	}
+
+	lua_pop(L, 1);
+
+	lua_newtable(L);
+	luaL_setfuncs(L, cqueues_globals, 0);
+
+	return 1;
+} /* luaopen_cqueues() */
+
+

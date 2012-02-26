@@ -37,7 +37,7 @@ $(d)/cqueues.so: $(d)/cqueues.c
 .PHONY: clean clean~ $(d)/clean $(d)/clean~
 
 $(d)/clean:
-	rm -f $(@D)/cqueues.so
+	rm -rf $(@D)/cqueues.so $(@D)/*.dSYM
 
 $(d)/clean~: $(d)/clean
 	rm -f $(@D)/*~
