@@ -1,6 +1,6 @@
 #include <limits.h>	/* INT_MAX LONG_MAX */
 
-#include <stddef.h>	/* NULL size_t */
+#include <stddef.h>	/* NULL offsetof() size_t */
 #include <stdlib.h>	/* malloc(3) free(3) */
 
 #include <string.h>	/* memset(3) strerror(3) */
@@ -18,7 +18,7 @@
 
 #include <poll.h>	/* POLLIN POLLOUT */
 
-#include <math.h>	/* NAN isnormal(3) signbit(3) */
+#include <math.h>	/* NAN isnormal(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -51,49 +51,6 @@ static int setcloexec(int fd) {
  * T I M E  &  C L O C K  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-static inline int f2ms(const double f) {
-	if (isnormal(f) && !signbit(f)) {
-		if (f > INT_MAX / 1000)
-			return INT_MAX;
-
-		return ((int)f * 1000) + ((int)(f * 1000.0) % 1000);
-	} else if (f == 0.0) {
-		return 0;
-	} else
-		return -1;
-} /* f2ms() */
-
-
-static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
-	if (isnormal(f) && !signbit(f)) {
-		if (f > LONG_MAX / 1000) {
-			ts->tv_sec = LONG_MAX;
-			ts->tv_sec = LONG_MAX % 1000000000L;
-		} else {
-			ts->tv_sec = (long)f;
-			ts->tv_nsec = (long)(f * 1000000000.0) % 1000000000L;
-		}
-
-		return ts;
-	} else if (f == 0.0) {
-		return ts;
-	} else
-		return NULL;
-} /* f2ts_() */
-
-#define f2ts(f) f2ts_(&(struct timespec){ 0, 0 }, (f))
-
-
-static inline double ts2f(const struct timespec *ts) {
-	return ts->tv_sec * (ts->tv_nsec / 1000000000.0);
-} /* ts2f() */
-
-
-static inline double tv2f(const struct timeval *tv) {
-	return tv->tv_sec * (tv->tv_usec / 1000000.0);
-} /* tv2f() */
-
 
 /*
  * clock_gettime()
@@ -162,6 +119,72 @@ static int clock_gettime(int clockid, struct timespec *ts) {
 } /* clock_gettime() */
 
 #endif /* __APPLE__ */
+
+
+static inline int f2ms(const double f) {
+	if (isnormal(f) && !signbit(f)) {
+		if (f > INT_MAX / 1000)
+			return INT_MAX;
+
+		return ((int)f * 1000) + ((int)(f * 1000.0) % 1000);
+	} else if (f == 0.0) {
+		return 0;
+	} else
+		return -1;
+} /* f2ms() */
+
+static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
+	if (isnormal(f) && !signbit(f)) {
+		if (f > LONG_MAX / 1000) {
+			ts->tv_sec = LONG_MAX;
+			ts->tv_sec = LONG_MAX % 1000000000L;
+		} else {
+			ts->tv_sec = (long)f;
+			ts->tv_nsec = (long)(f * 1000000000.0) % 1000000000L;
+		}
+
+		return ts;
+	} else if (f == 0.0) {
+		return ts;
+	} else
+		return NULL;
+} /* f2ts_() */
+
+#define f2ts(f) f2ts_(&(struct timespec){ 0, 0 }, (f))
+
+
+static inline double ts2f(const struct timespec *ts) {
+	return ts->tv_sec * (ts->tv_nsec / 1000000000.0);
+} /* ts2f() */
+
+
+static inline double tv2f(const struct timeval *tv) {
+	return tv->tv_sec * (tv->tv_usec / 1000000.0);
+} /* tv2f() */
+
+
+static inline double monotime(void) {
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+
+	return ts2f(&ts);
+} /* monotime() */
+
+
+static inline double abstimeout(double timeout) {
+	return (isfinite(timeout))? monotime() + timeout : NAN;
+} /* abstimeout() */
+
+
+static inline double mintimeout(double a, double b) {
+	if (islessequal(a, b) || !isfinite(b))
+		return a;
+	else if (islessequal(b, a) || !isfinite(a))
+		return b;
+	else
+		return NAN;
+} /* mintimeout() */
 
 
 /*
@@ -477,9 +500,14 @@ struct fileno {
 }; /* struct fileno */
 
 
-struct thread {
-	struct cqueue *cqueue;
+struct timer {
+	double timeout;
 
+	LLRB_ENTRY(timer) rbe;
+}; /* struct timer */
+
+
+struct thread {
 	luaref_t ref;
 	lua_State *L; /* only for coroutines */
 
@@ -487,7 +515,13 @@ struct thread {
 	unsigned count;
 
 	LIST_ENTRY(thread) le;
+
+	double mintimeout;
+
+	struct timer timer;
 }; /* struct thread */
+
+#define timer2thread(timer) ((struct thread *)((char *)(timer) - offsetof(struct thread, timer)))
 
 
 struct cqueue {
@@ -508,6 +542,8 @@ struct cqueue {
 		LIST_HEAD(, thread) polling, pending;
 		unsigned count;
 	} thread;
+
+	LLRB_HEAD(timers, timer) timers;
 }; /* struct cqueue */
 
 
@@ -516,6 +552,13 @@ static inline int fileno_cmp(const struct fileno *const a, const struct fileno *
 } /* filno_cmp() */
 
 LLRB_GENERATE(table, fileno, rbe, fileno_cmp)
+
+
+static inline int timer_cmp(const struct timer *const a, const struct timer *const b) {
+	return (a->timeout < b->timeout)? -1 : (a->timeout > b->timeout)? 1 : (a < b)? -1 : (a > b)? 1 : 0;
+} /* timer_cmp() */
+
+LLRB_GENERATE(timers, timer, rbe, timer_cmp)
 
 
 struct callinfo {
@@ -596,7 +639,23 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 } /* cqueue_init() */
 
 
-static void cqueue_destroy(lua_State *L, struct cqueue *Q) {
+static void thread_del(lua_State *, struct cqueue *, struct callinfo *, struct thread *);
+static int fileno_del(struct cqueue *, struct fileno *, _Bool);
+
+static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+	struct thread *thread;
+	struct fileno *fileno;
+	void *next;
+
+	while ((thread = LIST_FIRST(&Q->thread.polling))) {
+		thread_del(L, Q, I, thread);
+	}
+
+	for (fileno = LLRB_MIN(table, &Q->fileno.table); fileno; fileno = next) {
+		next = LLRB_NEXT(table, &Q->fileno.table, fileno);
+		fileno_del(Q, fileno, 0);
+	}
+
 	kpoll_destroy(&Q->kp);
 
 	pool_destroy(&Q->pool.fileno);
@@ -625,9 +684,12 @@ static int cqueue_new(lua_State *L) {
 
 
 static int cqueue__gc(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct callinfo I;
+	struct cqueue *Q;
 
-	cqueue_destroy(L, Q);
+	Q = cqueue_enter(L, &I, 1);
+
+	cqueue_destroy(L, Q, &I);
 
 	return 0;
 } /* cqueue__gc() */
@@ -676,6 +738,27 @@ static int fileno_update(struct cqueue *Q, struct fileno *fileno) {
 	return 0;
 } /* fileno_update() */
 
+
+static int fileno_del(struct cqueue *Q, struct fileno *fileno, _Bool update) {
+	struct event *event;
+	int error = 0;
+
+	while ((event = LIST_FIRST(&fileno->events))) {
+		event->fileno = NULL;
+		LIST_REMOVE(event, fle);
+	}
+
+	if (update)
+		error = fileno_update(Q, fileno);
+
+	LLRB_REMOVE(table, &Q->fileno.table, fileno);
+
+	LIST_REMOVE(fileno, le);
+
+	pool_put(&Q->pool.fileno, fileno);
+
+	return error;
+} /* fileno_del() */
 
 
 static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
@@ -738,7 +821,7 @@ static int object_getinfo(lua_State *L, struct thread *T, int index, struct even
 	if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER)))
 		goto error;
 
-	event->timeout = luaL_optnumber(L, -1, NAN);
+	event->timeout = abstimeout(luaL_optnumber(L, -1, NAN));
 
 	lua_pop(L, 1); /* pop timeout */
 
@@ -809,6 +892,46 @@ static void event_del(struct cqueue *Q, struct event *event) {
 } /* event_del() */
 
 
+static void timer_init(struct timer *timer) {
+	timer->timeout = NAN;
+} /* timer_init() */
+
+
+static void timer_del(struct cqueue *Q, struct timer *timer) {
+	if (isfinite(timer->timeout)) {
+		LLRB_REMOVE(timers, &Q->timers, timer);
+		timer->timeout = NAN;
+	}
+} /* timer_del() */
+
+
+static void timer_add(struct cqueue *Q, struct timer *timer, double timeout) {
+	timer_del(Q, timer);
+
+	if (isfinite(timeout)) {
+		timer->timeout = timeout;
+		LLRB_INSERT(timers, &Q->timers, timer);
+	}
+} /* timer_add() */
+
+
+static void timer_destroy(struct cqueue *Q, struct timer *timer) {
+	timer_del(Q, timer);
+} /* timer_destroy() */
+
+
+static double thread_timeout(struct thread *T) {
+	double timeout = NAN;
+	struct event *event;
+
+	LIST_FOREACH(event, &T->events, tle) {
+		timeout = mintimeout(timeout, event->timeout);
+	}
+
+	return timeout;
+} /* thread_timeout() */
+
+
 static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
 	struct thread *T;
 	int error;
@@ -820,9 +943,10 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 
 	memset(T, 0, sizeof *T);
 
-	T->cqueue = Q;
 	T->ref = LUA_NOREF;
 	LIST_INIT(&T->events);
+
+	timer_init(&T->timer);
 
 	T->ref = cqueue_ref(L, I, index);
 	T->L = lua_tothread(L, index);
@@ -839,7 +963,8 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 		event_del(Q, event);
 	}
 
-	T->cqueue = NULL;
+	timer_destroy(Q, &T->timer);
+
 	cqueue_unref(L, I, &T->ref);
 	T->L = NULL;
 
@@ -885,6 +1010,8 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 		event_del(Q, event);
 	}
 
+	timer_del(Q, &T->timer);
+
 	switch ((status = lua_resume(T->L, L, nargs))) {
 	case LUA_YIELD:
 		ntop = lua_gettop(T->L);
@@ -907,6 +1034,8 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 			LIST_REMOVE(T, le);
 			LIST_INSERT_HEAD(&Q->thread.polling, T, le);
 		}
+
+		timer_add(Q, &T->timer, thread_timeout(T));
 
 		break;
 	case LUA_OK:
@@ -934,6 +1063,8 @@ static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	struct fileno *fileno;
 	struct event *event;
 	struct thread *T, *nxt;
+	struct timer *timer;
+	double curtime;
 	short events;
 
 	KPOLL_FOREACH(ke, &Q->kp) {
@@ -949,12 +1080,35 @@ static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 		}
 	}
 
+	curtime = monotime();
+
+	LLRB_FOREACH(timer, timers, &Q->timers) {
+		if (isgreater(timer->timeout, curtime))
+			break;
+
+		T = timer2thread(timer);
+
+		LIST_FOREACH(event, &T->events, tle) {
+			if (islessequal(event->timeout, curtime))
+				event->pending = 1;
+		}
+
+		LIST_REMOVE(event->thread, le);
+		LIST_INSERT_HEAD(&Q->thread.pending, event->thread, le);
+	}
+
 	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
 		nxt = LIST_NEXT(T, le);
 		cqueue_resume(L, Q, I, T);
 	}
 } /* cqueue_process() */
 
+
+static double cqueue_timeout_(struct cqueue *Q) {
+	struct timer *timer = LLRB_MIN(timers, &Q->timers);
+
+	return (timer)? timer->timeout : NAN;
+} /* cqueue_timeout_() */
 
 static int cqueue_step(lua_State *L) {
 	struct callinfo I;
@@ -965,6 +1119,7 @@ static int cqueue_step(lua_State *L) {
 	Q = cqueue_enter(L, &I, 1);
 
 	timeout = luaL_optnumber(L, 2, NAN);
+	timeout = mintimeout(timeout, cqueue_timeout_(Q));
 
 	if ((error = kpoll_wait(&Q->kp, timeout)))
 		return luaL_error(L, "internal error in continuation queue: %s", strerror(error));
