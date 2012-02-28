@@ -26,6 +26,17 @@
 #include "llrb.h"
 
 
+/*
+ * D E B U G  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define SAY_(file, func, line, fmt, ...) \
+	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
+
+#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
+
+#define HAI SAY("hai")
 
 
 /*
@@ -154,12 +165,12 @@ static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
 
 
 static inline double ts2f(const struct timespec *ts) {
-	return ts->tv_sec * (ts->tv_nsec / 1000000000.0);
+	return ts->tv_sec + (ts->tv_nsec / 1000000000.0);
 } /* ts2f() */
 
 
 static inline double tv2f(const struct timeval *tv) {
-	return tv->tv_sec * (tv->tv_usec / 1000000.0);
+	return tv->tv_sec + (tv->tv_usec / 1000000.0);
 } /* tv2f() */
 
 
@@ -175,6 +186,18 @@ static inline double monotime(void) {
 static inline double abstimeout(double timeout) {
 	return (isfinite(timeout))? monotime() + timeout : NAN;
 } /* abstimeout() */
+
+
+static inline double reltimeout(double timeout) {
+	double curtime;
+
+	if (!isfinite(timeout))
+		return NAN;
+
+	curtime = monotime();
+
+	return (islessequal(timeout, curtime))? 0.0 : timeout - curtime;
+} /* reltimeout() */
 
 
 static inline double mintimeout(double a, double b) {
@@ -827,7 +850,7 @@ static int object_getinfo(lua_State *L, struct thread *T, int index, struct even
 
 	lua_pop(L, 1); /* pop object */
 
-	return 1;
+	return LUA_OK;
 error:
 	return status;
 } /* object_getinfo() */
@@ -994,11 +1017,22 @@ error:
 } /* cqueue_update() */
 
 
+static void luagc_pause(lua_State *L, int *ostate) {
+	*ostate = lua_gc(L, LUA_GCISRUNNING, 0);
+	lua_gc(L, LUA_GCSTOP, 0);
+} /* luagc_pause() */
+
+
+static void luagc_restore(lua_State *L, int ostate) {
+	if (ostate)
+		lua_gc(L, LUA_GCRESTART, 0);
+} /* luagc_restore() */
+
+
 static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int otop, ntop, nargs, status, index;
+	int nargs, gcstate, status, index;
 	struct event *event;
 
-	otop = lua_gettop(T->L);
 	nargs = 0;
 
 	while((event = LIST_FIRST(&T->events))) {
@@ -1012,12 +1046,11 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 	timer_del(Q, &T->timer);
 
+	luagc_pause(L, &gcstate);
+
 	switch ((status = lua_resume(T->L, L, nargs))) {
 	case LUA_YIELD:
-		ntop = lua_gettop(T->L);
-		nargs = ntop - otop;
-
-		for (index = otop + 1; index <= ntop; index++) {
+		for (index = 1; index <= lua_gettop(T->L); index++) {
 			if (LUA_OK != (status = event_add(L, Q, T, index)))
 				goto error;
 		}
@@ -1025,22 +1058,21 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 		if (LUA_OK != (status = cqueue_update(L, Q)))
 			goto error;
 
-		for (index = 1; index <= otop && index <= nargs; index++, ntop--)
-			lua_replace(T->L, index);
+		luagc_restore(L, gcstate);
 
-		lua_settop(T->L, nargs);
+		timer_add(Q, &T->timer, thread_timeout(T));
 
-		if (!LIST_EMPTY(&T->events)) {
+		if (!LIST_EMPTY(&T->events) || isfinite(T->timer.timeout)) {
 			LIST_REMOVE(T, le);
 			LIST_INSERT_HEAD(&Q->thread.polling, T, le);
 		}
-
-		timer_add(Q, &T->timer, thread_timeout(T));
 
 		break;
 	case LUA_OK:
 		if (LUA_OK != (status = cqueue_update(L, Q)))
 			goto error;
+
+		luagc_restore(L, gcstate);
 
 		thread_del(L, Q, I, T);
 
@@ -1049,6 +1081,8 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 		if (LUA_OK != (status = cqueue_update(L, Q)))
 			goto error;
 error:
+		luagc_restore(L, gcstate);
+
 		thread_del(L, Q, I, T);
 
 		return status;
@@ -1093,8 +1127,8 @@ static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 				event->pending = 1;
 		}
 
-		LIST_REMOVE(event->thread, le);
-		LIST_INSERT_HEAD(&Q->thread.pending, event->thread, le);
+		LIST_REMOVE(T, le);
+		LIST_INSERT_HEAD(&Q->thread.pending, T, le);
 	}
 
 	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
@@ -1105,9 +1139,15 @@ static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 
 
 static double cqueue_timeout_(struct cqueue *Q) {
-	struct timer *timer = LLRB_MIN(timers, &Q->timers);
+	struct timer *timer;
+	double curtime;
 
-	return (timer)? timer->timeout : NAN;
+	if (!(timer = LLRB_MIN(timers, &Q->timers)))
+		return NAN;
+
+	curtime = monotime();
+
+	return (islessequal(timer->timeout, curtime))? 0.0 : timer->timeout - curtime;
 } /* cqueue_timeout_() */
 
 static int cqueue_step(lua_State *L) {
@@ -1116,10 +1156,14 @@ static int cqueue_step(lua_State *L) {
 	double timeout;
 	int error;
 
+	lua_settop(L, 2);
+
 	Q = cqueue_enter(L, &I, 1);
 
-	timeout = luaL_optnumber(L, 2, NAN);
-	timeout = mintimeout(timeout, cqueue_timeout_(Q));
+	if (LIST_EMPTY(&Q->thread.pending)) {
+		timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
+	} else
+		timeout = 0.0;
 
 	if ((error = kpoll_wait(&Q->kp, timeout)))
 		return luaL_error(L, "internal error in continuation queue: %s", strerror(error));
@@ -1136,6 +1180,8 @@ static int cqueue_attach(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
 
+	lua_settop(L, 2);
+
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TTHREAD);
 
@@ -1151,6 +1197,8 @@ static int cqueue_wrap(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
 	struct lua_State *newL;
+
+	lua_settop(L, 2);
 
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TFUNCTION);
