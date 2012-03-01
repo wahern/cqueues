@@ -1017,21 +1017,40 @@ error:
 } /* cqueue_update() */
 
 
-static void luagc_pause(lua_State *L, int *ostate) {
-	*ostate = lua_gc(L, LUA_GCISRUNNING, 0);
-	lua_gc(L, LUA_GCSTOP, 0);
-} /* luagc_pause() */
+static void luacq_xcopy(lua_State *from, lua_State *to, int count) {
+	int index;
+
+	for (index = 1; index <= count; index++)
+		lua_pushvalue(from, index);
+
+	lua_xmove(from, to, count);
+} /*  luacq_xcopy() */
 
 
-static void luagc_restore(lua_State *L, int ostate) {
-	if (ostate)
-		lua_gc(L, LUA_GCRESTART, 0);
-} /* luagc_restore() */
+static void luacq_slice(lua_State *L, int index, int count) {
+	if (index + count == lua_gettop(L) + 1) {
+		lua_pop(L, count);
+	} else {
+		while (count--)
+			lua_remove(L, index);
+	}
+} /* luacq_slice() */
 
 
-static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int nargs, gcstate, status, index;
+static void cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
+	int otop, ntmp, nargs, status, index;
 	struct event *event;
+
+	/*
+	 * Preserve any previously yielded objects on another stack until we
+	 * can call cqueue_update() because when lua_resume() returns the
+	 * thread stack will only contain new objects. Pausing the GC isn't
+	 * a viable option because we don't know if or when lua_resume()
+	 * will return.
+	 */
+	otop  = lua_gettop(L);
+	ntmp = (lua_status(T->L) == LUA_YIELD)? lua_gettop(T->L) : 0;
+	luacq_xcopy(T->L, L, ntmp);
 
 	nargs = 0;
 
@@ -1046,8 +1065,6 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 	timer_del(Q, &T->timer);
 
-	luagc_pause(L, &gcstate);
-
 	switch ((status = lua_resume(T->L, L, nargs))) {
 	case LUA_YIELD:
 		for (index = 1; index <= lua_gettop(T->L); index++) {
@@ -1057,8 +1074,6 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 		if (LUA_OK != (status = cqueue_update(L, Q)))
 			goto error;
-
-		luagc_restore(L, gcstate);
 
 		timer_add(Q, &T->timer, thread_timeout(T));
 
@@ -1072,8 +1087,6 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 		if (LUA_OK != (status = cqueue_update(L, Q)))
 			goto error;
 
-		luagc_restore(L, gcstate);
-
 		thread_del(L, Q, I, T);
 
 		break;
@@ -1081,14 +1094,12 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 		if (LUA_OK != (status = cqueue_update(L, Q)))
 			goto error;
 error:
-		luagc_restore(L, gcstate);
-
 		thread_del(L, Q, I, T);
 
-		return status;
+		break;
 	} /* switch() */
 
-	return LUA_OK;
+	luacq_slice(L, otop + 1, ntmp);
 } /* cqueue_resume() */
 
 
