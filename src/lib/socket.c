@@ -811,11 +811,15 @@ static void so_restore(int signo, struct sigaction *oact) {
 
 
 static _Bool so_needign(struct socket *so, _Bool rdonly) {
+#if defined(SO_NOSIGPIPE)
+	if (so->opts.fd_nosigpipe && S_ISSOCK(so->mode))
+		return 0;
+#endif
 	if (so->ssl.ctx)
 		return 1;
 	if (rdonly)
 		return 0;
-#if defined(SO_NOSIGPIPE) || defined(MSG_NOSIGNAL)
+#if defined(MSG_NOSIGNAL)
 	if (so->opts.fd_nosigpipe && S_ISSOCK(so->mode))
 		return 0;
 #endif
@@ -1624,7 +1628,7 @@ retry:
 		count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
 #else
 #if defined(MSG_NOSIGNAL)
-		if (SO_ISSOCK(so->fd))
+		if (S_ISSOCK(so->fd))
 			count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
 		else
 			count = write(so->fd, src, SO_MIN(len, LONG_MAX));
