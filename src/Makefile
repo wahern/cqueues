@@ -1,4 +1,3 @@
-
 prefix     = /usr/local/lua52
 libdir     = $(prefix)/lib
 datadir    = $(prefix)/share
@@ -6,43 +5,56 @@ includedir = $(prefix)/include
 lua52path  = $(datadir)/lua/5.2
 lua52cpath = $(libdir)/lua/5.2
 
-d := $(CURDIR)
+all: cqueues.so
 
-all: $(d)/cqueues.so
+CPPFLAGS = -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_BSD_SOURCE -I$(DESTDIR)$(includedir)/lua/5.2
+DFLAGS = -Wall -g
+CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
 
+UNAME = $(shell uname -s)
 
-CPPFLAGS_$(d) := -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_BSD_SOURCE -I$(DESTDIR)$(includedir)/lua/5.2
-DFLAGS_$(d)   := -Wall -g
-CFLAGS_$(d)   := -O2 -std=gnu99 -fPIC $(DFLAGS_$(d))
-
-UNAME_$(d) := $(shell uname -s)
-
-ifeq ($(UNAME_$(d)), Linux)
-LDFLAGS_$(d) := -L$(DESTDIR)$(libdir) -llua52 -lrt -lm
-else
-LDFLAGS_$(d) := -L$(DESTDIR)$(libdir) -llua52
+ifeq ($(UNAME), Darwin)
+DFLAGS += -Wno-deprecated-declarations
 endif
 
-ifeq ($(UNAME_$(d)), Darwin)
-SOFLAGS_$(d) := -bundle -undefined dynamic_lookup
+ifeq ($(UNAME), $(filter $(UNAME), OpenBSD NetBSD FreeBSD Darwin))
+CPPFLAGS += -DDNS_RANDOM=arc4random
 else
-SOFLAGS_$(d) := -shared
+CPPFLAGS += -DDNS_RANDOM=RAND_bytes
+endif
+
+ifeq ($(UNAME), Linux)
+LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lrt -lm
+else
+LDFLAGS = -L$(DESTDIR)$(libdir) -llua52
+endif
+
+ifeq ($(UNAME), Darwin)
+SOFLAGS = -bundle -undefined dynamic_lookup
+else
+SOFLAGS = -shared
 endif
 
 
-$(d)/cqueues.so: $(d)/cqueues.c
-	$(CC) $(CFLAGS_$(@D)) $(CPPFLAGS_$(@D)) -o $@ $< $(SOFLAGS_$(@D)) $(LDFLAGS_$(@D))
+cqueues.so: cqueues.o socket.o lib/socket.o lib/dns.o
+	$(CC) -o $@ $< $(SOFLAGS) $(LDFLAGS)
 
+cqueues.o: cqueues.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@
 
-.PHONY: clean clean~ $(d)/clean $(d)/clean~
+socket.o: socket.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-$(d)/clean:
-	rm -rf $(@D)/cqueues.so $(@D)/*.dSYM
+lib/socket.o: lib/socket.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-$(d)/clean~: $(d)/clean
-	rm -f $(@D)/*~
+lib/dns.o: lib/dns.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-clean: $(d)/clean
+.PHONY: clean clean~
 
-clean~: $(d)/clean~
+clean:
+	rm -rf *.so *.o lib/*.o *.dSYM
 
+clean~: clean
+	rm -f *~ lib/*~

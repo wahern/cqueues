@@ -3,6 +3,8 @@
 
 #include <errno.h>	/* EAGAIN EPIPE */
 
+#include <sys/param.h>	/* MIN */
+
 #include <lua.h>
 #include <lauxlib.h>
 
@@ -37,18 +39,6 @@
  * fragmented across TCP packets.
  */
 #define LSO_DEFRAG 1
-
-
-static struct {
-	struct {
-		int mode;
-		size_t maxline;
-		size_t bufsiz;
-	} ibuf, obuf;
-} defaults = {
-	.ibuf = { LSO_RDMASK(LSO_INITMODE), LSO_MAXLINE, LSO_BUFSIZ },
-	.obuf = { LSO_WRMASK(LSO_INITMODE), LSO_MAXLINE, LSO_BUFSIZ },
-};
 
 
 struct luasocket {
@@ -97,7 +87,7 @@ static size_t lso_checksize(struct lua_State *L, int index) {
 } /* lso_checksize() */
 
 
-static int iov_chr(struct iov *iov, size_t p) {
+static int iov_chr(struct iovec *iov, size_t p) {
 	return (p < iov->iov_len)? ((unsigned char *)iov->iov_base)[p] : -1;
 } /* iov_chr() */
 
@@ -160,9 +150,9 @@ static void lso_pushmode(lua_State *L, int mode) {
 } /* lso_pushmode() */
 
 
-static lso_nargs_t lso_throw(lua_State *L, struct luasocket *S, int error) {
-	return luaL_error(L, "socket: %s", so_strerror(error));
-} /* lso_throw() */
+//static lso_nargs_t lso_throw(lua_State *L, struct luasocket *S, int error) {
+//	return luaL_error(L, "socket: %s", so_strerror(error));
+//} /* lso_throw() */
 
 
 static struct luasocket *lso_newsocket(lua_State *L) {
@@ -333,7 +323,6 @@ static lso_nargs_t lso_setvbuf(struct lua_State *L) {
 
 static lso_nargs_t lso_setmode(struct lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-	int mode;
 
 	lua_settop(L, 3);
 
@@ -391,7 +380,7 @@ static lso_error_t lso_getline(struct luasocket *S, struct iovec *iov) {
 		if (fifo_lvec(&S->ibuf.fifo, iov))
 			break;
 
-		if (fifo_rvec(&S->ibuf.fifo, iov) && (S->ibuf.eof || iov.iov_len >= S->ibuf.maxline))
+		if (fifo_rvec(&S->ibuf.fifo, iov) && (S->ibuf.eof || iov->iov_len >= S->ibuf.maxline))
 			break;
 
 		return lso_asserterror(error);
@@ -408,10 +397,10 @@ static lso_error_t lso_getblock(struct luasocket *S, struct iovec *iov, size_t m
 
 	error = lso_fill(S, max);
 
-	if (fifo_slice(&S->ibuf.fifo, &iov, 0, max) >= min)
+	if (fifo_slice(&S->ibuf.fifo, iov, 0, max) >= min)
 		return 0;
 
-	if (S->ibuf.eof && iov.iov_len > 0)
+	if (S->ibuf.eof && iov->iov_len > 0)
 		return 0;
 
 	return lso_asserterror(error);
@@ -596,7 +585,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 
 	lua_settop(L, 5);
 
-	src = luaL_checklstring(L, 2, &end);
+	src = (const void *)luaL_checklstring(L, 2, &end);
 	tp = lso_checksize(L, 3) - 1;
 	pe = lso_checksize(L, 4);
 	mode = lso_imode(luaL_optstring(L, 5, ""), S->obuf.mode);
@@ -615,10 +604,10 @@ static lso_nargs_t lso_send5(lua_State *L) {
 			if ((lf = memchr(&src[p], '\n', n))) {
 				n = lf - &src[p];
 
-				if ((error = fifo_write(&S->obof, &src[p], n)))
+				if ((error = fifo_write(&S->obuf.fifo, &src[p], n)))
 					goto error;
 
-				if ((mode & LSO_TEST) && (error = fifo_putc(&S->obuf.fifo, '\r')))
+				if ((mode & LSO_TEXT) && (error = fifo_putc(&S->obuf.fifo, '\r')))
 					goto error;
 
 				if ((error = fifo_putc(&S->obuf.fifo, '\n')))
@@ -817,22 +806,23 @@ static luaL_Reg lso_methods[] = {
 }; /* lso_methods[] */
 
 
-static luaL_Reg lso_events[] = {
+static luaL_Reg lso_metamethods[] = {
 	{ "__gc", &lso__gc },
 	{ 0, 0 }
-}; /* lso_events[] */
+}; /* lso_metamethods[] */
 
 
 static luaL_Reg lso_globals[] = {
 	{ "connect", &lso_connect2 },
 	{ "listen",  &lso_listen2 },
+	{ "fdopen",  &lso_fdopen },
 	{ 0, 0 }
 }; /* lso_globals[] */
 
 
-static lso_nargs_t luaopen_cqueues_socket(lua_State *L) {
+lso_nargs_t luaopen_cqueues_socket(lua_State *L) {
 	if (luaL_newmetatable(L, LSO_CLASS)) {
-		luaL_setfuncs(L, lso_events, 0);
+		luaL_setfuncs(L, lso_metamethods, 0);
 
 		lua_newtable(L);
 		luaL_setfuncs(L, lso_methods, 0);

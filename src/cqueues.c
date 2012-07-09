@@ -23,7 +23,7 @@
 #include <lua.h>
 #include <lauxlib.h>
 
-#include "llrb.h"
+#include "lib/llrb.h"
 
 
 /*
