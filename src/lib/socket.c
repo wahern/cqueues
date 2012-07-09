@@ -96,6 +96,8 @@ int socket_v_api(void) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#define SO_NOTUSED __attribute__((unused))
+
 int socket_debug;
 
 
@@ -107,7 +109,7 @@ enum so_trace {
 }; /* enum so_trace */
 
 
-static void so_trace(enum so_trace, int, const struct addrinfo *, ...);
+//static void so_trace(enum so_trace, int, const struct addrinfo *, ...);
 
 
 #if !defined(SOCKET_DEBUG)
@@ -184,7 +186,7 @@ static void so_trace(enum so_trace event, int fd, const struct addrinfo *host, .
 	char addr[64], who[256];
 	in_port_t port;
 	va_list ap;
-	SSL *ctx;
+	SSL *ctx SO_NOTUSED;
 	const void *data;
 	size_t count;
 	const char *fmt;

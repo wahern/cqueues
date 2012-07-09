@@ -473,7 +473,7 @@ static inline short kpoll_pending(const kpoll_event_t *event) {
 #if HAVE_EPOLL
 	return event->events;
 #else
-	return (event->ident == EVFILT_READ)? POLLIN : (event->ident == EVFILT_WRITE)? POLLOUT : 0;
+	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
 #endif
 } /* kpoll_pending() */
 

@@ -525,6 +525,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		return 1;
 	} /* switch(op) */
 
+	error = EFAULT;
 error:
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
