@@ -1,5 +1,5 @@
 #include <stddef.h>	/* NULL offsetof size_t */
-#include <string.h>	/* memset(3) memchr(3) memcmp(3) memmem(3) */
+#include <string.h>	/* memset(3) memchr(3) */
 
 #include <errno.h>	/* EAGAIN EPIPE */
 
@@ -48,6 +48,7 @@ struct luasocket {
 
 		struct {
 			int mode;
+			size_t maxline;
 			size_t bufsiz;
 		} obuf;
 	} opts;
@@ -58,14 +59,20 @@ struct luasocket {
 	int error;
 
 	struct fifo ibuf, obuf;
+	size_t eol;
 }; /* struct luasocket */
 
 
 static size_t lso_optsize(struct lua_State *L, int index, size_t def) {
-	size_t size = luaL_optunsigned(L, index, def)
+	size_t size = luaL_optunsigned(L, index, def);
 
 	return (size)? size : def;
 } /* lso_optsize() */
+
+
+static size_t lso_checksize(struct lua_State *L, int index) {
+	return luaL_checkunsigned(L, index);
+} /* lso_checksize() */
 
 
 static int iov_chr(struct iov *iov, size_t p) {
@@ -106,6 +113,34 @@ static int lso_imode(const char *str, int init) {
 
 	return mode;
 } /* lso_imode() */
+
+
+static void lso_pushmode(lua_State *L, int mode) {
+	char flag[8];
+
+	if (mode & LSO_TEXT)
+		flag[0] = 't';
+	else if (mode & LSO_BINARY)
+		flag[0] = 'b';
+	else
+		flag[0] = '-';
+
+	if (mode & LSO_NOBUF)
+		flag[1] = 'n';
+	else if (mode & LSO_LINEBUF)
+		flag[1] = 'l';
+	else if (mode & LSO_FULLBUF)
+		flag[1] = 'f';
+	else
+		flag[1] = '-';
+
+	if (mode & LSO_WAITALL)
+		flag[2] = 'w';
+	else
+		flag[2] = '-';
+
+	lua_pushlstring(L, flag, 3);
+} /* lso_pushmode() */
 
 
 static lso_nargs_t lso_throw(lua_State *L, struct luasocket *S, int error) {
@@ -161,6 +196,7 @@ static struct luasocket *lso_create(lua_State *L) {
 	S->opts.ibuf.bufsiz = bufsiz;
 
 	S->opts.obuf.mode = LSO_WRMASK(mode);
+	S->opts.obuf.maxline = maxline;
 	S->opts.obuf.bufsiz = bufsiz;
 
 	luaL_getmetatable(L, LSO_CLASS);
@@ -223,12 +259,20 @@ static lso_nargs_t lso_setvbuf(struct lua_State *L) {
 
 static lso_nargs_t lso_setmode(struct lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-	int mode = lso_imode(luaL_checkstring(L, 2), LSO_INITMODE);
+	int mode;
 
-	S->opts.ibuf.mode = LSO_RDMASK(mode);
-	S->opts.obuf.mode = LSO_WRMASK(mode);
+	lua_settop(L, 3);
 
-	return 0;
+	lso_pushmode(L, S->opts.ibuf.mode);
+	lso_pushmode(L, S->opts.obuf.mode);
+
+	if (!lua_isnil(L, 2))
+		S->opts.ibuf.mode = LSO_RDMASK(lso_imode(luaL_checkstring(L, 2), LSO_INITMODE));
+
+	if (!lua_isnil(L, 3))
+		S->opts.obuf.mode = LSO_WRMASK(lso_imode(luaL_checkstring(L, 3), LSO_INITMODE));
+
+	return 2;
 } /* lso_setmode() */
 
 
@@ -316,7 +360,7 @@ struct lso_recv {
 
 
 static struct lso_recv lso_checkrecv(lua_State *L, int index, int mode) {
-	struct lso_recv rcv = { index, LSO_CHOMP, 0, mode, resume };
+	struct lso_recv rcv = { index, LSO_CHOMP, 0, mode };
 	lua_Number size;
 
 	if (!lua_isnumber(L, index)) {
@@ -434,43 +478,6 @@ error:
 } /* lso_dorecv() */
 
 
-static lso_nargs_t lso_read(lua_State *L) {
-	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-	struct lso_recv rcv;
-	int top, index, error;
-
-	if (LUA_OK == lua_getctx(L, &top)) {
-		if (1 == (top = lua_gettop(L))) {
-			lua_pushstring(L, "*l");
-			top++;
-		}
-
-		lua_pushinteger(L, 2);
-	}
-
-	index = lua_tointeger(L, top + 1);
-
-	/* discard any lua_resume() results */
-	lua_settop(L, top + 1 + (index - 2));
-
-	while (index <= top) {
-		rcv = lso_checkrecv(L, index, (S->opts.ibuf.mode|LSO_WAITALL));
-
-		if (LUA_YIELD == lso_dorecv(L, S, &rcv))
-			goto yield;
-
-		lua_pushinteger(L, ++index);
-		lua_replace(L, top + 1);
-	}
-
-	return lua_gettop(L) - (top + 1);
-yield:
-	lua_pushvalue(L, 1);
-
-	return lua_yieldk(L, 1, top, &lso_read);
-} /* lso_read() */
-
-
 static lso_nargs_t lso_recv(lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
 	struct lso_recv rcv;
@@ -491,188 +498,139 @@ yield:
 } /* lso_recv() */
 
 
-struct lso_callinfo {
-	int top;
-
-	struct {
-		int type;
-
-		union {
-			void *p;
-			size_t z;
-		};
-	} reg[3];
-}; /* struct lso_callinfo() */
-
-
-
-
-
-struct lso_send {
-	int index;
-	unsigned char *p, *pe;
-	int mode;
-}; /* struct lso_send */
-
-
-static lso_nargs_t lso_write(lua_State *L) {
-	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-	struct lso_recv rcv;
-	int top, index, error;
-
-	if (LUA_OK == lua_getctx(L, &top)) {
-		if (1 == (top = lua_gettop(L))) {
-			lua_pushstring(L, "*l");
-			top++;
-		}
-
-		lua_pushinteger(L, 2);
-	}
-
-	index = lua_tointeger(L, top + 1);
-
-	/* discard any lua_resume() results */
-	lua_settop(L, top + 1 + (index - 2));
-
-	while (index <= top) {
-		rcv = lso_checkrecv(L, index, (S->opts.ibuf.mode|LSO_WAITALL));
-
-		if (LUA_YIELD == lso_dorecv(L, S, &rcv))
-			goto yield;
-
-		lua_pushinteger(L, ++index);
-		lua_replace(L, top + 1);
-	}
-
-	return lua_gettop(L) - (top + 1);
-yield:
-	lua_pushvalue(L, 1);
-
-	return lua_yieldk(L, 1, top, &lso_read);
-} /* lso_write() */
-
-
-#if 0
-static lso_nargs_t lso_write(lua_State *L) {
-	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-	const char *data;
-	size_t count, n;
+static lso_error_t lso_doflush(struct luasocket *S, int mode) {
+	size_t amount = 0, n;
 	struct iovec iov;
-	int flush = 0, error;
+	int error;
 
-	if (LUA_YIELD == lua_getctx(L, &flush))
-		goto flush;
-
-	data = luaL_checklstring(L, 2, &count);
-
-	/* ensure enough buffer is available at outset */
-	if ((error = fifo_grow(&S->obuf, count)))
-		goto error;
-
-	/*
-	 * if data already in buffer or we're block or line buffering,
-	 * queue; otherwise, try to write out directly and then queue
-	 * remainder.
-	 */
-	if (fifo_rlen(&S->obuf) || S->opts.obuf.type != LSO_NOBUF) {
-		if ((error = fifo_write(&S->obuf, data, count)))
-			goto error;
-	} else {
-		error = 0;
-
-		if (!(n = so_write(S->socket, data, count, &error)) && error != EAGAIN)
-			goto error;
-
-		data += n;
-		count -= n;
-
-		if ((error = fifo_write(&S->obuf, data, count)))
-			goto error;
+	if (mode & LSO_LINEBUF) {
+		if (S->eol > 0)
+			amount = S->eol;
+		else if (fifo_rlen(&S->obuf) > S->opts.obuf.maxline)
+			amount = S->opts.obuf.maxline;
+	} else if (mode & LSO_FULLBUF) {
+		if (fifo_rlen(&S->obuf) > S->opts.obuf.bufsiz)
+			amount = S->opts.obuf.bufsiz;
+	} else if (mode & LSO_NOBUF) {
+		amount = fifo_rlen(&S->obuf);
 	}
 
-	switch (S->opts.obuf.type) {
-	case LSO_LINEBUF: {
-		struct fifo tail;
-		size_t total;
+	while (amount) {
+		if (!fifo_slice(&S->obuf, &iov, 0, amount))
+			break; /* should never happen */
 
-		total = fifo_rvec(&S->obuf, &iov, 1);
-		fifo_from(&tail, iov.iov_base, iov.iov_len);
+		so_clear(S->socket);
 
-		count = 0;
+		if (!(n = so_write(S->socket, iov.iov_base, iov.iov_len, &error)))
+			goto error;
 
-		while ((n = fifo_lvec(&tail, &iov))) {
-			count += n;
-			fifo_slice(&S->obuf, &iov, count, total - count);
-			fifo_from(&tail, iov.iov_base, iov.iov_len);
+		fifo_discard(&S->obuf, n);
+		amount -= n;
+		S->eol -= MIN(S->eol, n);
+	}
+	
+	return 0;
+error:
+	switch (error) {
+	case EPIPE:
+		S->fin = 1;
+
+		break;
+	} /* switch() */
+
+	return error;
+} /* lso_doflush() */
+
+
+static lso_nargs_t lso_send4(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	const unsigned char *src, *lf;
+	size_t tp, p, pe, end, n;
+	int mode, error;
+
+	lua_settop(L, 5);
+
+	src = luaL_checklstring(L, 2, &end);
+	tp = lso_checksize(L, 3) - 1;
+	pe = lso_checksize(L, 4);
+	mode = lso_imode(luaL_optstring(L, 5, ""), S->opts.obuf.mode);
+
+	luaL_argcheck(L, tp <= end, 3, "start index beyond object boundary");
+	luaL_argcheck(L, pe <= end, 4, "end index beyond object boundary");
+
+	p = tp;
+
+	so_clear(S->socket);
+
+	while (p < pe) {
+		if (mode & (LSO_TEXT|LSO_LINEBUF)) {
+			n = MIN(pe - p, S->opts.obuf.maxline);
+
+			if ((lf = memchr(&src[p], '\n', n))) {
+				n = lf - &src[p];
+
+				if ((error = fifo_write(&S->obof, &src[p], n)))
+					goto error;
+
+				if ((mode & LSO_TEST) && (error = fifo_putc(&S->obuf, '\r')))
+					goto error;
+
+				if ((error = fifo_putc(&S->obuf, '\n')))
+					goto error;
+
+				p += n + 1;
+
+				S->eol = fifo_rlen(&S->obuf);
+			} else {
+				if ((error = fifo_write(&S->obuf, &src[p], n)))
+					goto error;
+
+				p += n;
+			}
+		} else {
+			n = MIN(pe - p, LSO_BUFSIZ);
+
+			if ((error = fifo_write(&S->obuf, &src[p], n)))
+				goto error;
+
+			p += n;
 		}
 
-		break;
-	}
-	case LSO_FULLBUF:
-		count = fifo_rlen(&S->obuf);
-
-		if (count < S->opts.obuf.bufsiz)
-			count = 0;
-
-		break;
-	case LSO_NOBUF:
-		/* FALL THROUGH */
-	default:
-		count = fifo_rlen(&S->obuf);
-
-		break;
-	} /* switch (mode) */
-
-	flush = (int)MIN((size_t)INT_MAX, count);
-
-flush:
-	while (flush > 0 && fifo_rvec(&S->obuf, &iov, LSO_DEFRAG)) {
-		iov.iov_len = MIN((size_t)flush, iov.iov_len);
-
-		if (!(count = so_write(S->socket, iov.iov_base, iov.iov_len, &error))) {
-			if (error == EAGAIN) {
-				luacq_pushevent(L, so_pollfd(S->socket), so_events(S->socket), 0, 1);
-
-				return lua_yieldk(L, 1, flush, &lso_write);
-			} else
+		if (fifo_rlen(&S->obuf) > S->opts.obuf.bufsiz) {
+			if ((error = lso_doflush(S, mode)))
 				goto error;
 		}
+	}
 
-		fifo_discard(&S->obuf, count);
-		flush -= (int)count;
-	} /* while(flush) */
+	if ((error = lso_doflush(S, mode)))
+		goto error;
 
-	lua_pushboolean(L, 1);
+	lua_pushnumber(L, p - tp);
 
 	return 1;
 error:
-	return errors_return(L, LUA_TBOOLEAN, &S->errors, error);
-} /* lso_write() */
-#endif
+	lua_pushnumber(L, p - tp);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_send4() */
 
 
 static lso_nargs_t lso_flush(lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-	struct iovec iov;
-	size_t count;
+	int mode = lso_imode(luaL_optstring(L, 2, "n"), S->opts.obuf.mode);
 	int error;
 
-	while (fifo_rvec(&S->obuf, &iov, LSO_DEFRAG)) {
-		if (!(count = so_write(S->socket, iov.iov_base, iov.iov_len, &error))) {
-			if (error != EAGAIN)
-				goto error;
+	if ((error = lso_doflush(S, mode))) {
+		lua_pushboolean(L, 0);
+		lua_pushinteger(L, error);
 
-			break;
-		}
+		return 2;
+	} else {
+		lua_pushboolean(L, 1);
 
-		fifo_discard(&S->obuf, count);
+		return 1;
 	}
-
-	lua_pushboolean(L, !fifo_rlen(&S->obuf));
-
-	return 1;
-error:
-	return errors_return(L, LUA_TBOOLEAN, &S->errors, error);
 } /* lso_flush() */
 
 
@@ -681,7 +639,9 @@ static lso_nargs_t lso_clear(lua_State *L) {
 
 	so_clear(S->socket);
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* lso_clear() */
 
 
@@ -693,20 +653,29 @@ static lso_nargs_t lso_shutdown(lua_State *L) {
 	case 0:
 		how = SHUT_RD;
 
+		S->eof = 1;
+
 		break;
 	case 1:
 		how = SHUT_WR;
+
+		S->fin = 1;
 
 		break;
 	default:
 		how = SHUT_RDWR;
 
+		S->eof = 1;
+		S->fin = 1;
+
 		break;
 	} /* switch() */
-	
 
 	if ((error = so_shutdown(S->socket, how))) {
-		return errors_return(L, LUA_TBOOLEAN, &S->errors, error);
+		lua_pushboolean(L, 0);
+		lua_pushinteger(L, error);
+
+		return 1;
 	} else {
 		lua_pushboolean(L, 1);
 
@@ -723,18 +692,6 @@ static lso_nargs_t lso_eof(lua_State *L) {
 
 	return 2;
 } /* lso_eof() */
-
-
-static lso_nargs_t lso_error(lua_State *L) {
-	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-
-	if (S->error)
-		lua_pushstring(L, so_strerror(S->error));
-	else
-		lua_pushnil(L);
-
-	return 1;
-} /* lso_error() */
 
 
 /* FIXME: Refactor so we can't leak a descriptor if Lua throws an error. */
@@ -788,13 +745,6 @@ error:
 } /* lso_accept() */
 
 
-static lso_nargs_t lso_onerror(lua_State *L) {
-	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-
-	return errors_onerror(L, &S->errors, 2, 3);
-} /* lso_onerror() */
-
-
 static lso_nargs_t lso__gc(lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
 
@@ -810,15 +760,13 @@ static lso_nargs_t lso__gc(lua_State *L) {
 
 static luaL_Reg lso_methods[] = {
 	{ "setvbuf",  &lso_setvbuf },
-	{ "read",     &lso_read },
-	{ "write",    &lso_write },
+	{ "recv",     &lso_recv },
+	{ "send4",    &lso_send4 },
 	{ "flush",    &lso_flush },
 	{ "clear",    &lso_clear },
 	{ "shutdown", &lso_shutdown },
 	{ "eof",      &lso_eof },
-	{ "error",    &lso_error },
 	{ "accept",   &lso_accept },
-	{ "onerror",  &lso_onerror },
 	{ 0, 0 }
 }; /* lso_methods[] */
 
@@ -831,7 +779,7 @@ static luaL_Reg lso_events[] = {
 
 static luaL_Reg lso_globals[] = {
 	{ "connect", &lso_connect },
-	{ "listen", &lso_listen },
+	{ "listen",  &lso_listen },
 	{ 0, 0 }
 }; /* lso_globals[] */
 
