@@ -4090,6 +4090,17 @@ int dns_resconf_dump(struct dns_resolv_conf *resconf, FILE *fp) {
 	if (resconf->options.smart)
 		fprintf(fp, " smart");
 
+	switch (resconf->options.tcp) {
+	case DNS_RESCONF_TCP_ENABLE:
+		break;
+	case DNS_RESCONF_TCP_ONLY:
+		fprintf(fp, " tcp");
+		break;
+	case DNS_RESCONF_TCP_DISABLE:
+		fprintf(fp, " tcp:disable");
+		break;
+	}
+
 	fputc('\n', fp);
 
 

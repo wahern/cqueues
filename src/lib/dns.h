@@ -37,6 +37,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
+#include <sys/param.h>		/* BYTE_ORDER BIG_ENDIAN _BIG_ENDIAN */
 #include <sys/types.h>		/* socklen_t */
 #include <sys/socket.h>		/* struct socket */
 
@@ -64,8 +65,8 @@
 
 #define DNS_VENDOR "william@25thandClement.com"
 
-#define DNS_V_REL  0x20120619
-#define DNS_V_ABI  0x20120618
+#define DNS_V_REL  0x20120710
+#define DNS_V_ABI  0x20120710
 #define DNS_V_API  0x20120618
 
 
@@ -315,7 +316,7 @@ extern unsigned (*dns_random)(void);
 struct dns_header {
 		unsigned qid:16;
 
-#if BYTE_ORDER == BIG_ENDIAN
+#if (defined BYTE_ORDER && BYTE_ORDER == BIG_ENDIAN) || defined _BIG_ENDIAN
 		unsigned qr:1;
 		unsigned opcode:4;
 		unsigned aa:1;
