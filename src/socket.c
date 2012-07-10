@@ -3,8 +3,6 @@
 
 #include <errno.h>	/* EAGAIN EPIPE */
 
-#include <sys/param.h>	/* MIN */
-
 #include <lua.h>
 #include <lauxlib.h>
 
@@ -20,6 +18,10 @@
 #define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
 
 #define HAI SAY("hai")
+#endif
+
+#ifndef MIN
+#define MIN(a, b) (((a) < (b))? (a) : (b))
 #endif
 
 

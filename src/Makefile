@@ -9,15 +9,28 @@ lua52path = $(datadir)/lua/5.2
 lua52cpath = $(libdir)/lua/5.2
 
 VENDOR.OS = $(shell ../mk/vendor.os)
-VENDOR.CC = $(shell ../mk/vendor.cc)
+VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
 all: cqueues.so
 
 CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
 
-ifneq ($(VENDOR.CC), sunpro)
-DFLAGS = -Wall -Wextra -g
+ifeq ($(VENDOR.CC), gcc)
+DFLAGS = -Wall -Wextra -Wno-override-init -Wno-unused -g
 CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
+endif
+
+ifeq ($(VENDOR.CC), clang)
+DFLAGS = -Wall -Wextra -Wno-initializer-overrides -Wno-unused -g
+CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
+endif
+
+ifeq ($(VENDOR.CC), sunpro)
+CFLAGS = -xcode=pic13
+endif
+
+ifeq ($(VENDOR.OS), SunOS)
+CPPFLAGS += -Usun
 endif
 
 ifeq ($(VENDOR.OS), Darwin)
