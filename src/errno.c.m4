@@ -26,7 +26,7 @@ static int le_strerror(lua_State *L) {
 
 	if (error >= DNS_EBASE && error < DNS_ELAST)
 		lua_pushstring(L, dns_strerror(error));
-	else if (error >= SO_ERRNO0 && error < DNS_EEND)
+	else if (error >= SO_ERRNO0 && error < SO_EEND)
 		lua_pushstring(L, so_strerror(error));
 	else
 		lua_pushstring(L, strerror(error));
@@ -37,7 +37,7 @@ static int le_strerror(lua_State *L) {
 
 static const luaL_Reg le_globals[] = {
 	{ "strerror", &le_strerror },
-	{ NULL }
+	{ NULL, NULL }
 };
 
 
@@ -52,13 +52,13 @@ int luaopen_cqueues_errno(lua_State *L) {
 		lua_pushinteger(L, errlist[i].value);
 		lua_settable(L, -3);
 
-#if EAGAIN = EWOULDBLOCK
-		if (!strcmp(errlist[i].name), "EWOULDBLOCK")
-			continue
+#if EAGAIN == EWOULDBLOCK
+		if (!strcmp(errlist[i].name, "EWOULDBLOCK"))
+			continue;
 #endif
 
 		lua_pushinteger(L, errlist[i].value);
-		lua_pushinteger(L, errlist[i].macro);
+		lua_pushstring(L, errlist[i].name);
 		lua_settable(L, -3);
 	}
 
