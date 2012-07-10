@@ -53,7 +53,7 @@
 #define LLRB_H
 
 #define LLRB_VENDOR "william@25thandClement.com"
-#define LLRB_VERSION 0x20111102
+#define LLRB_VERSION 0x20120315
 
 #define LLRB_HEAD(name, type) \
 struct name { struct type *rbh_root; }
@@ -136,6 +136,8 @@ struct type *name##_LLRB_INSERT(struct name *head, struct type *elm) { \
 		else \
 			return *root; \
 	} \
+	LLRB_LEFT((elm), field) = 0; \
+	LLRB_RIGHT((elm), field) = 0; \
 	LLRB_COLOR((elm), field) = LLRB_RED; \
 	LLRB_PARENT((elm), field) = parent; \
 	*root = (elm); \
