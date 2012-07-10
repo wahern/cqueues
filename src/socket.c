@@ -13,6 +13,16 @@
 #include "lib/dns.h"
 
 
+#if !defined(SAY)
+#define SAY_(file, func, line, fmt, ...) \
+	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
+
+#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
+
+#define HAI SAY("hai")
+#endif
+
+
 #define lso_error_t int
 #define lso_nargs_t int
 
@@ -26,7 +36,6 @@
 #define LSO_ALLBUF  (LSO_LINEBUF|LSO_FULLBUF|LSO_NOBUF)
 #define LSO_TEXT    0x08
 #define LSO_BINARY  0x10
-#define LSO_WAITALL 0x20
 
 #define LSO_INITMODE (LSO_FULLBUF|LSO_TEXT)
 #define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
@@ -112,9 +121,6 @@ static int lso_imode(const char *str, int init) {
 		case 'b':
 			mode = LSO_BINARY | (mode & ~LSO_TEXT);
 			break;
-		case 'w':
-			mode |= LSO_WAITALL;
-			break;
 		} /* switch() */
 	} /* while() */
 
@@ -141,12 +147,7 @@ static void lso_pushmode(lua_State *L, int mode) {
 	else
 		flag[1] = '-';
 
-	if (mode & LSO_WAITALL)
-		flag[2] = 'w';
-	else
-		flag[2] = '-';
-
-	lua_pushlstring(L, flag, 3);
+	lua_pushlstring(L, flag, 2);
 } /* lso_pushmode() */
 
 
@@ -380,8 +381,11 @@ static lso_error_t lso_getline(struct luasocket *S, struct iovec *iov) {
 		if (fifo_lvec(&S->ibuf.fifo, iov))
 			break;
 
-		if (fifo_rvec(&S->ibuf.fifo, iov) && (S->ibuf.eof || iov->iov_len >= S->ibuf.maxline))
+		if (fifo_rlen(&S->ibuf.fifo) > 0 && (S->ibuf.eof || fifo_rlen(&S->ibuf.fifo) >= S->ibuf.maxline)) {
+			fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
+
 			break;
+		}
 
 		return lso_asserterror(error);
 	}
