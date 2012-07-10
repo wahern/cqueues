@@ -62,7 +62,7 @@ lib/dns.o: lib/dns.c
 .PHONY: clean clean~
 
 clean:
-	rm -rf *.so *.o lib/*.o *.dSYM
+	rm -rf errno.c *.so *.o lib/*.o *.dSYM
 
 clean~: clean
 	rm -f *~ lib/*~
