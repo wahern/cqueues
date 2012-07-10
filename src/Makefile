@@ -4,34 +4,39 @@ prefix = /usr/local/lua52
 libdir = $(prefix)/lib
 datadir = $(prefix)/share
 includedir = $(prefix)/include
+lua52include = $(includedir)/lua/5.2
 lua52path = $(datadir)/lua/5.2
 lua52cpath = $(libdir)/lua/5.2
 
+VENDOR.OS = $(shell ../mk/vendor.os)
+VENDOR.CC = $(shell ../mk/vendor.cc)
+
 all: cqueues.so
 
-CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(includedir)/lua/5.2 # -DSOCKET_DEBUG
+CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
+
+ifneq ($(VENDOR.CC), sunpro)
 DFLAGS = -Wall -Wextra -g
 CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
+endif
 
-UNAME = $(shell uname -s)
-
-ifeq ($(UNAME), Darwin)
+ifeq ($(VENDOR.OS), Darwin)
 DFLAGS += -Wno-deprecated-declarations
 endif
 
-ifeq ($(UNAME), $(filter $(UNAME), OpenBSD NetBSD FreeBSD Darwin))
+ifeq ($(VENDOR.OS), $(filter $(VENDOR.OS), OpenBSD NetBSD FreeBSD Darwin))
 CPPFLAGS += -DDNS_RANDOM=arc4random
 else
 CPPFLAGS += -DDNS_RANDOM=RAND_bytes
 endif
 
-ifeq ($(UNAME), Linux)
+ifeq ($(VENDOR.OS), Linux)
 LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lssl -lcrypto -lrt -lm
 else
 LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lssl -lcrypto
 endif
 
-ifeq ($(UNAME), Darwin)
+ifeq ($(VENDOR.OS), Darwin)
 SOFLAGS = -bundle -undefined dynamic_lookup
 else
 SOFLAGS = -shared
