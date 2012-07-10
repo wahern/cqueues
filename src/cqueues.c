@@ -297,9 +297,12 @@ static void *pool_get(struct pool *P, int *_error) {
 
 #define HAVE_KQUEUE __FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__
 #define HAVE_EPOLL __linux__
+#define HAVE_PORTS __sun
 
 #if HAVE_EPOLL
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
+#elif HAVE_PORTS
+#include <port.h>
 #else
 #include <sys/event.h>	/* EVFILT_READ EVFILT_WRITE EV_SET EV_ADD EV_DELETE struct kevent kqueue(2) kevent(2) */
 #endif
@@ -311,6 +314,8 @@ static void *pool_get(struct pool *P, int *_error) {
 
 #if HAVE_EPOLL
 typedef struct epoll_event kpoll_event_t;
+#elif HAVE_PORTS
+typedef port_event_t kpoll_event_t;
 #else
 typedef struct kevent kpoll_event_t;
 #endif
@@ -349,6 +354,14 @@ static int kpoll_init(struct kpoll *kp) {
 
 	return 0;
 #endif
+#elif HAVE_PORTS
+	if (-1 == (kp->fd = port_create()))
+		return errno;
+
+	if ((error = setcloexec(kp->fd)))
+		return error;
+
+	return 0;
 #else
 	if (-1 == (kp->fd = kqueue()))
 		return errno;
@@ -368,6 +381,28 @@ static void kpoll_destroy(struct kpoll *kp) {
 } /* kpoll_destroy() */
 
 
+static inline void *kpoll_udata(const kpoll_event_t *event) {
+#if HAVE_EPOLL
+	return event->data.ptr;
+#elif HAVE_PORTS
+	return event->portev_user;
+#else
+	return event->udata;
+#endif
+} /* kpoll_udata() */
+
+
+static inline short kpoll_pending(const kpoll_event_t *event) {
+#if HAVE_EPOLL
+	return event->events;
+#elif HAVE_PORTS
+	return event->portev_events;
+#else
+	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
+#endif
+} /* kpoll_pending() */
+
+
 static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void *udata) {
 #if HAVE_EPOLL
 	struct epoll_event event;
@@ -385,6 +420,21 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 
 	if (0 != epoll_ctl(kp->fd, op, fd, &event))
 		return errno;
+
+	*state = events;
+
+	return 0;
+#elif HAVE_PORTS
+	if (*state == events)
+		return 0;
+
+	if (!events) {
+		if (0 != port_dissociate(kp->fd, PORT_SOURCE_FD, fd))
+			return errno;
+	} else {
+		if (0 != port_associate(kp->fd, PORT_SOURCE_FD, fd, events, udata))
+			return errno;
+	}
 
 	*state = events;
 
@@ -444,7 +494,22 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 		return errno;
 
 	kp->pending.count = n;
-	kp->pending.i = 0;
+
+	return 0;
+#elif HAVE_PORTS
+	kpoll_event_t *ke;
+	uint_t n;
+
+	if (0 != port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout)))
+		return errno;
+
+	kp->pending.count = n;
+
+	/* FIXME: uber hackish! */
+	KPOLL_FOREACH(ke, kp) {
+		struct { int fd; short events; } *fileno = kpoll_udata(ke);
+		fileno->events = 0;
+	}
 
 	return 0;
 #else
@@ -458,25 +523,6 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	return 0;
 #endif
 } /* kpoll_wait() */
-
-
-static inline void *kpoll_udata(const kpoll_event_t *event) {
-#if HAVE_EPOLL
-	return event->data.ptr;
-#else
-	return event->udata;
-#endif
-} /* kpoll_udata() */
-
-
-static inline short kpoll_pending(const kpoll_event_t *event) {
-#if HAVE_EPOLL
-	return event->events;
-#else
-	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
-#endif
-} /* kpoll_pending() */
-
 
 
 /*

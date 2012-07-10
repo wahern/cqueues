@@ -46,7 +46,11 @@ endif
 ifeq ($(VENDOR.OS), Linux)
 LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lssl -lcrypto -lrt -lm
 else
+ifeq ($(VENDOR.OS), SunOS)
+LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto
+else
 LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lssl -lcrypto
+endif
 endif
 
 ifeq ($(VENDOR.OS), Darwin)
@@ -56,8 +60,13 @@ SOFLAGS = -shared
 endif
 
 
+ifeq ($(VENDOR.OS), SunOS)
 cqueues.so: cqueues.o socket.o errno.o lib/socket.o lib/dns.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
+else
+cqueues.so: cqueues.o socket.o errno.o lib/socket.o lib/dns.o
+	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
+endif
 
 cqueues.o: cqueues.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
