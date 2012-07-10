@@ -4,7 +4,7 @@ set -e
 
 : ${CC:=cc}
 
-${CC} -E - <<-EOF | grep -v \#
+${CC} -E - <<-EOF | awk '/sunpro/||/clang/||/gcc/||/other/{ print $1; exit; }'
 	#if defined __SUNPRO_C
 	sunpro
 	#elif defined __clang__
