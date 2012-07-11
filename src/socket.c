@@ -39,7 +39,7 @@
 #define LSO_TEXT    0x08
 #define LSO_BINARY  0x10
 
-#define LSO_INITMODE (LSO_FULLBUF|LSO_TEXT)
+#define LSO_INITMODE (LSO_LINEBUF|LSO_TEXT)
 #define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
 #define LSO_WRMASK(m) (m)
 
@@ -561,8 +561,6 @@ static lso_error_t lso_doflush(struct luasocket *S, int mode) {
 		if (!fifo_slice(&S->obuf.fifo, &iov, 0, amount))
 			break; /* should never happen */
 
-		so_clear(S->socket);
-
 		if (!(n = so_write(S->socket, iov.iov_base, iov.iov_len, &error)))
 			goto error;
 
@@ -795,6 +793,21 @@ static lso_nargs_t lso__gc(lua_State *L) {
 } /* lso__gc() */
 
 
+static int lso_interpose(lua_State *L) {
+	luaL_getmetatable(L, LSO_CLASS);
+	lua_getfield(L, -1, "__index");
+	
+	lua_pushvalue(L, -4); /* push method name */
+	lua_gettable(L, -2);  /* push old method */
+			
+	lua_pushvalue(L, -5); /* push method name */
+	lua_pushvalue(L, -5); /* push new method */
+	lua_settable(L, -4);  /* replace old method */
+
+	return 1; /* return old method */
+} /* lso_interpose() */
+
+
 static luaL_Reg lso_methods[] = {
 	{ "connect",  &lso_connect1 },
 	{ "listen",   &lso_listen1 },
@@ -820,14 +833,15 @@ static luaL_Reg lso_metamethods[] = {
 
 
 static luaL_Reg lso_globals[] = {
-	{ "connect", &lso_connect2 },
-	{ "listen",  &lso_listen2 },
-	{ "fdopen",  &lso_fdopen },
+	{ "connect",   &lso_connect2 },
+	{ "listen",    &lso_listen2 },
+	{ "fdopen",    &lso_fdopen },
+	{ "interpose", &lso_interpose },
 	{ 0, 0 }
 }; /* lso_globals[] */
 
 
-lso_nargs_t luaopen_cqueues_socket(lua_State *L) {
+lso_nargs_t luaopen_cqueues_socket_core(lua_State *L) {
 	if (luaL_newmetatable(L, LSO_CLASS)) {
 		luaL_setfuncs(L, lso_metamethods, 0);
 
@@ -842,4 +856,5 @@ lso_nargs_t luaopen_cqueues_socket(lua_State *L) {
 	luaL_setfuncs(L, lso_globals, 0);
 
 	return 1;
-} /* luaopen_cqueues_socket() */
+} /* luaopen_cqueues_socket_core() */
+

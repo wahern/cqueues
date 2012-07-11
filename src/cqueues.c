@@ -1089,7 +1089,7 @@ static void luacq_slice(lua_State *L, int index, int count) {
 } /* luacq_slice() */
 
 
-static void cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
+static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
 	int otop, ntmp, nargs, status, index;
 	struct event *event;
 
@@ -1143,8 +1143,10 @@ static void cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, st
 
 		break;
 	default:
-		if (LUA_OK != (status = cqueue_update(L, Q)))
+		if (LUA_OK != cqueue_update(L, Q))
 			goto error;
+
+		lua_xmove(T->L, L, 1);
 error:
 		thread_del(L, Q, I, T);
 
@@ -1152,10 +1154,12 @@ error:
 	} /* switch() */
 
 	luacq_slice(L, otop + 1, ntmp);
+
+	return status;
 } /* cqueue_resume() */
 
 
-static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	kpoll_event_t *ke;
 	struct fileno *fileno;
 	struct event *event;
@@ -1163,6 +1167,7 @@ static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	struct timer *timer;
 	double curtime;
 	short events;
+	int status;
 
 	KPOLL_FOREACH(ke, &Q->kp) {
 		fileno = kpoll_udata(ke);
@@ -1196,8 +1201,12 @@ static void cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 
 	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
 		nxt = LIST_NEXT(T, le);
-		cqueue_resume(L, Q, I, T);
+
+		if (LUA_OK != (status = cqueue_resume(L, Q, I, T)))
+			return status;
 	}
+
+	return LUA_OK;
 } /* cqueue_process() */
 
 
@@ -1231,11 +1240,16 @@ static int cqueue_step(lua_State *L) {
 	if ((error = kpoll_wait(&Q->kp, timeout)))
 		return luaL_error(L, "internal error in continuation queue: %s", strerror(error));
 
-	cqueue_process(L, Q, &I);
+	if (LUA_OK != cqueue_process(L, Q, &I)) {
+		lua_pushboolean(L, 0);
+		lua_pushvalue(L, -2);
 
-	lua_pushboolean(L, 1);
+		return 2;
+	} else {
+		lua_pushboolean(L, 1);
 
-	return 1;
+		return 1;
+	}
 } /* cqueue_step() */
 
 
@@ -1332,6 +1346,21 @@ static int cqueue_timeout(lua_State *L) {
 } /* cqueue_timeout() */
 
 
+static int cqueue_interpose(lua_State *L) {
+	luaL_getmetatable(L, CQUEUE_CLASS);
+	lua_getfield(L, -1, "__index");
+	
+	lua_pushvalue(L, -4); /* push method name */
+	lua_gettable(L, -2);  /* push old method */
+			
+	lua_pushvalue(L, -5); /* push method name */
+	lua_pushvalue(L, -5); /* push new method */
+	lua_settable(L, -4);  /* replace old method */
+
+	return 1; /* return old method */
+} /* cqueue_interpose() */
+
+
 static const luaL_Reg cqueue_methods[] = {
 	{ "step",    &cqueue_step },
 	{ "attach",  &cqueue_attach },
@@ -1352,12 +1381,13 @@ static const luaL_Reg cqueue_metatable[] = {
 
 
 static const luaL_Reg cqueues_globals[] = {
-	{ "new", &cqueue_new },
-	{ NULL,  NULL }
+	{ "new",       &cqueue_new },
+	{ "interpose", &cqueue_interpose },
+	{ NULL,        NULL }
 }; /* cqueues_globals[] */
 
 
-int luaopen_cqueues(lua_State *L) {
+int luaopen_cqueues_core(lua_State *L) {
 	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
 		luaL_setfuncs(L, cqueue_metatable, 0);
 
@@ -1372,6 +1402,5 @@ int luaopen_cqueues(lua_State *L) {
 	luaL_setfuncs(L, cqueues_globals, 0);
 
 	return 1;
-} /* luaopen_cqueues() */
-
+} /* luaopen_cqueues_core() */
 
