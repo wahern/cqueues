@@ -31,7 +31,7 @@
 
 #include <errno.h>	/* EINVAL EAGAIN EWOULDBLOCK EINPROGRESS EALREADY ENAMETOOLONG EOPNOTSUPP */
 
-#include <signal.h>	/* SIGPIPE SIG_IGN sigaction(2) */
+#include <signal.h>	/* SIGPIPE SIG_IGN sigaction(2) sigemptyset(3) */
 
 #include <assert.h>	/* assert(3) */
 
@@ -798,7 +798,7 @@ static void so_ignore(int signo, struct sigaction *oact) {
 	struct sigaction ign;
 
 	ign.sa_handler = SIG_IGN;
-	ign.sa_mask = 0;
+	sigemptyset(&ign.sa_mask);
 	ign.sa_flags = 0;
 
 	sigaction(signo, &ign, oact);
