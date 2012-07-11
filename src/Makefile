@@ -86,6 +86,25 @@ lib/socket.o: lib/socket.c
 lib/dns.o: lib/dns.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
+
+install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua
+
+$(lua52cpath)/_cqueues.so: cqueues.so
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/cqueues.lua: cqueues.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/cqueues/socket.lua: socket.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/cqueues/errno.lua: errno.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+ 
 .PHONY: clean clean~
 
 clean:

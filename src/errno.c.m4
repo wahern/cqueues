@@ -41,11 +41,10 @@ static const luaL_Reg le_globals[] = {
 };
 
 
-int luaopen_cqueues_errno(lua_State *L) {
+int luaopen__cqueues_errno(lua_State *L) {
 	unsigned i;
 
-	lua_newtable(L);
-	luaL_setfuncs(L, le_globals, 0);
+	luaL_newlib(L, le_globals);
 
 	for (i = 0; i < sizeof errlist / sizeof *errlist; i++) {
 		lua_pushstring(L, errlist[i].name);
@@ -63,5 +62,4 @@ int luaopen_cqueues_errno(lua_State *L) {
 	}
 
 	return 1;
-} /* luaopen_cqueues_errno() */
-
+} /* luaopen__cqueues_errno() */

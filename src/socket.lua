@@ -1,4 +1,4 @@
-local socket = require("cqueues.socket.core")
+local socket = require("_cqueues.socket")
 local cqueues = require("cqueues")
 local errno = require("cqueues.errno")
 

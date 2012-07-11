@@ -1387,20 +1387,18 @@ static const luaL_Reg cqueues_globals[] = {
 }; /* cqueues_globals[] */
 
 
-int luaopen_cqueues_core(lua_State *L) {
+int luaopen__cqueues(lua_State *L) {
 	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
 		luaL_setfuncs(L, cqueue_metatable, 0);
 
-		lua_newtable(L);
-		luaL_setfuncs(L, cqueue_methods, 0);
+		luaL_newlib(L, cqueue_methods);
 		lua_setfield(L, -2, "__index");
 	}
 
 	lua_pop(L, 1);
 
-	lua_newtable(L);
-	luaL_setfuncs(L, cqueues_globals, 0);
+	luaL_newlib(L, cqueues_globals);
 
 	return 1;
-} /* luaopen_cqueues_core() */
+} /* luaopen__cqueues() */
 
