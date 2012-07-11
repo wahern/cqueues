@@ -498,14 +498,20 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	return 0;
 #elif HAVE_PORTS
 	kpoll_event_t *ke;
-	uint_t n;
+	uint_t n = 1;
+	int ret;
 
-	if (0 != port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout)))
-		return errno;
+	ret = port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout));
+
+	if (ret != 0 && !n)
+		return (errno == ETIME || errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
 
-	/* FIXME: uber hackish! */
+	/*
+	 * FIXME: This is uber hackish. Solaris port events aren't
+	 * persistent, and we need to teach this to calling code.
+	 */
 	KPOLL_FOREACH(ke, kp) {
 		struct { int fd; short events; } *fileno = kpoll_udata(ke);
 		fileno->events = 0;
