@@ -38,6 +38,8 @@
 
 #define HAI SAY("hai")
 
+#define NOTUSED __attribute__((unused))
+
 
 /*
  * U T I L I T Y  R O U T I N E S
@@ -403,6 +405,16 @@ static inline short kpoll_pending(const kpoll_event_t *event) {
 } /* kpoll_pending() */
 
 
+static inline short kpoll_diff(const kpoll_event_t *event NOTUSED, short ostate NOTUSED) {
+#if HAVE_PORTS
+	/* Solaris Event Ports aren't persistent. */
+	return 0;
+#else
+	return ostate;
+#endif
+} /* kpoll_diff() */
+
+
 static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void *udata) {
 #if HAVE_EPOLL
 	struct epoll_event event;
@@ -507,15 +519,6 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 		return (errno == ETIME || errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
-
-	/*
-	 * FIXME: This is uber hackish. Solaris port events aren't
-	 * persistent, and we need to teach this to calling code.
-	 */
-	KPOLL_FOREACH(ke, kp) {
-		struct { int fd; short events; } *fileno = kpoll_udata(ke);
-		fileno->events = 0;
-	}
 
 	return 0;
 #else
@@ -1180,6 +1183,8 @@ static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 			LIST_REMOVE(event->thread, le);
 			LIST_INSERT_HEAD(&Q->thread.pending, event->thread, le);
 		}
+
+		fileno->state = kpoll_diff(ke, fileno->state);
 	}
 
 	curtime = monotime();
