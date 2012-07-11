@@ -503,7 +503,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	int n;
 
 	if (-1 == (n = epoll_wait(kp->fd, kp->pending.event, (int)countof(kp->pending.event), f2ms(timeout))))
-		return errno;
+		return (errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
 
@@ -525,7 +525,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	int n;
 
 	if (-1 == (n = kevent(kp->fd, NULL, 0, kp->pending.event, (int)countof(kp->pending.event), f2ts(timeout))))
-		return errno;
+		return (errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
 
