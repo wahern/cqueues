@@ -841,20 +841,18 @@ static luaL_Reg lso_globals[] = {
 }; /* lso_globals[] */
 
 
-lso_nargs_t luaopen_cqueues_socket_core(lua_State *L) {
+lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 	if (luaL_newmetatable(L, LSO_CLASS)) {
 		luaL_setfuncs(L, lso_metamethods, 0);
 
-		lua_newtable(L);
-		luaL_setfuncs(L, lso_methods, 0);
+		luaL_newlib(L, lso_methods);
 		lua_setfield(L, -2, "__index");
 	}
 
 	lua_pop(L, 1);
 
-	lua_newtable(L);
-	luaL_setfuncs(L, lso_globals, 0);
+	luaL_newlib(L, lso_globals);
 
 	return 1;
-} /* luaopen_cqueues_socket_core() */
+} /* luaopen__cqueues_socket() */
 

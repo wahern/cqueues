@@ -1,0 +1,22 @@
+local cqueues = require("cqueues")
+local socket = require("cqueues.socket")
+
+local http = socket.connect("google.com", 80)
+local cq = cqueues.new()
+
+cq:wrap(function()
+	http:write("GET / HTTP/1.0\n\n")
+
+	for ln in http:lines() do
+		print(ln)
+	end
+end)
+
+while not cq:empty() do
+	local ok, err = cq:step()
+
+	if not ok then
+		error("cqueue: " .. err)
+	end
+end
+

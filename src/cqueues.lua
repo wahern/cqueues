@@ -1,4 +1,4 @@
-local core = require("cqueues.core")
+local core = require("_cqueues")
 
 function core.poll(...)
 	return coroutine.yield(...)
