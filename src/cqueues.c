@@ -1296,13 +1296,52 @@ static int cqueue_count(lua_State *L) {
 } /* cqueue_count() */
 
 
+static int cqueue_pollfd(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+
+	lua_pushinteger(L, Q->kp.fd);
+
+	return 1;
+} /* cqueue_pollfd() */
+
+
+static int cqueue_events(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+
+	lua_pushliteral(L, "r");
+
+	return 1;
+} /* cqueue_events() */
+
+
+static int cqueue_timeout(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+
+	if (!LIST_EMPTY(&Q->thread.pending)) {
+		lua_pushnumber(L, 0.0);
+	} else {
+		double timeout = cqueue_timeout_(Q);
+
+		if (isfinite(timeout))
+			lua_pushnumber(L, timeout);
+		else
+			lua_pushnil(L);
+	}
+
+	return 1;
+} /* cqueue_timeout() */
+
+
 static const luaL_Reg cqueue_methods[] = {
-	{ "step",   &cqueue_step },
-	{ "attach", &cqueue_attach },
-	{ "wrap",   &cqueue_wrap },
-	{ "empty",  &cqueue_empty },
-	{ "count",  &cqueue_count },
-	{ NULL,     NULL }
+	{ "step",    &cqueue_step },
+	{ "attach",  &cqueue_attach },
+	{ "wrap",    &cqueue_wrap },
+	{ "empty",   &cqueue_empty },
+	{ "count",   &cqueue_count },
+	{ "pollfd",  &cqueue_pollfd },
+	{ "events",  &cqueue_events },
+	{ "timeout", &cqueue_timeout },
+	{ NULL,      NULL }
 }; /* cqueue_methods[] */
 
 
