@@ -151,13 +151,18 @@ socket:recv(format, [mode])
 	returns the string or number. On failure returns nil and a numeric
 	error code (usually errno.EAGAIN or errno.EPIPE).
 
+	In addition to file:read() formats, also supports limit block reads.
+	That is, whereas :recv(1024) returns nil or a 1024 byte string,
+	:recv(-1024) returns nil or a string with length in the range 1 to
+	1024 bytes.
+
 	Mode is as described in socket.connect. Defaults to configured
 	input mode.
 
 socket:send(string, i, j, [mode])
-	Write out string beginning from string[i] to string[j]. Returns 2
-	values: count of bytes written, and numerical error code, if any
-	(usually errno.EAGAIN or errno.EPIPE).
+	Write out string beginning from string[i] to string[j]. Immediately
+	returns 2 values: count of bytes written (0 to j-i+1), and numerical
+	error code, if any (usually errno.EAGAIN or errno.EPIPE).
 
 socket:shutdown(how)
 	Simple binding to shutdown(2). `how' is a string containing one
