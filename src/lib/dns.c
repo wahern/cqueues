@@ -54,7 +54,7 @@
 
 #include <time.h>		/* time_t time(2) */
 
-#include <signal.h>		/* sig_atomic_t */
+#include <signal.h>		/* SIGPIPE SIG_IGN sig_atomic_t sigaction(2) sigemptyset(3) */
 
 #include <errno.h>		/* errno EINVAL ENOENT */
 
@@ -823,6 +823,33 @@ static int dns_poll(int fd, short events, int timeout) {
 
 	return 0;
 } /* dns_poll() */
+
+
+static long dns_send(int fd, const void *src, size_t lim, int flags) {
+#if _WIN32 || !defined SIGPIPE || defined SO_NOSIGPIPE
+	return send(fd, src, lim, flags);
+#elif defined MSG_NOSIGNAL
+	return send(fd, src, lim, flags|MSG_NOSIGNAL);
+#else
+	struct sigaction ign, oact;
+	long count;
+	int error;
+
+	ign.sa_handler = SIG_IGN;
+	sigemptyset(&ign.sa_mask);
+	ign.sa_flags = 0;
+
+	sigaction(SIGPIPE, &ign, &oact);
+
+	count = send(fd, src, lim, flags);
+
+	error = errno;
+	sigaction(SIGPIPE, &oact, NULL);
+	errno = error;
+
+	return count;
+#endif
+} /* dns_send() */
 
 
 /*
@@ -4656,6 +4683,13 @@ static int dns_socket(struct sockaddr *local, int type, int *error_) {
 		goto soerr;
 #endif
 
+#if defined(SO_NOSIGPIPE)
+	if (type == SOCK_DGRAM) {
+		if (0 != setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &(int){ 1 }, sizeof (int)))
+			goto soerr;
+	}
+#endif
+
 	if (local->sa_family != AF_INET && local->sa_family != AF_INET6)
 		return fd;
 
@@ -4995,7 +5029,7 @@ static int dns_so_tcp_send(struct dns_socket *so) {
 	qend = so->query->end + 2;
 
 	while (so->qout < qend) {
-		if (0 > (n = send(so->tcp, (void *)&qsrc[so->qout], qend - so->qout, 0)))
+		if (0 > (n = dns_send(so->tcp, (void *)&qsrc[so->qout], qend - so->qout, 0)))
 			return dns_soerr();
 
 		so->qout += n;
