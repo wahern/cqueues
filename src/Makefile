@@ -48,12 +48,12 @@ CPPFLAGS += -DDNS_RANDOM=RAND_bytes
 endif
 
 ifeq ($(VENDOR.OS), Linux)
-LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lssl -lcrypto -lrt -lm
+LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto -lrt -lm
 else
 ifeq ($(VENDOR.OS), SunOS)
 LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto
 else
-LDFLAGS = -L$(DESTDIR)$(libdir) -llua52 -lssl -lcrypto
+LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto
 endif
 endif
 
