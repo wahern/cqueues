@@ -60,9 +60,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120526
-#define SOCKET_V_ABI  0x20111224
-#define SOCKET_V_API  0x20111224
+#define SOCKET_V_REL  0x20120711
+#define SOCKET_V_ABI  0x20120711
+#define SOCKET_V_API  0x20120711
 
 
 const char *socket_vendor(void);
@@ -139,6 +139,7 @@ struct so_options {
 
 	_Bool fd_nonblock;
 	_Bool fd_cloexec;
+	_Bool fd_nosigpipe;
 
 	enum {
 		SO_SYSPOLL,
@@ -150,7 +151,7 @@ struct so_options {
 	_Bool st_time;
 }; /* struct so_options */
 
-#define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .fd_nonblock = 1, .fd_cloexec = 1, .st_time = 1, __VA_ARGS__ })
+#define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .fd_nonblock = 1, .fd_cloexec = 1, .fd_nosigpipe = 1, .st_time = 1, __VA_ARGS__ })
 
 
 /*
@@ -374,6 +375,8 @@ int so_reuseaddr(int, _Bool);
 int so_nodelay(int, _Bool);
 
 int so_nopush(int, _Bool);
+
+int so_nosigpipe(int, _Bool);
 
 
 /*
