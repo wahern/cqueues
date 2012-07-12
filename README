@@ -53,12 +53,12 @@ self-contained, without any global state.
 == API ==
 == "cqueues" Module ==
 
+cqueues.interpose(name, function)
+	Add or interpose a cqueues class method. Returns the previous
+	method, if any.
+
 cqueues.new
 	Create a new cqueues object
-
-cqueues.interpose(name, function)
-	Add or interpose a method for instantiated cqueues. Returns the
-	previous method, if any.
 
 cqueues:attach(coroutine)
 	Attach and manage the specified coroutine.
@@ -86,6 +86,10 @@ cqueues:count()
 
 
 == "cqueues.socket" Module ==
+
+socket.interpose(name, function)
+	Add or interpose a socket class method. Returns the previous
+	method, if any.
 
 socket.connect(host, port, [mode])
 	Return a new socket immediately ready for reading or writing. DNS
