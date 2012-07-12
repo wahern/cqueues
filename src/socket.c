@@ -279,6 +279,25 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 } /* lso_listen1() */
 
 
+static lso_nargs_t lso_starttls(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	int error;
+
+	so_clear(S->socket);
+
+	if (!(error = so_starttls(S->socket, NULL))) {
+		lua_pushboolean(L, 1);
+
+		return 1;
+	} else {
+		lua_pushboolean(L, 0);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+} /* lso_starttls() */
+
+
 static lso_nargs_t lso_fdopen(lua_State *L) {
 	struct luasocket *S;
 	int fd, error;
@@ -811,6 +830,7 @@ static int lso_interpose(lua_State *L) {
 static luaL_Reg lso_methods[] = {
 	{ "connect",  &lso_connect1 },
 	{ "listen",   &lso_listen1 },
+	{ "starttls", &lso_starttls },
 	{ "setvbuf",  &lso_setvbuf },
 	{ "setmode",  &lso_setmode },
 	{ "recv",     &lso_recv3 },

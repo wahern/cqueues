@@ -1,11 +1,21 @@
 local cqueues = require("cqueues")
 local socket = require("cqueues.socket")
+local host, port = ...
 
-local http = socket.connect("google.com", 80)
+host = host or "google.com"
+port = tonumber(port or 80)
+
+local http = socket.connect(host, port)
+
+if port == 443 then
+	http:starttls()
+end
+
 local cq = cqueues.new()
 
 cq:wrap(function()
-	http:write("GET / HTTP/1.0\n\n")
+	http:write("GET / HTTP/1.0\n")
+	http:write(string.format("Host: %s:%d\n\n", host, port))
 
 	for ln in http:lines() do
 		print(ln)
