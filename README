@@ -1,0 +1,178 @@
+== DEPENDENCIES ==
+
+The Makefile requires GNU Make. The source code should build with either GCC
+or clang. It does not yet compile with Solaris SunPro, although it's close.
+
+If you use your own Makefile, note that GCC and especially clang may emit
+copious warnings about initializers and unused parameters. These warnings
+are stupid. Use -Wno-override-init (GCC), -Wno-initializer-overrides (clang)
+and -Wno-unused to quiet these.
+
+cqueues should work (plus or minus a few tweaks) on recent versions of
+Linux, OS X, Solaris, NetBSD, FreeBSD, OpenBSD, and derivatives. The only
+other possible candidate is AIX, if and when support for AIX's pollset
+interface is added to the embedded "kpoll" library.
+
+cqueues requires Lua 5.2. It's not portable to Lua 5.1 because it relies on
+ephemeron tables to prevent coroutine/controller reference cycles.
+
+
+== USAGE ==
+
+cqueues works through a simple protocol. When a coroutine yields to its
+parent cqueues controller, it can pass 1 or more objects. These objects are
+introspected for 3 methods: :pollfd(), :events(), and :timeout(). These
+methods specify the parameters for installing descriptor and timeout events.
+When one of these events fires, cqueues will resume the coroutine, passing
+the relevant object(s) which were interested in the triggered event. It's
+analogous to calling poll(2).
+
+:pollfd() returns a descriptor integer or nil. This descriptor must remain
+in existence until the owner object is garbage collected, the coroutine
+executes one additional yield/resume cycle (so the old descriptor is expired
+from the descriptor queue), or until after the coroutine exits. If the
+descriptor is closed prematurely, the kernel will remove it from the
+internal descriptor queue, bringing it out of sync with the controller, and
+probably causing cqueues:step() to return EBADF or ENOENT errors.
+
+:events() returns a string or nil. cqueues searches the string for the
+characters 'r' (POLLIN) or 'w' (POLLOUT). These are events to associate with
+the descriptor.
+
+:timeout() returns a number or nil. This specifies an independent timeout
+event. To effect a simple 1 second timeout, you can do
+
+	coroutine.yield({ timeout = function() return 1.0 end })
+
+Instantiated cqueues and socket objects implement all three methods. In
+particular, this means that you can stack cqueues, or poll on a cqueues
+object using some other event loop library. Each cqueues object is entirely
+self-contained, without any global state.
+
+
+== API ==
+== "cqueues" Module ==
+
+cqueues.new
+	Create a new cqueues object
+
+cqueues.interpose(name, function)
+	Add or interpose a method for instantiated cqueues. Returns the
+	previous method, if any.
+
+cqueues:attach(coroutine)
+	Attach and manage the specified coroutine.
+
+cqueues:wrap(function)
+	Execute function inside a new coroutine managed by the controller.
+
+cqueues:step([timeout])
+	Step once through the event queue. If no timeout is provided, it
+	blocks indefinitely until a descriptor event or timeout fires.
+
+	Returns true or false. If false, then a second return value holds
+	the error message. :step() can be called again after errors, for
+	example if a coroutine threw an error. [However, at the moment the
+	controller cannot recover from synchronization errors with the
+	kernel queue. In the future, internal, unrecoverable errors should
+	be thrown and only coroutine errors returned directly.]
+
+cqueues:empty()
+	Returns true if there are no more descriptor or timeout events
+	queued.
+
+cqueues:count()
+	Returns a count of managed coroutines.
+
+
+== "cqueues.socket" Module ==
+
+socket.connect(host, port, [mode])
+	Return a new socket immediately ready for reading or writing. DNS
+	lookup and TCP connection handling are handled transparently.
+
+	`mode' is a string containing 1 or more of the following flags
+
+		"t" - text mode; input and output undergo LF<->CRLF
+		      translation
+		"b" - binary mode; no LF/CRLF translation
+
+		"n" - no output buffering
+		"l" - line buffered output
+		"f" - fully buffered output
+
+	At present the default mode is "tl", text translation and line
+	buffering. This may change depending on how much confusion it
+	creates, perhaps to "tn".
+
+socket.listen(host, port)
+	Return a new socket immediately ready for accepting new connections.
+	[UNTESTED]
+
+socket:connect()
+	Wait for connection establishment to succeed. [UNFINISHED]
+
+socket:listen()
+	Wait for socket binding if DNS resolution required for binding
+	address. [UNFINISHED]
+
+socket:starttls()
+	Place socket into TLS mode. Returns immediately. [FUTURE: take
+	parameter to return immediately or wait for channel establishment.]
+
+socket:setvbuf()
+	Same as Lua file:setvbuf. Analagous to "n", "l", and "f" mode flags.
+
+socket:setmode([input], [output])
+	See socket.connect for mode flags. One or both modes can be nil,
+	in which case the mode is left unchanged.
+
+	Returns previous input and output mode flags.
+
+socket:read(...)
+	Same as Lua file:read(). [UNFINISHED: Does not yet implement "*a" or
+	"*n".]
+
+socket:write(...)
+	Same as Lua file:write().
+
+socket:flush([mode])
+	Flushes output buffer. Mode is one of the "nlf" flags described in
+	socket.connect(). A nil mode implies "n", i.e. no buffering and thus
+	effects a full flush. An empty string mode resolves to the existing
+	configured output buffering mode.
+
+socket:recv(format, [mode])
+	Similar to file:read(), except returns immediately. On success
+	returns the string or number. On failure returns nil and a numeric
+	error code (usually errno.EAGAIN or errno.EPIPE).
+
+	Mode is as described in socket.connect. Defaults to configured
+	input mode.
+
+socket:send(string, i, j, [mode])
+	Write out string beginning from string[i] to string[j]. Returns 2
+	values: count of bytes written, and numerical error code, if any
+	(usually errno.EAGAIN or errno.EPIPE).
+
+socket:shutdown(how)
+	Simple binding to shutdown(2). `how' is a string containing one
+	or more flags:
+
+		'r' - Analagous to shutdown(SHUT_RD)
+		'w' - Analagous to shutdown(SHUT_WR)
+
+socket:eof()
+	Returns 2 boolean values representing whether EOF has been received
+	on the input channel, and whether the output channel has signaled
+	closure (e.g. EPIPE).
+
+== "cqueues.errno" Module ==
+
+errno[]
+	A table mapping all system error string macros to numerical error
+	codes, and all numerical error codes to system error string macros.
+
+errno.strerror(code)
+	Returns string returned by strerror(3). [FUTURE: Will also handle
+	embedded socket.c and dns.c library error codes.]
