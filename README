@@ -1,18 +1,25 @@
 == DEPENDENCIES ==
 
 The Makefile requires GNU Make. The source code should build with either GCC
-or clang. It does not yet compile with Solaris SunPro, although it's close.
-Note also that it expects the Lua 5.2 headers to exist in
-$(includedir)/lua/5.2. This is, unfortunately, not the default install
-location for Lua headers, which makes Lua 5.1 and Lua 5.2 coexistence
-troublesome. To source the usual location, try something like
+or clang. It does not yet compile with Solaris SunPro--patches welcome.
+
+The Makefile expects Lua 5.2 headers to exist in $(includedir)/lua/5.2. This
+is unfortunately not the default install location for Lua headers, although
+it quite obviously ought to be. To source the usual location, try something
+like
 
 	make lua52include=/opt/lua52/include
 
 If you use your own Makefile, note that GCC and especially clang may emit
 copious warnings about initializers and unused parameters. These warnings
 are stupid. Use -Wno-override-init (GCC), -Wno-initializer-overrides (clang)
-and -Wno-unused to quiet these.
+and -Wno-unused to quiet these. For other warnings, patches welcome.
+
+M4 and awk are required to generate errno.c. It relies on mk/errno.list to
+enumerate the system error macro names. mk/errno.list is a small
+POSIX-compatible shell script. By default it processes GCC's -dM macro list
+(clang also supports this option). For SunPro it uses a slightly cruder
+method.
 
 cqueues should work (plus or minus a few tweaks) on recent versions of
 Linux, OS X, Solaris, NetBSD, FreeBSD, OpenBSD, and derivatives. The only
@@ -22,9 +29,7 @@ interface is added to the embedded "kpoll" library.
 cqueues requires Lua 5.2. It's not portable to Lua 5.1 because it relies on
 ephemeron tables to prevent coroutine/controller reference cycles. LuaJIT
 patches are welcome, but probably won't make it into mainline unless they're
-relatively small or any refactoring results in a saner overall
-implementation. Inclusion of diff files in the source tree is an
-alternative.
+relatively small or result in a saner overall implementation.
 
 
 == USAGE ==
