@@ -97,7 +97,11 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#if __GNUC__
 #define DNS_NOTUSED __attribute__((unused))
+#else
+#define DNS_NOTUSED
+#endif
 
 #if __clang__
 #pragma clang diagnostic push

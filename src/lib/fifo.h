@@ -58,7 +58,7 @@
 
 #define FIFO_VENDOR "william@25thandClement.com"
 
-#define FIFO_V_REL  0x20111113 /* 0x20100904 */
+#define FIFO_V_REL  0x20120713 /* 0x20111113 */
 #define FIFO_V_ABI  0x20111113 /* 0x20100815 */
 #define FIFO_V_API  0x20111113 /* 0x20100904 */
 
@@ -81,6 +81,12 @@ static inline int fifo_v_api(void) { return FIFO_V_API; }
 
 #define FIFO_PASTE(a, b) a ## b
 #define FIFO_XPASTE(a, b) FIFO_PASTE(a, b)
+
+#if __GNUC__
+#define FIFO_NOTUSED __attribute__((unused))
+#else
+#define FIFO_NOTUSED
+#endif
 
 
 /*
@@ -157,9 +163,7 @@ static inline struct fifo *fifo_from(struct fifo *fifo, void *src, size_t size) 
 #define fifo_from(...)        FIFO_XPASTE(fifo_from, FIFO_NARG(__VA_ARGS__))(__VA_ARGS__)
 
 
-static struct fifo *fifo_reset() __attribute__((unused));
-
-static struct fifo *fifo_reset(struct fifo *fifo) {
+FIFO_NOTUSED static struct fifo *fifo_reset(struct fifo *fifo) {
 	if (fifo->base != fifo->sbuf.iov_base)
 		free(fifo->base);
 
@@ -167,9 +171,7 @@ static struct fifo *fifo_reset(struct fifo *fifo) {
 } /* fifo_reset() */
 
 
-static struct fifo *fifo_purge() __attribute__((unused));
-
-static struct fifo *fifo_purge(struct fifo *fifo) {
+FIFO_NOTUSED static struct fifo *fifo_purge(struct fifo *fifo) {
 	fifo->head  = 0;
 	fifo->count = 0;
 	fifo->rbits.byte  = 0;
@@ -317,9 +319,7 @@ static size_t fifo_wvec(struct fifo *fifo, struct iovec *iov, _Bool realign) {
 #define fifo_wvec(...) fifo_wvec3(__VA_ARGS__, 0)
 
 
-static size_t fifo_slice() __attribute__((unused));
-
-static size_t fifo_slice(struct fifo *fifo, struct iovec *iov, size_t p, size_t count) {
+FIFO_NOTUSED static size_t fifo_slice(struct fifo *fifo, struct iovec *iov, size_t p, size_t count) {
 	size_t pe;
 
 	if (p > fifo->count) {
@@ -410,9 +410,7 @@ static inline size_t fifo_rewind(struct fifo *fifo, size_t count) {
 } /* fifo_rewind() */
 
 
-static int fifo_write() __attribute__((unused));
-
-static int fifo_write(struct fifo *fifo, const void *src, size_t len) {
+FIFO_NOTUSED static int fifo_write(struct fifo *fifo, const void *src, size_t len) {
 	const unsigned char *p = src, *pe = p + len;
 	struct iovec iov;
 	size_t n;
@@ -431,9 +429,7 @@ static int fifo_write(struct fifo *fifo, const void *src, size_t len) {
 } /* fifo_write() */
 
 
-static size_t fifo_read() __attribute__((unused));
-
-static size_t fifo_read(struct fifo *fifo, void *dst, size_t lim) {
+FIFO_NOTUSED static size_t fifo_read(struct fifo *fifo, void *dst, size_t lim) {
 	unsigned char *p = dst, *pe = p + lim;
 	struct iovec iov;
 	size_t n;
@@ -508,9 +504,7 @@ static inline int fifo_scan(struct fifo *fifo, size_t *p) {
 
 #define FIFO_NOINFO 1
 
-static void fifo_dump() __attribute__((unused));
-
-static void fifo_dump(struct fifo *fifo, FILE *fp, int flags) {
+FIFO_NOTUSED static void fifo_dump(struct fifo *fifo, FILE *fp, int flags) {
 	static const unsigned char hex[] = "0123456789abcdef";
 	size_t p, n;
 	int ch;
@@ -581,9 +575,7 @@ static inline size_t fifo_wbits(struct fifo *fifo) {
 } /* fifo_wbits() */
 
 
-static unsigned long long fifo_unpack() __attribute__((unused));
-
-static unsigned long long fifo_unpack(struct fifo *fifo, unsigned count) {
+FIFO_NOTUSED static unsigned long long fifo_unpack(struct fifo *fifo, unsigned count) {
 	unsigned long long bits = 0;
 	unsigned mask, nbits;
 
@@ -610,9 +602,7 @@ static unsigned long long fifo_unpack(struct fifo *fifo, unsigned count) {
 } /* fifo_unpack() */
 
 
-static int fifo_pack() __attribute__((unused));
-
-static int fifo_pack(struct fifo *fifo, unsigned long long bits, unsigned count) {
+FIFO_NOTUSED static int fifo_pack(struct fifo *fifo, unsigned long long bits, unsigned count) {
 	unsigned mask, nbits;
 	int error;
 

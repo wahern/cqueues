@@ -13,10 +13,6 @@ VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
 all: cqueues.so
 
-ifeq ($(VENDOR.OS), SunOS)
-CC=gcc # sunpro C not yet support
-endif
-
 CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
 
 ifeq ($(VENDOR.CC), gcc)

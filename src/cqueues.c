@@ -63,7 +63,11 @@
 
 #define HAI SAY("hai")
 
+#if __GNUC__
 #define NOTUSED __attribute__((unused))
+#else
+#define NOTUSED
+#endif
 
 
 /*

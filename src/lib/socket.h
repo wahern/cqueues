@@ -60,7 +60,7 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120712
+#define SOCKET_V_REL  0x20120713
 #define SOCKET_V_ABI  0x20120711
 #define SOCKET_V_API  0x20120711
 
@@ -182,6 +182,12 @@ struct so_options {
  * Use sockaddr_arg_t where we might use the void pointer, and use the
  * accessor function sockaddr_ref() to return the union sockaddr_arg object.
  */
+#if __GNUC__
+#define SO_TRANSPARENT __attribute__((__transparent_union__))
+#else
+#define SO_TRANSPARENT
+#endif
+
 union sockaddr_arg {
 	struct sockaddr *sa;
 	struct sockaddr_storage *ss;
@@ -191,7 +197,7 @@ union sockaddr_arg {
 	struct sockaddr_un *sun;
 #endif
 	void *sp;
-} __attribute__((__transparent_union__));
+} SO_TRANSPARENT;
 
 #if __GNUC__
 typedef union sockaddr_arg sockaddr_arg_t;
