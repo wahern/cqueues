@@ -1391,6 +1391,13 @@ static int cqueue_interpose(lua_State *L) {
 } /* cqueue_interpose() */
 
 
+static int cqueue_monotime(lua_State *L) {
+	lua_pushnumber(L, monotime());
+
+	return 1;
+} /* cqueue_monotime() */
+
+
 static const luaL_Reg cqueue_methods[] = {
 	{ "step",    &cqueue_step },
 	{ "attach",  &cqueue_attach },
@@ -1413,6 +1420,7 @@ static const luaL_Reg cqueue_metatable[] = {
 static const luaL_Reg cqueues_globals[] = {
 	{ "new",       &cqueue_new },
 	{ "interpose", &cqueue_interpose },
+	{ "monotime",  &cqueue_monotime },
 	{ NULL,        NULL }
 }; /* cqueues_globals[] */
 
