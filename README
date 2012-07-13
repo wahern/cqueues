@@ -159,7 +159,9 @@ socket:setmode([input], [output])
 	See socket.connect for mode flags. One or both modes can be nil,
 	in which case the mode is left unchanged.
 
-	Returns previous input and output mode strings.
+	Returns the previous input and output modes as fixed-sized strings.
+	At present the first character is one of "t" or "b", and the second
+	character one of "n", "l", "f", or "-" (for in the input mode).
 
 socket:read(...)
 	Same as Lua file:read, except for addition of a "limit" format. See
