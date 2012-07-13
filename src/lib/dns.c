@@ -808,7 +808,7 @@ static int dns_poll(int fd, short events, int timeout) {
 	if (!events)
 		return 0;
 
-	assert(fd >= 0 && fd < FD_SETSIZE);
+	assert(fd >= 0 && (unsigned)fd < FD_SETSIZE);
 
 	FD_ZERO(&rset);
 	FD_ZERO(&wset);
