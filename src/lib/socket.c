@@ -828,8 +828,6 @@ static _Bool so_needign(struct socket *so, _Bool rdonly) {
 
 
 static void so_pipeign(struct socket *so, struct sigaction *oact, _Bool rdonly) {
-	struct sigaction ign;
-
 	if (so_needign(so, rdonly))
 		so_ignore(SIGPIPE, oact);
 } /* so_pipeign() */
