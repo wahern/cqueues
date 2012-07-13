@@ -67,16 +67,20 @@ cqueues.interpose(name, function)
 	Add or interpose a cqueues class method. Returns the previous
 	method, if any.
 
-cqueues.new
+cqueues.monotime()
+	Return the system's monotonic clock time, usually
+	clock_gettime(CLOCK_MONOTONIC).
+
+cqueues.new()
 	Create a new cqueues object
 
-cqueues:attach(coroutine)
+cqueue:attach(coroutine)
 	Attach and manage the specified coroutine.
 
-cqueues:wrap(function)
+cqueue:wrap(function)
 	Execute function inside a new coroutine managed by the controller.
 
-cqueues:step([timeout])
+cqueue:step([timeout])
 	Step once through the event queue. If no timeout is provided, it
 	blocks indefinitely until a descriptor event or timeout fires.
 
@@ -87,11 +91,11 @@ cqueues:step([timeout])
 	kernel queue. In the future, internal, unrecoverable errors should
 	be thrown and only coroutine errors returned directly.]
 
-cqueues:empty()
+cqueue:empty()
 	Returns true if there are no more descriptor or timeout events
-	queued.
+	queued, false otherwise.
 
-cqueues:count()
+cqueue:count()
 	Returns a count of managed coroutines.
 
 
@@ -120,20 +124,24 @@ socket.connect(host, port, [mode])
 	creates, perhaps to "tn".
 
 socket.listen(host, port)
-	Return a new socket immediately ready for accepting new connections.
+	Return a new socket immediately ready for accepting connections.
 
 socket:connect()
 	Wait for connection establishment to succeed. [UNFINISHED]
 
 socket:listen()
-	Wait for socket binding if DNS resolution required for binding
-	address. [UNFINISHED]
+	Wait for socket binding to complete, which may have been delayed if
+	the specified host required DNS resolution. [UNFINISHED]
 
 socket:accept([timeout])
-	Wait for a client socket on listening socket.
+	Wait for and return an incoming client socket on a listening object.
 
 socket:clients([timeout])
-	Iterator over socket:accept(). for con in srv:clients() do ... end.
+	Iterator over socket:accept: for con in srv:clients() do ... end.
+
+socket:certify(certificate)
+	Associate a certificate for subsequent :starttls operation.
+	[UNFINISHED]
 
 socket:starttls()
 	Place socket into TLS mode. Returns immediately. [FUTURE: take
@@ -146,56 +154,61 @@ socket:setmode([input], [output])
 	See socket.connect for mode flags. One or both modes can be nil,
 	in which case the mode is left unchanged.
 
-	Returns previous input and output mode flags.
+	Returns previous input and output mode strings.
 
 socket:read(...)
-	Same as Lua file:read(). [UNFINISHED: Does not yet implement "*a" or
-	"*n".]
+	Same as Lua file:read, except for addition of a "limit" format. See
+	socket:recv. [UNFINISHED: Does not yet implement "*a" or "*n".]
 
 socket:write(...)
-	Same as Lua file:write().
+	Same as Lua file:write.
 
 socket:flush([mode])
 	Flushes output buffer. Mode is one of the "nlf" flags described in
-	socket.connect(). A nil mode implies "n", i.e. no buffering and thus
+	socket.connect. A nil mode implies "n", i.e. no buffering and thus
 	effects a full flush. An empty string mode resolves to the existing
 	configured output buffering mode.
 
 socket:recv(format, [mode])
-	Similar to file:read(), except returns immediately. On success
-	returns the string or number. On failure returns nil and a numeric
-	error code (usually errno.EAGAIN or errno.EPIPE).
+	Similar to file:read, except takes only a single format and returns
+	immediately. On success returns the string or number. On failure
+	returns nil and a numeric error code (usually errno.EAGAIN or
+	errno.EPIPE).
 
-	In addition to file:read() formats, also supports limit block reads.
-	That is, whereas :recv(1024) returns nil or a 1024 byte string,
-	:recv(-1024) returns nil or a string with length in the range 1 to
-	1024 bytes.
+	In addition to the Lua file:read formats, also supports limit block
+	reads. That is, whereas :recv(1024) returns nil or a 1024 byte
+	string, :recv(-1024) returns nil or a string with length in the
+	range 1 to 1024 bytes.
 
 	Mode is as described in socket.connect. Defaults to configured
 	input mode.
 
 socket:send(string, i, j, [mode])
-	Write out string beginning from string[i] to string[j]. Immediately
-	returns 2 values: count of bytes written (0 to j-i+1), and numerical
-	error code, if any (usually errno.EAGAIN or errno.EPIPE).
+	Write out the slice string[i,j]. Similar to passing string:sub(i, j)
+	without instantiating a new string object. Immediately returns 2
+	values: count of bytes written (0 to j-i+1), and numerical error
+	code, if any (usually errno.EAGAIN or errno.EPIPE).
 
 socket:shutdown(how)
-	Simple binding to shutdown(2). `how' is a string containing one
-	or more flags:
+	Simple binding to shutdown(2). `how' is a string containing one or
+	both of the flags 'r' or 'w'.
 
-		'r' - Analagous to shutdown(SHUT_RD)
-		'w' - Analagous to shutdown(SHUT_WR)
+		"r" - analagous to shutdown(SHUT_RD)
+		"w" - analagous to shutdown(SHUT_WR)
 
 socket:eof()
 	Returns 2 boolean values representing whether EOF has been received
 	on the input channel, and whether the output channel has signaled
 	closure (e.g. EPIPE).
 
+
 == "cqueues.errno" Module ==
 
 errno[]
 	A table mapping all system error string macros to numerical error
 	codes, and all numerical error codes to system error string macros.
+	Thus, errno.EAGAIN evaluates to a numeric error code, and
+	errno[errno.EAGAIN] evaluates to the string "EAGAIN".
 
 errno.strerror(code)
 	Returns string returned by strerror(3). [FUTURE: Will also handle
