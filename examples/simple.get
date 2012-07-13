@@ -1,3 +1,5 @@
+#!/usr/local/lua52/bin/lua
+
 local cqueues = require("cqueues")
 local socket = require("cqueues.socket")
 local host, port = ...
@@ -16,6 +18,7 @@ local cq = cqueues.new()
 cq:wrap(function()
 	http:write("GET / HTTP/1.0\n")
 	http:write(string.format("Host: %s:%d\n\n", host, port))
+	http:shutdown("w")
 
 	for ln in http:lines() do
 		print(ln)

@@ -121,7 +121,6 @@ socket.connect(host, port, [mode])
 
 socket.listen(host, port)
 	Return a new socket immediately ready for accepting new connections.
-	[UNTESTED]
 
 socket:connect()
 	Wait for connection establishment to succeed. [UNFINISHED]
@@ -129,6 +128,12 @@ socket:connect()
 socket:listen()
 	Wait for socket binding if DNS resolution required for binding
 	address. [UNFINISHED]
+
+socket:accept([timeout])
+	Wait for a client socket on listening socket.
+
+socket:clients([timeout])
+	Iterator over socket:accept(). for con in srv:clients() do ... end.
 
 socket:starttls()
 	Place socket into TLS mode. Returns immediately. [FUTURE: take

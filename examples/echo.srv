@@ -1,0 +1,28 @@
+#!/usr/local/lua52/bin/lua
+--
+-- echo.srv [bind-address [[bind-port] [wait-timeout]]]
+--
+local cqueues = require("cqueues")
+local socket = require("cqueues.socket")
+local bind, port, wait = ...
+
+local srv = socket.listen(bind or "127.0.0.1", tonumber(port or 8000))
+
+local loop = cqueues.new()
+
+loop:wrap(function()
+	for con in srv:clients(wait) do
+		loop:wrap(function()
+			for ln in con:lines("*L") do
+				con:write(ln)
+			end
+
+			con:shutdown("w")
+		end)
+	end
+end)
+
+while not loop:empty() do
+	local ok, err = loop:step()
+	if not ok then error("loop.step: " .. err) end
+end

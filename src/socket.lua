@@ -2,6 +2,46 @@ local socket = require("_cqueues.socket")
 local cqueues = require("cqueues")
 local errno = require("cqueues.errno")
 
+
+--
+-- Yielding socket:accept
+--
+local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
+	local deadline = (timeout and (cqueues.monotime() + timeout)) or nil
+	local con, syerr = oaccept(self)
+
+	while not con do
+		if syerr == errno.EAGAIN then
+			local curtime = cqueues.monotime()
+
+			if deadline then
+				if deadline <= curtime then
+					return nil
+				end
+
+				cqueues.poll(self, { timeout = function() return curtime - deadline end })
+			else
+				cqueues.poll(self)
+			end
+		else
+			error("socket.flush: " .. errno.strerror(syerr))
+		end
+
+		con, syerr = oaccept(self)
+	end
+
+	return con
+end)
+
+
+--
+-- socket:clients
+--
+socket.interpose("clients", function(self, timeout)
+	return function() return self:accept(timeout) end
+end)
+
+
 --
 -- Yielding socket:flush
 --
