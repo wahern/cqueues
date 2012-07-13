@@ -65,8 +65,8 @@
 
 #define DNS_VENDOR "william@25thandClement.com"
 
-#define DNS_V_REL  0x20120711
-#define DNS_V_ABI  0x20120710
+#define DNS_V_REL  0x20120712
+#define DNS_V_ABI  0x20120712
 #define DNS_V_API  0x20120618
 
 
@@ -316,7 +316,7 @@ extern unsigned (*dns_random)(void);
 struct dns_header {
 		unsigned qid:16;
 
-#if (defined BYTE_ORDER && BYTE_ORDER == BIG_ENDIAN) || defined _BIG_ENDIAN
+#if (defined BYTE_ORDER && BYTE_ORDER == BIG_ENDIAN) || (defined __sun && defined _BIG_ENDIAN)
 		unsigned qr:1;
 		unsigned opcode:4;
 		unsigned aa:1;
