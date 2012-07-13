@@ -359,6 +359,11 @@ typedef struct epoll_event kpoll_event_t;
 #elif HAVE_PORTS
 typedef port_event_t kpoll_event_t;
 #else
+/* NetBSD uses intptr_t, others use void *, for .udata */
+#define KP_P2UDATA(p) ((__typeof__(((struct kevent *)0)->udata))(p))
+#define KP_UDATA2P(udata) ((void *)(udata))
+#define KP_SET(ev, a, b, c, d, e, f) EV_SET((ev), (a), (b), (c), (d), (e), KP_P2UDATA(f))
+
 typedef struct kevent kpoll_event_t;
 #endif
 
@@ -429,7 +434,7 @@ static inline void *kpoll_udata(const kpoll_event_t *event) {
 #elif HAVE_PORTS
 	return event->portev_user;
 #else
-	return event->udata;
+	return KP_UDATA2P(event->udata);
 #endif
 } /* kpoll_udata() */
 
@@ -499,7 +504,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 
 	if (events & POLLIN) {
 		if (!(*state & POLLIN)) {
-			EV_SET(&event, fd, EVFILT_READ, EV_ADD, 0, 0, udata);
+			KP_SET(&event, fd, EVFILT_READ, EV_ADD, 0, 0, udata);
 
 			if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 				return errno;
@@ -507,7 +512,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 			*state |= POLLIN;
 		}
 	} else if (*state & POLLIN) {
-		EV_SET(&event, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+		KP_SET(&event, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
 
 		if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 			return errno;
@@ -517,7 +522,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 
 	if (events & POLLOUT) {
 		if (!(*state & POLLOUT)) {
-			EV_SET(&event, fd, EVFILT_WRITE, EV_ADD, 0, 0, udata);
+			KP_SET(&event, fd, EVFILT_WRITE, EV_ADD, 0, 0, udata);
 
 			if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 				return errno;
@@ -525,7 +530,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 			*state |= POLLOUT;
 		}
 	} else if (*state & POLLOUT) {
-		EV_SET(&event, fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+		KP_SET(&event, fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
 
 		if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 			return errno;
@@ -1365,7 +1370,7 @@ static int cqueue_pollfd(lua_State *L) {
 
 
 static int cqueue_events(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	luaL_checkudata(L, 1, CQUEUE_CLASS);
 
 	lua_pushliteral(L, "r");
 

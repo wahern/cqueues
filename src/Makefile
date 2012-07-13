@@ -11,13 +11,16 @@ lua52cpath = $(libdir)/lua/5.2
 VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
+cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
+            > /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi;)
+
 all: cqueues.so
 
 CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
-DFLAGS = -Wall -Wextra -Wno-override-init -Wno-unused -g
+DFLAGS = -Wall -Wextra $(call cc-option, -Wno-override-init) -Wno-unused -g
 CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
 endif
 
