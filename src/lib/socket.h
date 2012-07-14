@@ -108,18 +108,21 @@ extern int socket_debug;
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define SO_ERRNO0	(-(('s' << 24) | ('c' << 16) | ('k' << 8) | '9'))
-#define SO_ISERRNO(e)	((e) >= SO_ERRNO0 && (e) < SO_EEND)
+#define SO_EBASE (-(('s' << 24) | ('c' << 16) | ('k' << 8) | '9'))
 
 enum so_errno {
-	SO_EOPENSSL = SO_ERRNO0,
+	SO_EOPENSSL = SO_EBASE,
 	SO_EX509INT,	/* See SSL_ERROR_WANT_X509_LOOKUP in SSL_get_error(3). */
 	SO_ENOTVRFD,
 	SO_ECLOSURE,
-	SO_EEND,
+	SO_ELAST,
 }; /* enum so_errno */
 
 const char *so_strerror(int);
+
+#define SO_ERRNO0 SO_EBASE
+#define SO_EEND SO_ELAST
+#define SO_ISERRNO(e) ((e) >= SO_ERRNO0 && (e) < SO_EEND)
 
 
 /*
