@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+
+: ${CC:=cc}
+
+PATH="$(dirname $0):${PATH}"
+
+errno.list | awk 'BEGIN{ print "#include <errno.h>\n" } { print $1 }' | \
+${CC} -E - | grep '^[0123456789]*$' | sort -n | tail -1
