@@ -68,6 +68,15 @@ self-contained, without any global state.
 == API ==
 == "cqueues" Module ==
 
+cqueues.VENDOR
+	String describing the vendor. Default: "william@25thandClement.com".
+
+cqueues.VERSION
+	Number describing the latest release version. Formatted as YYYYMMDD.
+
+cqueues.COMMIT
+	Git commit hash string of HEAD.
+
 cqueues.interpose(name, function)
 	Add or interpose a cqueues class method. Returns the previous
 	method, if any.
