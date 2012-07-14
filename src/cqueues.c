@@ -177,11 +177,11 @@ static inline int f2ms(const double f) {
 
 static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
 	if (isnormal(f) && !signbit(f)) {
-		if (f > LONG_MAX / 1000) {
-			ts->tv_sec = LONG_MAX;
-			ts->tv_sec = LONG_MAX % 1000000000L;
+		if ((time_t)f > INT_MAX) {
+			ts->tv_sec = (time_t)INT_MAX;
+			ts->tv_nsec = 0;
 		} else {
-			ts->tv_sec = (long)f;
+			ts->tv_sec = (time_t)f;
 			ts->tv_nsec = (long)(f * 1000000000.0) % 1000000000L;
 		}
 

@@ -1,7 +1,7 @@
 == DEPENDENCIES ==
 
-The Makefile requires GNU Make. The source code should build with either GCC
-or clang. Solaris SunPro complains but gets the job done all the same.
+The Makefile requires GNU Make. The source code should build with recent
+GCC, clang, or Solaris SunPro compilers.
 
 The Makefile expects Lua 5.2 headers to exist in $(includedir)/lua/5.2. This
 is unfortunately not the default install location for Lua headers, although
