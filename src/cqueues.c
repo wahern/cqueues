@@ -52,6 +52,17 @@
 
 
 /*
+ * V E R S I O N  I N T E R F A C E S
+ *
+ * If forking change CQUEUES_VENDOR to avoid confusion.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define CQUEUES_VENDOR "william@25thandClement.com"
+#define CQUEUES_VERSION 20120713L
+
+
+/*
  * D E B U G  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -1440,6 +1451,19 @@ int luaopen__cqueues(lua_State *L) {
 	lua_pop(L, 1);
 
 	luaL_newlib(L, cqueues_globals);
+
+	lua_pushliteral(L, CQUEUES_VENDOR);
+	lua_setfield(L, -2, "VENDOR");
+
+	lua_pushnumber(L, CQUEUES_VERSION);
+	lua_setfield(L, -2, "VERSION");
+
+#if defined CQUEUES_COMMIT
+	if (sizeof CQUEUES_COMMIT > 1) {
+		lua_pushliteral(L, CQUEUES_COMMIT);
+		lua_setfield(L, -2, "COMMIT");
+	}
+#endif
 
 	return 1;
 } /* luaopen__cqueues() */

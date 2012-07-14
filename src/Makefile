@@ -14,6 +14,7 @@ VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 all: cqueues.so
 
 CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
+CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
 DFLAGS = -Wall -Wextra -Wno-override-init -Wno-unused -g
