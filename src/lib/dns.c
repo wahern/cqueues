@@ -586,7 +586,6 @@ static unsigned short dns_k_shuffle16(unsigned short n, unsigned s) {
 
 /*
  * Monotonic Time
- *
  */
 static time_t dns_now(void) {
 	/* XXX: Assumes sizeof (time_t) <= sizeof (sig_atomic_t) */
@@ -1977,7 +1976,7 @@ static unsigned short dns_rr_i_start(struct dns_rr_i *i, struct dns_packet *P) {
 	else
 		rp = 12;
 
-	for (rp = 12; rp < P->end; rp = dns_rr_skip(rp, P)) {
+	for (; rp < P->end; rp = dns_rr_skip(rp, P)) {
 		if ((error = dns_rr_parse(&rr, rp, P)))
 			continue;
 
@@ -2947,7 +2946,7 @@ int dns_sshfp_push(struct dns_packet *P, struct dns_sshfp *fp) {
 int dns_sshfp_cmp(const struct dns_sshfp *a, const struct dns_sshfp *b) {
 	int cmp;
 
-	if ((cmp = a->algo - b->algo) || (cmp - a->type - b->type))
+	if ((cmp = a->algo - b->algo) || (cmp = a->type - b->type))
 		return cmp;
 
 	switch (a->type) {
@@ -5407,7 +5406,7 @@ static int dns_res_tcp2type(int tcp) {
 	}
 } /* dns_res_tcp2type() */
 
-struct dns_resolver *dns_res_open(struct dns_resolv_conf *resconf, struct dns_hosts *hosts, struct dns_hints *hints, struct dns_cache *cache, const struct dns_options *opts, int *error_) {
+struct dns_resolver *dns_res_open(struct dns_resolv_conf *resconf, struct dns_hosts *hosts, struct dns_hints *hints, struct dns_cache *cache, const struct dns_options *opts, int *_error) {
 	static const struct dns_resolver R_initializer
 		= { .refcount = 1, };
 	struct dns_resolver *R	= 0;
@@ -5433,7 +5432,7 @@ struct dns_resolver *dns_res_open(struct dns_resolv_conf *resconf, struct dns_ho
 	 * dns_resconf_local() by default would create undesirable surpises.
 	 */
 	if (!resconf || !hosts || !hints)
-		goto error;
+		goto _error;
 
 	if (!(R = malloc(sizeof *R)))
 		goto syerr;
@@ -5453,8 +5452,8 @@ struct dns_resolver *dns_res_open(struct dns_resolv_conf *resconf, struct dns_ho
 syerr:
 	error	= dns_syerr();
 error:
-	*error_	= error;
-
+	*_error	= error;
+_error:
 	dns_res_close(R);
 
 	dns_resconf_close(resconf);
