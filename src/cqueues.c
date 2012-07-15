@@ -80,6 +80,16 @@
 #define NOTUSED
 #endif
 
+#if __GNUC__
+#define NOTREACHED __builtin_unreachable()
+#else
+#define NOTREACHED (void)0
+#endif
+
+#if __GNUC__
+#define luaL_error(...) ({ int tmp = luaL_error(__VA_ARGS__); NOTREACHED; tmp; })
+#endif
+
 
 /*
  * U T I L I T Y  R O U T I N E S
