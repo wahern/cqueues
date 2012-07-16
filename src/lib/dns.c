@@ -52,9 +52,9 @@
 
 #include <ctype.h>		/* isspace(3) isdigit(3) */
 
-#include <time.h>		/* time_t time(2) */
+#include <time.h>		/* time_t time(2) difftime(3) */
 
-#include <signal.h>		/* SIGPIPE SIG_IGN sig_atomic_t sigaction(2) sigemptyset(3) */
+#include <signal.h>		/* SIGPIPE SIG_IGN sigaction(2) sigemptyset(3) */
 
 #include <errno.h>		/* errno EINVAL ENOENT */
 
@@ -584,35 +584,30 @@ static unsigned short dns_k_shuffle16(unsigned short n, unsigned s) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-/*
- * Monotonic Time
- */
-static time_t dns_now(void) {
-	/* XXX: Assumes sizeof (time_t) <= sizeof (sig_atomic_t) */
-	static volatile sig_atomic_t last, tick;
-	volatile sig_atomic_t tmp_last, tmp_tick;
-	time_t now;
+#define DNS_MAXINTERVAL 300
 
-	time(&now);
+struct dns_clock {
+	time_t sample, elapsed;
+}; /* struct dns_clock */
 
-	tmp_last	= last;
+static void dns_begin(struct dns_clock *clk) {
+	clk->sample = time(0);
+	clk->elapsed = 0;
+} /* dns_begin() */
 
-	if (now > tmp_last) {
-		tmp_tick	= tick;
-		tmp_tick	+= now - tmp_last;
-		tick		= tmp_tick;
-	}
+static time_t dns_elapsed(struct dns_clock *clk) {
+	time_t curtime;
 
-	last	= now;
+	if ((time_t)-1 == time(&curtime))
+		return clk->elapsed;
 
-	return tick;
-} /* dns_now() */
+	if (curtime > clk->sample)
+		clk->elapsed += (time_t)MIN(difftime(curtime, clk->sample), DNS_MAXINTERVAL);
 
-static time_t dns_elapsed(time_t from) {
-	time_t now	= dns_now();
+	clk->sample = curtime;
 
-	return (now > from)? now - from : 0;
-} /* dns_elpased() */
+	return clk->elapsed;
+} /* dns_elapsed() */
 
 
 static size_t dns_af_len(int af) {
@@ -4783,7 +4778,7 @@ struct dns_socket {
 	struct dns_packet *query;
 	size_t qout;
 
-	time_t began;
+	struct dns_clock elapsed;
 
 	struct dns_packet *answer;
 	size_t alen, apos;
@@ -4965,7 +4960,8 @@ int dns_so_submit(struct dns_socket *so, struct dns_packet *Q, struct sockaddr *
 
 	so->query	= Q;
 	so->qout	= 0;
-	so->began	= dns_now();
+
+	dns_begin(&so->elapsed);
 
 	if (dns_header(so->query)->qid == 0)
 		dns_header(so->query)->qid	= dns_so_mkqid(so);
@@ -5240,7 +5236,7 @@ error:
 
 
 time_t dns_so_elapsed(struct dns_socket *so) {
-	return dns_elapsed(so->began);
+	return dns_elapsed(&so->elapsed);
 } /* dns_so_elapsed() */
 
 
@@ -5371,7 +5367,7 @@ struct dns_resolver {
 	enum dns_type qtype;
 	enum dns_class qclass;
 
-	time_t began;
+	struct dns_clock elapsed;
 
 	dns_resconf_i_t search;
 
@@ -6264,7 +6260,7 @@ int dns_res_pollfd(struct dns_resolver *R) {
 
 
 time_t dns_res_elapsed(struct dns_resolver *R) {
-	return dns_elapsed(R->began);
+	return dns_elapsed(&R->elapsed);
 } /* dns_res_elapsed() */
 
 
@@ -6282,7 +6278,7 @@ int dns_res_submit(struct dns_resolver *R, const char *qname, enum dns_type qtyp
 	R->qtype	= qtype;
 	R->qclass	= qclass;
 
-	R->began	= dns_now();
+	dns_begin(&R->elapsed);
 
 	return 0;
 } /* dns_res_submit() */
