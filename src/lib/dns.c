@@ -3643,6 +3643,11 @@ struct dns_resolv_conf *dns_resconf_local(int *error_) {
 	if ((error = dns_resconf_loadpath(resconf, "/etc/resolv.conf")))
 		goto error;
 
+	if ((error = dns_nssconf_loadpath(resconf, "/etc/nsswitch.conf"))) {
+		if (error != ENOENT)
+			goto error;
+	}
+
 	return resconf;
 error:
 	*error_	= error;
@@ -3653,25 +3658,13 @@ error:
 } /* dns_resconf_local() */
 
 
-struct dns_resolv_conf *dns_resconf_root(int *error_) {
+struct dns_resolv_conf *dns_resconf_root(int *error) {
 	struct dns_resolv_conf *resconf;
-	int error;
 
-	if (!(resconf = dns_resconf_open(&error)))
-		goto error;
-
-	if ((error = dns_resconf_loadpath(resconf, "/etc/resolv.conf")))
-		goto error;
-
-	resconf->options.recurse	= 1;
+	if ((resconf = dns_resconf_local(error)))
+		resconf->options.recurse = 1;
 
 	return resconf;
-error:
-	*error_	= error;
-
-	dns_resconf_close(resconf);
-
-	return 0;
 } /* dns_resconf_root() */
 
 
@@ -3985,6 +3978,514 @@ int dns_resconf_loadpath(struct dns_resolv_conf *resconf, const char *path) {
 } /* dns_resconf_loadpath() */
 
 
+struct dns_anyconf {
+	char *token[16];
+	unsigned count;
+	char buffer[1024], *tp, *cp;
+}; /* struct dns_anyconf */
+
+
+static void dns_anyconf_reset(struct dns_anyconf *cf) {
+	cf->count = 0;
+	cf->tp = cf->cp = cf->buffer;
+} /* dns_anyconf_reset() */
+
+
+static int dns_anyconf_push(struct dns_anyconf *cf) {
+	if (!(cf->cp < endof(cf->buffer) && cf->count < lengthof(cf->token)))
+		return ENOMEM;
+
+	*cf->cp++ = '\0';
+	cf->token[cf->count++] = cf->tp;
+	cf->tp = cf->cp;
+
+	return 0;
+} /* dns_anyconf_push() */
+
+
+static void dns_anyconf_pop(struct dns_anyconf *cf) {
+	if (cf->count > 0) {
+		--cf->count;
+		cf->tp = cf->cp = cf->token[cf->count];
+		cf->token[cf->count] = 0;
+	}
+} /* dns_anyconf_pop() */
+
+
+static int dns_anyconf_addc(struct dns_anyconf *cf, int ch) {
+	if (!(cf->cp < endof(cf->buffer)))
+		return ENOMEM;
+
+	*cf->cp++ = ch;
+
+	return 0;
+} /* dns_anyconf_addc() */
+
+
+static _Bool dns_anyconf_match(const char *pat, int mc) {
+	_Bool match;
+	int pc;
+
+	if (*pat == '^') {
+		match = 0;
+		++pat;
+	} else {
+		match = 1;
+	}
+
+	while ((pc = *(const unsigned char *)pat++)) {
+		switch (pc) {
+		case '%':
+			if (!(pc = *(const unsigned char *)pat++))
+				return !match;
+
+			switch (pc) {
+			case 'a':
+				if (isalpha(mc))
+					return match;
+				break;
+			case 'd':
+				if (isdigit(mc))
+					return match;
+				break;
+			case 'w':
+				if (isalnum(mc))
+					return match;
+				break;
+			case 's':
+				if (isspace(mc))
+					return match;
+				break;
+			default:
+				if (mc == pc)
+					return match;
+				break;
+			} /* switch() */
+
+			break;
+		default:
+			if (mc == pc)
+				return match;
+			break;
+		} /* switch() */
+	} /* while() */
+
+	return !match;
+} /* dns_anyconf_match() */
+
+
+static int dns_anyconf_peek(FILE *fp) {
+	int ch;
+	ch = getc(fp);
+	ungetc(ch, fp);
+	return ch;
+} /* dns_anyconf_peek() */
+
+
+static size_t dns_anyconf_skip(const char *pat, FILE *fp) {
+	size_t count = 0;
+	int ch;
+
+	while (EOF != (ch = getc(fp))) {
+		if (dns_anyconf_match(pat, ch)) {
+			count++;
+			continue;
+		}
+
+		ungetc(ch, fp);
+
+		break;
+	}
+
+	return count;
+} /* dns_anyconf_skip() */
+
+
+static size_t dns_anyconf_scan(struct dns_anyconf *cf, const char *pat, FILE *fp, int *error) {
+	size_t len;
+	int ch;
+
+	while (EOF != (ch = getc(fp))) {
+		if (dns_anyconf_match(pat, ch)) {
+			if ((*error = dns_anyconf_addc(cf, ch)))
+				return 0;
+
+			continue;
+		} else {
+			ungetc(ch, fp);
+
+			break;
+		}
+	}
+
+	if ((len = cf->cp - cf->tp)) {
+		if ((*error = dns_anyconf_push(cf)))
+			return 0;
+
+		return len;
+	} else {
+		*error = 0;
+
+		return 0; 
+	}
+} /* dns_anyconf_scan() */
+
+
+DNS_NOTUSED static void dns_anyconf_dump(struct dns_anyconf *cf, FILE *fp) {
+	unsigned i;
+
+	fprintf(fp, "tokens:");
+
+	for (i = 0; i < cf->count; i++) {
+		fprintf(fp, " %s", cf->token[i]);
+	}
+
+	fputc('\n', fp);
+} /* dns_anyconf_dump() */
+
+
+enum dns_nssconf_keyword {
+	DNS_NSSCONF_INVALID = 0,
+	DNS_NSSCONF_HOSTS   = 1,
+	DNS_NSSCONF_SUCCESS,
+	DNS_NSSCONF_NOTFOUND,
+	DNS_NSSCONF_UNAVAIL,
+	DNS_NSSCONF_TRYAGAIN,
+	DNS_NSSCONF_CONTINUE,
+	DNS_NSSCONF_RETURN,
+	DNS_NSSCONF_FILES,
+	DNS_NSSCONF_DNS,
+	DNS_NSSCONF_MDNS,
+
+	DNS_NSSCONF_LAST,
+}; /* enum dns_nssconf_keyword */
+
+static enum dns_nssconf_keyword dns_nssconf_keyword(const char *word) {
+	static const char *list[] = {
+		[DNS_NSSCONF_HOSTS]    = "hosts",
+		[DNS_NSSCONF_SUCCESS]  = "success",
+		[DNS_NSSCONF_NOTFOUND] = "notfound",
+		[DNS_NSSCONF_UNAVAIL]  = "unavail",
+		[DNS_NSSCONF_TRYAGAIN] = "tryagain",
+		[DNS_NSSCONF_CONTINUE] = "continue",
+		[DNS_NSSCONF_RETURN]   = "return",
+		[DNS_NSSCONF_FILES]    = "files",
+		[DNS_NSSCONF_DNS]      = "dns",
+		[DNS_NSSCONF_MDNS]     = "mdns",
+	};
+	unsigned i;
+
+	for (i = 1; i < lengthof(list); i++) {
+		if (list[i] && 0 == strcasecmp(list[i], word))
+			return i;
+	}
+
+	return DNS_NSSCONF_INVALID;
+} /* dns_nssconf_keyword() */
+
+
+static enum dns_nssconf_keyword dns_nssconf_c2k(int ch) {
+	static const char map[] = {
+		['S'] = DNS_NSSCONF_SUCCESS,
+		['N'] = DNS_NSSCONF_NOTFOUND,
+		['U'] = DNS_NSSCONF_UNAVAIL,
+		['T'] = DNS_NSSCONF_TRYAGAIN,
+		['C'] = DNS_NSSCONF_CONTINUE,
+		['R'] = DNS_NSSCONF_RETURN,
+		['f'] = DNS_NSSCONF_FILES,
+		['F'] = DNS_NSSCONF_FILES,
+		['d'] = DNS_NSSCONF_DNS,
+		['D'] = DNS_NSSCONF_DNS,
+		['b'] = DNS_NSSCONF_DNS,
+		['B'] = DNS_NSSCONF_DNS,
+		['m'] = DNS_NSSCONF_MDNS,
+		['M'] = DNS_NSSCONF_MDNS,
+	};
+
+	return (ch >= 0 && ch < (int)lengthof(map))? map[ch] : DNS_NSSCONF_INVALID;
+} /* dns_nssconf_c2k() */
+
+
+DNS_PRAGMA_PUSH
+DNS_PRAGMA_QUIET
+
+static int dns_nssconf_k2c(int k) {
+	static const char map[DNS_NSSCONF_LAST] = {
+		[0 ... DNS_NSSCONF_LAST - 1] = '?',
+		[DNS_NSSCONF_SUCCESS]  = 'S',
+		[DNS_NSSCONF_NOTFOUND] = 'N',
+		[DNS_NSSCONF_UNAVAIL]  = 'U',
+		[DNS_NSSCONF_TRYAGAIN] = 'T',
+		[DNS_NSSCONF_CONTINUE] = 'C',
+		[DNS_NSSCONF_RETURN]   = 'R',
+		[DNS_NSSCONF_FILES]    = 'f',
+		[DNS_NSSCONF_DNS]      = 'b',
+		[DNS_NSSCONF_MDNS]     = 'm',
+	};
+
+	return (k >= 0 && k < (int)lengthof(map))? map[k] : '?';
+} /* dns_nssconf_k2c() */
+
+static const char *dns_nssconf_k2s(int k) {
+	static const char *const map[DNS_NSSCONF_LAST] = {
+		[0 ... DNS_NSSCONF_LAST - 1] = "",
+		[DNS_NSSCONF_SUCCESS]  = "SUCCESS",
+		[DNS_NSSCONF_NOTFOUND] = "NOTFOUND",
+		[DNS_NSSCONF_UNAVAIL]  = "UNAVAIL",
+		[DNS_NSSCONF_TRYAGAIN] = "TRYAGAIN",
+		[DNS_NSSCONF_CONTINUE] = "continue",
+		[DNS_NSSCONF_RETURN]   = "return",
+		[DNS_NSSCONF_FILES]    = "files",
+		[DNS_NSSCONF_DNS]      = "dns",
+		[DNS_NSSCONF_MDNS]     = "mdns",
+	};
+
+	return (k >= 0 && k < (int)lengthof(map))? map[k] : "";
+} /* dns_nssconf_k2s() */
+
+DNS_PRAGMA_POP
+
+
+int dns_nssconf_loadfile(struct dns_resolv_conf *resconf, FILE *fp) {
+	enum dns_nssconf_keyword source, status, action;
+	char lookup[sizeof resconf->lookup] = "", *lp;
+	struct dns_anyconf cf;
+	size_t i;
+	int error;
+
+	while (!feof(fp) && !ferror(fp)) {
+		dns_anyconf_reset(&cf);
+
+		dns_anyconf_skip("%s", fp);
+
+		if (!dns_anyconf_scan(&cf, "%w_", fp, &error))
+			goto nextent;
+
+		if (DNS_NSSCONF_HOSTS != dns_nssconf_keyword(cf.token[0]))
+			goto nextent;
+
+		dns_anyconf_pop(&cf);
+
+		if (!dns_anyconf_skip(": \t", fp))
+			goto nextent;
+
+		*(lp = lookup) = '\0';
+
+		while (dns_anyconf_scan(&cf, "%w_", fp, &error)) {
+			dns_anyconf_skip(" \t", fp);
+
+			if ('[' == dns_anyconf_peek(fp)) {
+				dns_anyconf_skip("[ \t", fp);
+
+				while (dns_anyconf_scan(&cf, "%w_", fp, &error)) {
+					dns_anyconf_skip("= \t", fp);
+					if (!dns_anyconf_scan(&cf, "%w_", fp, &error)) {
+						dns_anyconf_pop(&cf); /* discard status */
+						dns_anyconf_skip("^#;]\n", fp); /* skip to end of criteria */
+						break;
+					}
+					dns_anyconf_skip(" \t", fp);
+				}
+
+				dns_anyconf_skip("] \t", fp);
+			}
+
+			if (endof(lookup) - lp < cf.count + 1) /* +1 for '\0' */ 
+				goto nextsrc;
+
+			source = dns_nssconf_keyword(cf.token[0]);
+
+			switch (source) {
+			case DNS_NSSCONF_DNS:
+			case DNS_NSSCONF_MDNS:
+			case DNS_NSSCONF_FILES:
+				*lp++ = dns_nssconf_k2c(source);
+				break;
+			default:
+				goto nextsrc;
+			}
+
+			for (i = 1; i + 1 < cf.count; i += 2) {
+				status = dns_nssconf_keyword(cf.token[i]);
+				action = dns_nssconf_keyword(cf.token[i + 1]);
+
+				switch (status) {
+				case DNS_NSSCONF_SUCCESS:
+				case DNS_NSSCONF_NOTFOUND:
+				case DNS_NSSCONF_UNAVAIL:
+				case DNS_NSSCONF_TRYAGAIN:
+					*lp++ = dns_nssconf_k2c(status);
+					break;
+				default:
+					continue;
+				}
+
+				switch (action) {
+				case DNS_NSSCONF_CONTINUE:
+				case DNS_NSSCONF_RETURN:
+					break;
+				default:
+					action = (status == DNS_NSSCONF_SUCCESS)
+					       ? DNS_NSSCONF_RETURN
+					       : DNS_NSSCONF_CONTINUE;
+					break;
+				}
+				
+				*lp++ = dns_nssconf_k2c(action);
+			}
+nextsrc:
+			*lp = '\0';
+			dns_anyconf_reset(&cf);
+		}
+nextent:
+		dns_anyconf_skip("^\n", fp);
+	}
+
+	if (*lookup)
+		strncpy(resconf->lookup, lookup, sizeof resconf->lookup);
+
+	return 0;
+} /* dns_nssconf_loadfile() */
+
+
+int dns_nssconf_loadpath(struct dns_resolv_conf *resconf, const char *path) {
+	FILE *fp;
+	int error;
+
+	if (!(fp = fopen(path, "r")))
+		return dns_syerr();
+
+	error = dns_nssconf_loadfile(resconf, fp);
+
+	fclose(fp);
+
+	return error;
+} /* dns_nssconf_loadpath() */
+
+
+struct dns_nssconf_source {
+	enum dns_nssconf_keyword source, success, notfound, unavail, tryagain;
+}; /* struct dns_nssconf_source */
+
+typedef unsigned dns_nssconf_i;
+
+static inline int dns_nssconf_peek(const struct dns_resolv_conf *resconf, dns_nssconf_i state) {
+	return (state < lengthof(resconf->lookup) && resconf->lookup[state])? resconf->lookup[state] : 0;
+} /* dns_nssconf_peek() */
+
+static _Bool dns_nssconf_next(struct dns_nssconf_source *src, const struct dns_resolv_conf *resconf, dns_nssconf_i *state) {
+	int source, status, action;
+
+	src->source = DNS_NSSCONF_INVALID;
+	src->success = DNS_NSSCONF_RETURN;
+	src->notfound = DNS_NSSCONF_CONTINUE;
+	src->unavail = DNS_NSSCONF_CONTINUE;
+	src->tryagain = DNS_NSSCONF_CONTINUE;
+
+	while ((source = dns_nssconf_peek(resconf, *state))) {
+		source = dns_nssconf_c2k(source);
+		++*state;
+
+		switch (source) {
+		case DNS_NSSCONF_FILES:
+		case DNS_NSSCONF_DNS:
+		case DNS_NSSCONF_MDNS:
+			src->source = source;
+			break;
+		default:
+			continue;
+		}
+
+		while ((status = dns_nssconf_peek(resconf, *state)) && (action = dns_nssconf_peek(resconf, *state + 1))) {
+			status = dns_nssconf_c2k(status);
+			action = dns_nssconf_c2k(action);
+
+			switch (action) {
+			case DNS_NSSCONF_RETURN:
+			case DNS_NSSCONF_CONTINUE:
+				break;
+			default:
+				goto done;
+			}
+
+			switch (status) {
+			case DNS_NSSCONF_SUCCESS:
+				src->success = action;
+				break;
+			case DNS_NSSCONF_NOTFOUND:
+				src->notfound = action;
+				break;
+			case DNS_NSSCONF_UNAVAIL:
+				src->unavail = action;
+				break;
+			case DNS_NSSCONF_TRYAGAIN:
+				src->tryagain = action;
+				break;
+			default:
+				goto done;
+			}
+
+			*state += 2;
+		}
+
+		break;
+	}
+done:
+	return src->source != DNS_NSSCONF_INVALID;
+} /* dns_nssconf_next() */
+
+
+static int dns_nssconf_dump_status(int status, int action, unsigned *count, FILE *fp) {
+	switch (status) {
+	case DNS_NSSCONF_SUCCESS:
+		if (action == DNS_NSSCONF_RETURN)
+			return 0;
+		break;
+	default:
+		if (action == DNS_NSSCONF_CONTINUE)
+			return 0;
+		break;
+	}
+
+	fputc(' ', fp);
+
+	if (!*count)
+		fputc('[', fp);
+
+	fprintf(fp, "%s=%s", dns_nssconf_k2s(status), dns_nssconf_k2s(action));
+
+	++*count;
+
+	return 0;
+} /* dns_nssconf_dump_status() */
+
+
+int dns_nssconf_dump(struct dns_resolv_conf *resconf, FILE *fp) {
+	struct dns_nssconf_source src;
+	dns_nssconf_i i = 0;
+
+	fputs("hosts:", fp);
+
+	while (dns_nssconf_next(&src, resconf, &i)) {
+		unsigned n = 0;
+
+		fprintf(fp, " %s", dns_nssconf_k2s(src.source));
+
+		dns_nssconf_dump_status(DNS_NSSCONF_SUCCESS, src.success, &n, fp);
+		dns_nssconf_dump_status(DNS_NSSCONF_NOTFOUND, src.notfound, &n, fp);
+		dns_nssconf_dump_status(DNS_NSSCONF_UNAVAIL, src.unavail, &n, fp);
+		dns_nssconf_dump_status(DNS_NSSCONF_TRYAGAIN, src.tryagain, &n, fp);
+
+		if (n)
+			fputc(']', fp);
+	}
+
+	fputc('\n', fp);
+
+	return 0;
+} /* dns_nssconf_dump() */
+
+
 int dns_resconf_setiface(struct dns_resolv_conf *resconf, const char *addr, unsigned short port) {
 	int af = (strchr(addr, ':'))? AF_INET6 : AF_INET;
 	int error;
@@ -4087,6 +4588,9 @@ int dns_resconf_dump(struct dns_resolv_conf *resconf, FILE *fp) {
 
 	fputc('\n', fp);
 
+
+	fputs("; ", fp);
+	dns_nssconf_dump(resconf, fp);
 
 	fprintf(fp, "lookup");
 
@@ -6980,17 +7484,7 @@ struct {
 	struct {
 		const char *path[8];
 		unsigned count;
-	} resconf;
-
-	struct {
-		const char *path[8];
-		unsigned count;
-	} hosts;
-
-	struct {
-		const char *path[8];
-		unsigned count;
-	} cache;
+	} resconf, nssconf, hosts, cache;
 
 	const char *qname;
 	enum dns_type qtype;
@@ -7126,6 +7620,27 @@ static struct dns_resolv_conf *resconf(void) {
 			error	= dns_resconf_loadpath(resconf, path);
 
 		if (error)
+			panic("%s: %s", path, dns_strerror(error));
+	}
+
+	for (i = 0; i < MAIN.nssconf.count; i++) {
+		path	= MAIN.nssconf.path[i];
+
+		if (0 == strcmp(path, "-"))
+			error	= dns_nssconf_loadfile(resconf, stdin);
+		else
+			error	= dns_nssconf_loadpath(resconf, path);
+
+		if (error)
+			panic("%s: %s", path, dns_strerror(error));
+	}
+
+	if (!MAIN.nssconf.count) {
+		path = "/etc/nsswitch.conf";
+
+		if (!(error = dns_nssconf_loadpath(resconf, path)))
+			MAIN.nssconf.path[MAIN.nssconf.count++] = path;
+		else if (error != ENOENT)
 			panic("%s: %s", path, dns_strerror(error));
 	}
 
@@ -7344,12 +7859,15 @@ static int expand_domain(int argc, char *argv[]) {
 static int show_resconf(int argc, char *argv[]) {
 	unsigned i;
 
-	resconf();	/* load it */
+	resconf(); /* load it */
 
 	fputs("; SOURCES\n", stdout);
 
 	for (i = 0; i < MAIN.resconf.count; i++)
 		fprintf(stdout, ";   %s\n", MAIN.resconf.path[i]);
+
+	for (i = 0; i < MAIN.nssconf.count; i++)
+		fprintf(stdout, ";   %s\n", MAIN.nssconf.path[i]);
 
 	fputs(";\n", stdout);
 
@@ -7357,6 +7875,27 @@ static int show_resconf(int argc, char *argv[]) {
 
 	return 0;
 } /* show_resconf() */
+
+
+static int show_nssconf(int argc, char *argv[]) {
+	unsigned i;
+
+	resconf();
+
+	fputs("# SOURCES\n", stdout);
+
+	for (i = 0; i < MAIN.resconf.count; i++)
+		fprintf(stdout, "#   %s\n", MAIN.resconf.path[i]);
+
+	for (i = 0; i < MAIN.nssconf.count; i++)
+		fprintf(stdout, "#   %s\n", MAIN.nssconf.path[i]);
+
+	fputs("#\n", stdout);
+
+	dns_nssconf_dump(resconf(), stdout);
+
+	return 0;
+} /* show_nssconf() */
 
 
 static int show_hosts(int argc, char *argv[]) {
@@ -7855,6 +8394,7 @@ static const struct { const char *cmd; int (*run)(); const char *help; } cmds[] 
 	{ "expand-domain",	&expand_domain,		"expand domain at offset NN in packet from stdin" },
 	{ "show-resconf",	&show_resconf,		"show resolv.conf data" },
 	{ "show-hosts",		&show_hosts,		"show hosts data" },
+	{ "show-nssconf",	&show_nssconf,		"show nsswitch.conf data" },
 	{ "query-hosts",	&query_hosts,		"query A, AAAA or PTR in hosts data" },
 	{ "search-list",	&search_list,		"generate query search list from domain" },
 	{ "permute-set",	&permute_set,		"generate random permutation -> (0 .. N or N .. M)" },
@@ -7884,6 +8424,7 @@ static void print_usage(const char *progname, FILE *fp) {
 	static const char *usage	= 
 		" [OPTIONS] COMMAND [ARGS]\n"
 		"  -c PATH   Path to resolv.conf\n"
+		"  -n PATH   Path to nsswitch.conf\n"
 		"  -l PATH   Path to local hosts\n"
 		"  -z PATH   Path to zone cache\n"
 		"  -q QNAME  Query name\n"
@@ -7933,12 +8474,18 @@ int main(int argc, char **argv) {
 	unsigned i;
 	int ch;
 
-	while (-1 != (ch = getopt(argc, argv, "q:t:c:l:z:s:vVh"))) {
+	while (-1 != (ch = getopt(argc, argv, "q:t:c:n:l:z:s:vVh"))) {
 		switch (ch) {
 		case 'c':
 			assert(MAIN.resconf.count < lengthof(MAIN.resconf.path));
 
 			MAIN.resconf.path[MAIN.resconf.count++]	= optarg;
+
+			break;
+		case 'n':
+			assert(MAIN.nssconf.count < lengthof(MAIN.nssconf.path));
+
+			MAIN.nssconf.path[MAIN.nssconf.count++]	= optarg;
 
 			break;
 		case 'l':

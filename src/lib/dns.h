@@ -1,7 +1,7 @@
 /* ==========================================================================
  * dns.h - Recursive, Reentrant DNS Resolver.
  * --------------------------------------------------------------------------
- * Copyright (c) 2009, 2010  William Ahern
+ * Copyright (c) 2009, 2010, 2012  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -65,9 +65,9 @@
 
 #define DNS_VENDOR "william@25thandClement.com"
 
-#define DNS_V_REL  0x20120715
-#define DNS_V_ABI  0x20120712
-#define DNS_V_API  0x20120618
+#define DNS_V_REL  0x20120731
+#define DNS_V_ABI  0x20120731
+#define DNS_V_API  0x20120731
 
 
 const char *dns_vendor(void);
@@ -132,21 +132,24 @@ extern int dns_debug;
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #if defined __clang__
+#define DNS_PRAGMA_PUSH _Pragma("clang diagnostic push")
+#define DNS_PRAGMA_QUIET _Pragma("clang diagnostic ignored \"-Winitializer-overrides\"")
+#define DNS_PRAGMA_POP _Pragma("clang diagnostic pop")
+
 #define dns_quietinit(...) \
-	_Pragma("clang diagnostic push") \
-	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
-	__VA_ARGS__ \
-	_Pragma("clang diagnostic pop")
+	DNS_PRAGMA_PUSH DNS_PRAGMA_QUIET __VA_ARGS__ DNS_PRAGMA_POP
 #elif (__GNUC__ == 4 && __GNUC_MINOR__ >= 6) || __GNUC__ > 4
+#define DNS_PRAGMA_PUSH _Pragma("GCC diagnostic push")
+#define DNS_PRAGMA_QUIET _Pragma("GCC diagnostic ignored \"-Woverride-init\"")
+#define DNS_PRAGMA_POP _Pragma("GCC diagnostic pop")
+
 /* GCC parses the _Pragma operator less elegantly than clang. */
 #define dns_quietinit(...) \
-	({ \
-		_Pragma("GCC diagnostic push") \
-		_Pragma("GCC diagnostic ignored \"-Woverride-init\"") \
-		__VA_ARGS__; \
-		_Pragma("GCC diagnostic pop") \
-	})
+	({ DNS_PRAGMA_PUSH DNS_PRAGMA_QUIET __VA_ARGS__; DNS_PRAGMA_POP })
 #else
+#define DNS_PRAGMA_PUSH
+#define DNS_PRAGMA_QUIET
+#define DNS_PRAGMA_POP
 #define dns_quietinit(...) __VA_ARGS__
 #endif
 
@@ -798,7 +801,7 @@ struct dns_resolv_conf {
 	char search[4][DNS_D_MAXNAME + 1];
 
 	/* (f)ile, (b)ind, (c)ache */
-	char lookup[3];
+	char lookup[4 * (1 + (4 * 2))];
 
 	struct {
 		_Bool edns0;
@@ -847,7 +850,13 @@ int dns_resconf_loadfile(struct dns_resolv_conf *, FILE *);
 
 int dns_resconf_loadpath(struct dns_resolv_conf *, const char *);
 
+int dns_nssconf_loadfile(struct dns_resolv_conf *, FILE *);
+
+int dns_nssconf_loadpath(struct dns_resolv_conf *, const char *);
+
 int dns_resconf_dump(struct dns_resolv_conf *, FILE *);
+
+int dns_nssconf_dump(struct dns_resolv_conf *, FILE *);
 
 int dns_resconf_setiface(struct dns_resolv_conf *, const char *, unsigned short);
 
