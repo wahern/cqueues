@@ -6260,7 +6260,7 @@ exec:
 
 		F->state++;
 	case DNS_R_SWITCH:
-		while (F->which < (int)sizeof R->resconf->lookup) {
+		while (F->which < (int)sizeof R->resconf->lookup && R->resconf->lookup[F->which]) {
 			switch (R->resconf->lookup[F->which++]) {
 			case 'b': case 'B':
 				goto(R->sp, DNS_R_BIND);
