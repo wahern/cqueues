@@ -148,7 +148,7 @@
 #endif
 
 #ifndef DNS_THREAD_SAFE
-#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS >= 200112L
+#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS > 0
 #define DNS_THREAD_SAFE 1
 #else
 #define DNS_THREAD_SAFE 0
@@ -845,10 +845,13 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 	return send(fd, src, lim, flags);
 #elif defined MSG_NOSIGNAL
 	return send(fd, src, lim, flags|MSG_NOSIGNAL);
-#else
+#elif _POSIX_REALTIME_SIGNALS > 0
 	/*
 	 * SIGPIPE handling as described in
 	 * http://krokisplace.blogspot.com/2010/02/suppressing-sigpipe-in-library.html
+	 *
+	 * This approach requires sigtimedwait, unless perhaps we want to call
+	 * pthread_kill(pthread_self(), SIGPIPE) and sigwait() every time.
 	 */
 	sigset_t pending, blocked, set;
 	long count;
@@ -884,6 +887,8 @@ error:
 	errno = error;
 syerr:
 	return -1;
+#else
+	return send(fd, src, lim, flags);
 #endif
 } /* dns_send() */
 
