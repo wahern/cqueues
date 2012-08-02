@@ -54,7 +54,7 @@
 
 #include <time.h>		/* time_t time(2) difftime(3) */
 
-#include <signal.h>		/* SIGPIPE SIG_IGN sigaction(2) sigemptyset(3) */
+#include <signal.h>		/* SIGPIPE sigemptyset(3) sigaddset(3) sigpending(2) sigprocmask(2) pthread_sigmask(3) sigtimedwait(2) */
 
 #include <errno.h>		/* errno EINVAL ENOENT */
 
@@ -78,7 +78,7 @@
 
 #include <fcntl.h>		/* F_SETFD F_GETFL F_SETFL O_NONBLOCK fcntl(2) */
 
-#include <unistd.h>		/* gethostname(3) close(2) */
+#include <unistd.h>		/* _POSIX_THREADS gethostname(3) close(2) */
 
 #include <poll.h>		/* POLLIN POLLOUT */
 
@@ -145,6 +145,14 @@
 #define PRIuZ "Iu"
 #else
 #define PRIuZ "zu"
+#endif
+
+#ifndef DNS_THREAD_SAFE
+#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS >= 200112L
+#define DNS_THREAD_SAFE 1
+#else
+#define DNS_THREAD_SAFE 0
+#endif
 #endif
 
 
@@ -823,29 +831,59 @@ static int dns_poll(int fd, short events, int timeout) {
 } /* dns_poll() */
 
 
+DNS_NOTUSED static int dns_sigmask(int how, const sigset_t *set, sigset_t *oset) {
+#if DNS_THREAD_SAFE
+	return pthread_sigmask(how, set, oset);
+#else
+	return (0 == sigprocmask(how, set, oset))? 0 : errno;
+#endif
+} /* dns_sigmask() */
+
+
 static long dns_send(int fd, const void *src, size_t lim, int flags) {
 #if _WIN32 || !defined SIGPIPE || defined SO_NOSIGPIPE
 	return send(fd, src, lim, flags);
 #elif defined MSG_NOSIGNAL
 	return send(fd, src, lim, flags|MSG_NOSIGNAL);
 #else
-	struct sigaction ign, oact;
+	/*
+	 * SIGPIPE handling as described in
+	 * http://krokisplace.blogspot.com/2010/02/suppressing-sigpipe-in-library.html
+	 */
+	sigset_t pending, blocked, set;
 	long count;
-	int error;
+	int saved, error;
 
-	ign.sa_handler = SIG_IGN;
-	sigemptyset(&ign.sa_mask);
-	ign.sa_flags = 0;
+	sigpending(&pending);
 
-	sigaction(SIGPIPE, &ign, &oact);
+	if (!sigismember(&pending, SIGPIPE)) {
+		sigemptyset(&set);
+		sigaddset(&set, SIGPIPE);
+
+		if ((error = dns_sigmask(SIG_BLOCK, &set, &blocked)))
+			goto error;
+	}
 
 	count = send(fd, src, lim, flags);
 
-	error = errno;
-	sigaction(SIGPIPE, &oact, NULL);
-	errno = error;
+	if (!sigismember(&pending, SIGPIPE)) {
+		saved = errno;
+
+		sigemptyset(&set);
+		sigaddset(&set, SIGPIPE);
+		sigtimedwait(&set, NULL, &(struct timespec){ 0, 0 });
+
+		if ((error = dns_sigmask(SIG_SETMASK, &blocked, NULL)))
+			goto error;
+
+		errno = saved;
+	}
 
 	return count;
+error:
+	errno = error;
+syerr:
+	return -1;
 #endif
 } /* dns_send() */
 
