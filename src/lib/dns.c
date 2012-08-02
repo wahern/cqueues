@@ -4258,7 +4258,6 @@ DNS_PRAGMA_QUIET
 
 static int dns_nssconf_k2c(int k) {
 	static const char map[DNS_NSSCONF_LAST] = {
-		[0 ... DNS_NSSCONF_LAST - 1] = '?',
 		[DNS_NSSCONF_SUCCESS]  = 'S',
 		[DNS_NSSCONF_NOTFOUND] = 'N',
 		[DNS_NSSCONF_UNAVAIL]  = 'U',
@@ -4270,12 +4269,11 @@ static int dns_nssconf_k2c(int k) {
 		[DNS_NSSCONF_MDNS]     = 'm',
 	};
 
-	return (k >= 0 && k < (int)lengthof(map))? map[k] : '?';
+	return (k >= 0 && k < (int)lengthof(map))? (map[k]? map[k] : '?') : '?';
 } /* dns_nssconf_k2c() */
 
 static const char *dns_nssconf_k2s(int k) {
 	static const char *const map[DNS_NSSCONF_LAST] = {
-		[0 ... DNS_NSSCONF_LAST - 1] = "",
 		[DNS_NSSCONF_SUCCESS]  = "SUCCESS",
 		[DNS_NSSCONF_NOTFOUND] = "NOTFOUND",
 		[DNS_NSSCONF_UNAVAIL]  = "UNAVAIL",
@@ -4287,7 +4285,7 @@ static const char *dns_nssconf_k2s(int k) {
 		[DNS_NSSCONF_MDNS]     = "mdns",
 	};
 
-	return (k >= 0 && k < (int)lengthof(map))? map[k] : "";
+	return (k >= 0 && k < (int)lengthof(map))? (map[k]? map[k] : "") : "";
 } /* dns_nssconf_k2s() */
 
 DNS_PRAGMA_POP
