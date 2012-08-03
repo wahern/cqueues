@@ -847,10 +847,10 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 	return send(fd, src, lim, flags|MSG_NOSIGNAL);
 #elif _POSIX_REALTIME_SIGNALS > 0
 	/*
-	 * SIGPIPE handling as described in
+	 * SIGPIPE handling similar to the approach described in
 	 * http://krokisplace.blogspot.com/2010/02/suppressing-sigpipe-in-library.html
 	 *
-	 * This approach requires sigtimedwait, unless perhaps we want to call
+	 * The approach requires sigtimedwait, unless we want to call
 	 * pthread_kill(pthread_self(), SIGPIPE) and sigwait() every time.
 	 */
 	sigset_t pending, blocked, set;
@@ -872,9 +872,12 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 	if (!sigismember(&pending, SIGPIPE)) {
 		saved = errno;
 
-		sigemptyset(&set);
-		sigaddset(&set, SIGPIPE);
-		sigtimedwait(&set, NULL, &(struct timespec){ 0, 0 });
+		if (count == -1 && errno == EPIPE) {
+			sigemptyset(&set);
+			sigaddset(&set, SIGPIPE);
+			while (-1 == sigtimedwait(&set, NULL, &(struct timespec){ 0, 0 }) && errno == EINTR)
+				;;
+		}
 
 		if ((error = dns_sigmask(SIG_SETMASK, &blocked, NULL)))
 			goto error;
@@ -885,9 +888,10 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 	return count;
 error:
 	errno = error;
-syerr:
+
 	return -1;
 #else
+#error "unable to suppress SIGPIPE"
 	return send(fd, src, lim, flags);
 #endif
 } /* dns_send() */
