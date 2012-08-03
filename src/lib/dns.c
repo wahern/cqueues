@@ -845,13 +845,10 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 	return send(fd, src, lim, flags);
 #elif defined MSG_NOSIGNAL
 	return send(fd, src, lim, flags|MSG_NOSIGNAL);
-#elif _POSIX_REALTIME_SIGNALS > 0
+#elif _POSIX_REALTIME_SIGNALS > 0 /* require sigtimedwait */
 	/*
 	 * SIGPIPE handling similar to the approach described in
 	 * http://krokisplace.blogspot.com/2010/02/suppressing-sigpipe-in-library.html
-	 *
-	 * The approach requires sigtimedwait, unless we want to call
-	 * pthread_kill(pthread_self(), SIGPIPE) and sigwait() every time.
 	 */
 	sigset_t pending, blocked, set;
 	long count;
