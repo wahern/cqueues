@@ -7501,6 +7501,7 @@ enum dns_rcode dns_ircode(const char *name) {
 } /* dns_ircode() */
 
 
+
 /*
  * C O M M A N D - L I N E / R E G R E S S I O N  R O U T I N E S
  *
