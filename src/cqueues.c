@@ -59,7 +59,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUES_VENDOR "william@25thandClement.com"
-#define CQUEUES_VERSION 20120713L
+#define CQUEUES_VERSION 20120805L
 
 
 /*
@@ -80,7 +80,7 @@
 #define NOTUSED
 #endif
 
-#if __GNUC__
+#if (__GNUC__ == 4 && __GNUC_MINOR__ >= 5) || __GNUC__ > 4
 #define NOTREACHED __builtin_unreachable()
 #else
 #define NOTREACHED (void)0
@@ -566,11 +566,10 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 #elif HAVE_PORTS
 	kpoll_event_t *ke;
 	uint_t n = 1;
-	int ret;
 
-	ret = port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout));
+	kp->pending.count = 0;
 
-	if (ret != 0 && !n)
+	if (0 != port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout)))
 		return (errno == ETIME || errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;

@@ -972,7 +972,7 @@ static int so_pipeign(struct socket *so, _Bool rdonly) {
 		return 0;
 
 #if _POSIX_REALTIME_SIGNALS > 0
-	if (so->pipeign.ncalls > 0)
+	if (so->pipeign.ncalls++ > 0)
 		return 0;
 
 	sigset_t set;
@@ -1013,7 +1013,7 @@ static int so_pipeok(struct socket *so, _Bool rdonly) {
 	while (-1 == sigtimedwait(&set, NULL, &(struct timespec){ 0, 0 }) && errno == EINTR)
 		;;
 
-	return thr_sigmask(SIG_SETMASK, &blocked, NULL);
+	return thr_sigmask(SIG_SETMASK, &so->pipeign.blocked, NULL);
 #else
 	return EOPNOTSUPP;
 #endif
