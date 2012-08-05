@@ -59,7 +59,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUES_VENDOR "william@25thandClement.com"
-#define CQUEUES_VERSION 20120804L
+#define CQUEUES_VERSION 20120805L
 
 
 /*
@@ -80,7 +80,7 @@
 #define NOTUSED
 #endif
 
-#if __GNUC__
+#if (__GNUC__ == 4 && __GNUC_MINOR__ >= 5) || __GNUC__ > 4
 #define NOTREACHED __builtin_unreachable()
 #else
 #define NOTREACHED (void)0
