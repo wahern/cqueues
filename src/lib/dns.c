@@ -831,6 +831,7 @@ static int dns_poll(int fd, short events, int timeout) {
 } /* dns_poll() */
 
 
+#if !_WIN32
 DNS_NOTUSED static int dns_sigmask(int how, const sigset_t *set, sigset_t *oset) {
 #if DNS_THREAD_SAFE
 	return pthread_sigmask(how, set, oset);
@@ -838,6 +839,7 @@ DNS_NOTUSED static int dns_sigmask(int how, const sigset_t *set, sigset_t *oset)
 	return (0 == sigprocmask(how, set, oset))? 0 : errno;
 #endif
 } /* dns_sigmask() */
+#endif
 
 
 static long dns_send(int fd, const void *src, size_t lim, int flags) {
