@@ -566,11 +566,10 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 #elif HAVE_PORTS
 	kpoll_event_t *ke;
 	uint_t n = 1;
-	int ret;
 
-	ret = port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout));
+	kp->pending.count = 0;
 
-	if (ret != 0 && !n)
+	if (0 != port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout)))
 		return (errno == ETIME || errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
