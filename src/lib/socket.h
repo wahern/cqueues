@@ -60,9 +60,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120713
-#define SOCKET_V_ABI  0x20120711
-#define SOCKET_V_API  0x20120711
+#define SOCKET_V_REL  0x20120804
+#define SOCKET_V_ABI  0x20120804
+#define SOCKET_V_API  0x20120804
 
 
 const char *socket_vendor(void);
@@ -123,6 +123,8 @@ const char *so_strerror(int);
 #define SO_ERRNO0 SO_EBASE
 #define SO_EEND SO_ELAST
 #define SO_ISERRNO(e) ((e) >= SO_ERRNO0 && (e) < SO_EEND)
+
+#define so_error_t int /* for documentation only */
 
 
 /*
@@ -386,6 +388,30 @@ int so_nodelay(int, _Bool);
 int so_nopush(int, _Bool);
 
 int so_nosigpipe(int, _Bool);
+
+
+#define SF_CLOEXEC   0x01
+#define SF_NONBLOCK  0x02
+#define SF_REUSEADDR 0x04
+#define SF_NODELAY   0x08
+#define SF_NOPUSH    0x10
+#define SF_NOSIGPIPE 0x20
+
+int so_getfl(int fd, int which); /* no failure mode */
+
+so_error_t so_rstfl(int fd, int *oflags, int flags, int mask, int require);
+
+so_error_t so_setfl(int fd, int flags, int mask, int require);
+
+so_error_t so_addfl(int fd, int flags, int require);
+
+#define so_addfl3(fd, flags, require, ...) so_addfl((fd), (flags), (require))
+#define so_addfl(...) so_addfl3(__VA_ARGS__, ~0)
+
+so_error_t so_delfl(int fd, int flags, int require);
+
+#define so_delfl3(fd, flags, require, ...) so_delfl((fd), (flags), (require))
+#define so_delfl(...) so_delfl3(__VA_ARGS__, ~0)
 
 
 /*
