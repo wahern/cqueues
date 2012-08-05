@@ -30,7 +30,8 @@ CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
 endif
 
 ifeq ($(VENDOR.CC), sunpro)
-CFLAGS = -xcode=pic13
+DFLAGS = -g
+CFLAGS = -xcode=pic13 $(DFLAGS)
 endif
 
 ifeq ($(VENDOR.OS), SunOS)
