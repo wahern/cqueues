@@ -975,17 +975,18 @@ static int so_pipeign(struct socket *so, _Bool rdonly) {
 	if (so->pipeign.ncalls++ > 0)
 		return 0;
 
-	sigset_t set;
-
+	sigemptyset(&so->pipeign.pending);
 	sigpending(&so->pipeign.pending);
 
 	if (sigismember(&so->pipeign.pending, SIGPIPE))
 		return 0;
 
-	sigemptyset(&set);
-	sigaddset(&set, SIGPIPE);
+	sigset_t piped;
+	sigemptyset(&piped);
+	sigaddset(&piped, SIGPIPE);
+	sigemptyset(&so->pipeign.blocked);
 
-	return thr_sigmask(SIG_BLOCK, &set, &so->pipeign.blocked);
+	return thr_sigmask(SIG_BLOCK, &piped, &so->pipeign.blocked);
 #else
 	return EOPNOTSUPP;
 #endif
@@ -997,8 +998,6 @@ static int so_pipeok(struct socket *so, _Bool rdonly) {
 		return 0;
 
 #if _POSIX_REALTIME_SIGNALS > 0
-	sigset_t set;
-
 	assert(so->pipeign.ncalls > 0);
 
 	if (--so->pipeign.ncalls)
@@ -1007,10 +1006,11 @@ static int so_pipeok(struct socket *so, _Bool rdonly) {
 	if (sigismember(&so->pipeign.pending, SIGPIPE))
 		return 0;
 
-	sigemptyset(&set);
-	sigaddset(&set, SIGPIPE);
+	sigset_t piped;
+	sigemptyset(&piped);
+	sigaddset(&piped, SIGPIPE);
 
-	while (-1 == sigtimedwait(&set, NULL, &(struct timespec){ 0, 0 }) && errno == EINTR)
+	while (-1 == sigtimedwait(&piped, NULL, &(struct timespec){ 0, 0 }) && errno == EINTR)
 		;;
 
 	return thr_sigmask(SIG_SETMASK, &so->pipeign.blocked, NULL);

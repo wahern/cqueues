@@ -80,7 +80,7 @@
 #define NOTUSED
 #endif
 
-#if (__GNUC__ == 4 && __GNUC_MINOR__ >= 5) || __GNUC__ > 4
+#if (__GNUC__ == 4 && __GNUC_MINOR__ >= 5) || __GNUC__ > 4 || __clang__
 #define NOTREACHED __builtin_unreachable()
 #else
 #define NOTREACHED (void)0

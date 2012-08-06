@@ -852,17 +852,19 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 	 * SIGPIPE handling similar to the approach described in
 	 * http://krokisplace.blogspot.com/2010/02/suppressing-sigpipe-in-library.html
 	 */
-	sigset_t pending, blocked, set;
+	sigset_t pending, blocked, piped;
 	long count;
 	int saved, error;
 
+	sigemptyset(&pending);
 	sigpending(&pending);
 
 	if (!sigismember(&pending, SIGPIPE)) {
-		sigemptyset(&set);
-		sigaddset(&set, SIGPIPE);
+		sigemptyset(&piped);
+		sigaddset(&piped, SIGPIPE);
+		sigemptyset(&blocked);
 
-		if ((error = dns_sigmask(SIG_BLOCK, &set, &blocked)))
+		if ((error = dns_sigmask(SIG_BLOCK, &piped, &blocked)))
 			goto error;
 	}
 
@@ -872,9 +874,7 @@ static long dns_send(int fd, const void *src, size_t lim, int flags) {
 		saved = errno;
 
 		if (count == -1 && errno == EPIPE) {
-			sigemptyset(&set);
-			sigaddset(&set, SIGPIPE);
-			while (-1 == sigtimedwait(&set, NULL, &(struct timespec){ 0, 0 }) && errno == EINTR)
+			while (-1 == sigtimedwait(&piped, NULL, &(struct timespec){ 0, 0 }) && errno == EINTR)
 				;;
 		}
 
