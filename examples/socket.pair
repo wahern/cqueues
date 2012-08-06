@@ -1,0 +1,33 @@
+#!/usr/local/lua52/bin/lua
+
+local cqueues = require("cqueues")
+local socket = require("cqueues.socket")
+
+local snd, rcv = socket.pair("stream")
+
+local cq = cqueues.new()
+
+
+cq:wrap(function()
+	for i = 1, 10 do
+		snd:write(tostring(i), "\n")
+	end
+
+	snd:shutdown("w")
+end)
+
+cq:wrap(function()
+	for i in rcv:lines() do
+		print(tostring(i))
+	end
+end)
+
+
+while not cq:empty() do
+	local ok, err = cq:step()
+
+	if not ok then
+		error("cqueue: " .. err)
+	end
+end
+

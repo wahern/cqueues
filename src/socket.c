@@ -26,7 +26,12 @@
 #include <stddef.h>	/* NULL offsetof size_t */
 #include <string.h>	/* memset(3) memchr(3) */
 
-#include <errno.h>	/* EAGAIN EPIPE */
+#include <errno.h>	/* EAGAIN EPIPE EINTR */
+
+#include <sys/types.h>
+#include <sys/socket.h>	/* AF_UNIX SOCK_STREAM SOCK_DGRAM PF_UNSPEC socketpair(2) */
+
+#include <unistd.h>	/* close(2) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -327,14 +332,15 @@ static lso_nargs_t lso_fdopen(lua_State *L) {
 	struct luasocket *S;
 	int fd, error;
 
+	/* FIXME: dup the fd for safety and simplicity. */
 	fd = luaL_checkint(L, 1);
 
 	S = lso_newsocket(L);
 
-	if (!(S->socket = so_fdopen(fd, so_opts(), &error)))
+	if ((error = lso_prepsocket(S)))
 		goto error;
 
-	if ((error = lso_prepsocket(S)))
+	if (!(S->socket = so_fdopen(fd, so_opts(), &error)))
 		goto error;
 
 	return 1;
@@ -344,6 +350,60 @@ error:
 
 	return 2;
 } /* lso_fdopen() */
+
+
+static lso_nargs_t lso_pair(lua_State *L) {
+	static const char *types[] = { "stream", "dgram", NULL };
+	struct luasocket *a = NULL, *b = NULL;
+	int fd[2] = { -1, -1 };
+	int type, error;
+
+	switch (luaL_checkoption(L, 1, "stream", types)) {
+	case 0:
+		type = SOCK_STREAM;
+		break;
+	case 1:
+		type = SOCK_DGRAM;
+		break;
+	default:
+		return 0;
+	}
+
+	a = lso_newsocket(L);
+	b = lso_newsocket(L);
+
+	if (0 != socketpair(AF_UNIX, type, PF_UNSPEC, fd))
+		goto syerr;
+
+	if (!(a->socket = so_fdopen(fd[0], so_opts(), &error)))
+		goto error;
+
+	fd[0] = -1;
+
+	if ((error = lso_prepsocket(a)))
+		goto error;
+
+	if (!(b->socket = so_fdopen(fd[1], so_opts(), &error)))
+		goto error;
+
+	fd[1] = -1;
+
+	if ((error = lso_prepsocket(b)))
+		goto error;
+
+	return 2;
+syerr:
+	error = errno;
+error:
+	close(fd[0]);
+	close(fd[1]);
+
+	lua_pushnil(L);
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 3;
+} /* lso_pair() */
 
 
 static lso_nargs_t lso_setvbuf(struct lua_State *L) {
@@ -881,6 +941,7 @@ static luaL_Reg lso_globals[] = {
 	{ "connect",   &lso_connect2 },
 	{ "listen",    &lso_listen2 },
 	{ "fdopen",    &lso_fdopen },
+	{ "pair",      &lso_pair },
 	{ "interpose", &lso_interpose },
 	{ 0, 0 }
 }; /* lso_globals[] */
