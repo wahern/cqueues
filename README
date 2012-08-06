@@ -140,6 +140,10 @@ socket.connect(host, port, [mode])
 socket.listen(host, port)
 	Return a new socket immediately ready for accepting connections.
 
+socket.pair([type])
+	Return two bound sockets. Type is either "stream" or "dgram", and
+	defaults to "stream".
+
 socket:connect()
 	Wait for connection establishment to succeed. [UNFINISHED]
 
