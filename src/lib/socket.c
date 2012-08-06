@@ -96,6 +96,20 @@ int socket_v_api(void) {
 
 
 /*
+ * F E A T U R E  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !defined SO_THREAD_SAFE
+#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS > 0
+#define SO_THREAD_SAFE 1
+#else
+#define SO_THREAD_SAFE 0
+#endif
+#endif
+
+
+/*
  * D E B U G  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -357,7 +371,7 @@ const char *so_strerror(int error) {
 		return strerror(error);
 
 	if (error == SO_EOPENSSL) {
-#if _REENTRANT
+#if SO_THREAD_SAFE
 		static __thread char sslstr[256];
 #else
 		static char sslstr[256];
@@ -859,7 +873,7 @@ static void ssl_discard(SSL **ctx) {
 
 
 static int thr_sigmask(int how, const sigset_t *set, sigset_t *oset) {
-#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS > 0
+#if SO_THREAD_SAFE
 	return pthread_sigmask(how, set, oset);
 #else
 	return (0 == sigprocmask(how, set, oset))? 0 : errno;
