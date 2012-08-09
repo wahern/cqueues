@@ -59,7 +59,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUES_VENDOR "william@25thandClement.com"
-#define CQUEUES_VERSION 20120805L
+#define CQUEUES_VERSION 20120809L
 
 
 /*
@@ -912,8 +912,10 @@ static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
 			return LUA_ERRRUN;
 		}
 	} else {
-		lua_pop(L, 1);
-		lua_pushnil(L);
+		if (!lua_isnil(L, -1) && lua_type(L, -1) != rtype) {
+			lua_pop(L, 1);
+			lua_pushnil(L);
+		}
 	}
 
 	return LUA_OK;
@@ -924,6 +926,14 @@ static int object_getinfo(lua_State *L, struct thread *T, int index, struct even
 	int status;
 	const char *mode;
 
+	/* optimize simple timeout */
+	if (lua_isnumber(T->L, index)) {
+		event->timeout = abstimeout(lua_tonumber(T->L, index));
+
+		return LUA_OK;
+	}
+
+	/* otherwise, push onto our main stack and call event methods */
 	lua_pushvalue(T->L, index);
 	lua_xmove(T->L, L, 1);
 
