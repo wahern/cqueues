@@ -1473,7 +1473,7 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	if (!(so = so_init(malloc(sizeof *so), opts)))
 		goto syerr;
 
-	if ((error = so_rstfl(fd, &so->flags, so_opts2flags(opts), ~0, ~SO_F_NOSIGPIPE)))
+	if ((error = so_rstfl(fd, &so->flags, so_opts2flags(opts), ~0, ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE))))
 		goto error;
 
 	if (0 != fstat(fd, &st))
@@ -1983,7 +1983,7 @@ error:
 
 int so_recvmsg(struct socket *so, struct msghdr *msg, int flags) {
 	ssize_t count;
-	int error;
+	int i, error;
 
 	so_pipeign(so, 1);
 
@@ -1993,12 +1993,21 @@ int so_recvmsg(struct socket *so, struct msghdr *msg, int flags) {
 		goto error;
 
 	so->events &= ~POLLIN;
-
 retry:
 	if (-1 == (count = recvmsg(so->fd, msg, flags)))
 		goto syerr;
 
 	st_update(&so->st.rcvd, count, &so->opts);
+
+	for (i = 0; i < msg->msg_iovlen; i++) {
+		if ((size_t)count < msg->msg_iov[i].iov_len) {
+			msg->msg_iov[i].iov_len = count;
+
+			break;
+		} else {
+			count -= (ssize_t)msg->msg_iov[i].iov_len;
+		}
+	}
 
 	so_pipeok(so, 1);
 
