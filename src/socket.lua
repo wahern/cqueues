@@ -150,4 +150,40 @@ socket.interpose("lines", function (self, mode)
 end)
 
 
+--
+-- socket:sendfd
+--
+local sendfd; sendfd = socket.interpose("sendfd", function (self, msg, fd)
+	local ok, err
+
+	repeat
+		ok, err = sendfd(self, msg, fd)
+
+		if not ok and err == errno.EAGAIN then
+			cqueues.poll(self)
+		end
+	until ok or err ~= errno.EAGAIN
+
+	return ok, err and errno.strerror(err) or nil
+end)
+
+
+--
+-- socket:recvfd
+--
+local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
+	local msg, fd, err
+
+	repeat
+		msg, fd, err = recvfd(self, prepbufsiz)
+
+		if not msg and err == errno.EAGAIN then
+			cqueues.poll(self)
+		end
+	until msg or err ~= errno.EAGAIN
+
+	return msg, fd, err and errno.strerror(err) or nil
+end)
+
+
 return socket

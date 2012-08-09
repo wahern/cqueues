@@ -41,7 +41,12 @@
 #include "lib/dns.h"
 
 
-#if !defined(SAY)
+/*
+ * U T I L I T Y  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !defined SAY
 #define SAY_(file, func, line, fmt, ...) \
 	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
 
@@ -50,10 +55,72 @@
 #define HAI SAY("hai")
 #endif
 
+
 #ifndef MIN
 #define MIN(a, b) (((a) < (b))? (a) : (b))
 #endif
 
+
+static void closefd(int *fd) {
+	if (*fd != -1)  {
+		while (0 != close(*fd) && errno == EINTR)
+			;;
+		*fd = -1;
+	}
+} /* closefd() */
+
+
+#include <sys/stat.h>
+#include <sys/ioctl.h>
+
+#if __sun
+#include <sys/filio.h>
+#include <stropts.h>
+#endif
+
+static void debugfd(int fd) {
+	struct stat st;
+	char descr[64] = "";
+	int pending = -1;
+
+	if (0 != fstat(fd, &st))
+		goto syerr;
+
+	if (S_ISSOCK(st.st_mode)) {
+		int type;
+
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
+			goto syerr;
+
+		if (type == SOCK_STREAM)
+			strncat(descr, "stream socket", sizeof descr - 1);
+		else if (type == SOCK_DGRAM)
+			strncat(descr, "dgram socket", sizeof descr - 1);
+		else
+			strncat(descr, "other socket", sizeof descr - 1);
+	} else {
+		if (S_ISFIFO(st.st_mode))
+			strncat(descr, "fifo file", sizeof descr - 1);
+		else if (S_ISREG(st.st_mode))
+			strncat(descr, "regular file", sizeof descr - 1);
+		else
+			strncat(descr, "other file", sizeof descr - 1);
+	}
+
+	ioctl(fd, FIONREAD, &pending);
+
+	SAY("%d: %s (pending:%d)", fd, descr, pending);
+
+	return;
+syerr:
+	SAY("%d: %s", fd, strerror(errno));
+} /* debugfd() */
+
+
+/*
+ * L U A  S O C K E T  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define lso_error_t int
 #define lso_nargs_t int
@@ -395,8 +462,8 @@ static lso_nargs_t lso_pair(lua_State *L) {
 syerr:
 	error = errno;
 error:
-	close(fd[0]);
-	close(fd[1]);
+	closefd(&fd[0]);
+	closefd(&fd[1]);
 
 	lua_pushnil(L);
 	lua_pushnil(L);
@@ -644,6 +711,35 @@ error:
 } /* lso_recv3() */
 
 
+static lso_nargs_t lso_unget2(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	const void *src;
+	size_t len;
+	struct iovec iov;
+	int error;
+
+	src = luaL_checklstring(L, 2, &len);
+
+	if ((error = fifo_grow(&S->ibuf.fifo, len)))
+		goto error;
+
+	fifo_rewind(&S->ibuf.fifo, len);
+	fifo_slice(&S->ibuf.fifo, &iov, 0, len);
+	memcpy(iov.iov_base, src, len);
+
+	S->ibuf.eof = 0;
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+error:
+	lua_pushboolean(L, 0);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_unget2() */
+
+
 static lso_error_t lso_doflush(struct luasocket *S, int mode) {
 	size_t amount = 0, n;
 	struct iovec iov;
@@ -776,6 +872,120 @@ static lso_nargs_t lso_flush(lua_State *L) {
 		return 1;
 	}
 } /* lso_flush() */
+
+
+static lso_nargs_t lso_pending(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+
+	lua_pushunsigned(L, fifo_rlen(&S->ibuf.fifo));
+	lua_pushunsigned(L, fifo_rlen(&S->obuf.fifo));
+
+	return 2;
+} /* lso_pending() */
+
+
+static lso_nargs_t lso_sendfd3(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	const void *src;
+	size_t len;
+	struct luasocket *so;
+	luaL_Stream *fh;
+	int fd, error;
+
+	lua_settop(L, 3);
+
+	src = luaL_checklstring(L, 2, &len);
+
+	if (lua_isnumber(L, 3)) {
+		fd = lua_tointeger(L, 3);
+	} else if ((so = luaL_testudata(L, 3, LSO_CLASS))) {
+		if (-1 == (fd = so_peerfd(so->socket)))
+			goto badfd;
+	} else if ((fh = luaL_testudata(L, 3, LUA_FILEHANDLE))) {
+		if (!fh->f)
+			goto badfd;
+		fd = fileno(fh->f);
+	} else {
+		goto badfd;
+	}
+
+	so_clear(S->socket);
+
+	if ((error = so_sendmsg(S->socket, so_fdmsg(src, len, fd), 0)))
+		goto error;
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+syerr:
+	error = errno;
+	goto error;
+badfd:
+	error = EBADF;
+error:
+	lua_pushboolean(L, 0);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_sendfd3() */
+
+
+static lso_nargs_t lso_recvfd2(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	size_t bufsiz = luaL_optunsigned(L, 2, S->ibuf.maxline);
+	struct msghdr *msg;
+	struct cmsghdr *cmsg;
+	struct iovec iov;
+	int fd = -1, error;
+
+	if ((error = fifo_grow(&S->ibuf.fifo, bufsiz)))
+		goto error;
+
+	fifo_wvec(&S->ibuf.fifo, &iov, 1);
+
+	msg = so_fdmsg(iov.iov_base, iov.iov_len, -1);
+
+	so_clear(S->socket);
+
+	if ((error = so_recvmsg(S->socket, msg, 0)))
+		goto error;
+
+	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+		if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
+			continue;
+
+		closefd(&fd);
+		fd = *(int *)CMSG_DATA(cmsg);
+	}
+
+	if (msg->msg_flags & (MSG_TRUNC|MSG_CTRUNC))
+		goto trunc;
+
+	if (msg->msg_iovlen > 0 && msg->msg_iov[0].iov_len > 0)
+		lua_pushlstring(L, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
+	else
+		lua_pushliteral(L, "");
+
+	struct luasocket *so = lso_newsocket(L);
+
+	if ((error = lso_prepsocket(so)))
+		goto error;
+
+	if (!(so->socket = so_fdopen(fd, so_opts(), &error)))
+		goto error;
+
+	return 2;
+trunc:
+	error = ENOBUFS;
+error:
+	closefd(&fd);
+
+	lua_pushnil(L);
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 3;
+} /* lso_recvfd2() */
 
 
 static lso_nargs_t lso_clear(lua_State *L) {
@@ -919,8 +1129,12 @@ static luaL_Reg lso_methods[] = {
 	{ "setvbuf",  &lso_setvbuf },
 	{ "setmode",  &lso_setmode },
 	{ "recv",     &lso_recv3 },
+	{ "unget",    &lso_unget2 },
 	{ "send",     &lso_send5 },
 	{ "flush",    &lso_flush },
+	{ "pending",  &lso_pending },
+	{ "sendfd",   &lso_sendfd3 },
+	{ "recvfd",   &lso_recvfd2 },
 	{ "clear",    &lso_clear },
 	{ "pollfd",   &lso_pollfd },
 	{ "events",   &lso_events },
