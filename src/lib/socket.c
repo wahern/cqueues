@@ -591,8 +591,8 @@ int so_socket(int domain, int type, const struct so_options *opts, int *_error) 
 		goto syerr;
 
 	flags = so_opts2flags(opts);
-	mask  = (domain == SOCK_STREAM)? ~0 : ~(SF_NODELAY|SF_NOPUSH);
-	need  = ~(SF_NODELAY|SF_NOPUSH|SF_NOSIGPIPE);
+	mask  = (domain == SOCK_STREAM)? ~0 : ~(SO_F_NODELAY|SO_F_NOPUSH);
+	need  = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
 
 	if ((error = so_setfl(fd, flags, mask, need)))
 		goto error;
@@ -728,7 +728,7 @@ int so_nosigpipe(int fd, _Bool nosigpipe) {
 
 	return 0;
 #elif defined F_SETNOSIGPIPE
-	if (0 != fcntl(fd, F_SETNOSIGPIPE, &(int){ nosigpipe }, sizeof (int)))
+	if (0 != fcntl(fd, F_SETNOSIGPIPE, nosigpipe))
 		return errno;
 
 	return 0;
@@ -747,12 +747,12 @@ static const struct flops {
 	int (*set)(int, _Bool);
 	size_t offset;
 } fltable[] = {
-	{ SF_CLOEXEC,   &so_cloexec,   optoffset(fd_cloexec),    },
-	{ SF_NONBLOCK,  &so_nonblock,  optoffset(fd_nonblock),   },
-	{ SF_REUSEADDR, &so_reuseaddr, optoffset(sin_reuseaddr), },
-	{ SF_NODELAY,   &so_nodelay,   optoffset(sin_nodelay),   },
-	{ SF_NOPUSH,    &so_nopush,    optoffset(sin_nopush),    },
-	{ SF_NOSIGPIPE, &so_nosigpipe, optoffset(fd_nosigpipe),  },
+	{ SO_F_CLOEXEC,   &so_cloexec,   optoffset(fd_cloexec),    },
+	{ SO_F_NONBLOCK,  &so_nonblock,  optoffset(fd_nonblock),   },
+	{ SO_F_REUSEADDR, &so_reuseaddr, optoffset(sin_reuseaddr), },
+	{ SO_F_NODELAY,   &so_nodelay,   optoffset(sin_nodelay),   },
+	{ SO_F_NOPUSH,    &so_nopush,    optoffset(sin_nopush),    },
+	{ SO_F_NOSIGPIPE, &so_nosigpipe, optoffset(fd_nosigpipe),  },
 };
 
 
@@ -771,47 +771,47 @@ static int so_opts2flags(const struct so_options *opts) {
 int so_getfl(int fd, int which) {
 	int flags = 0, getfl = 0, getfd;
 
-	if ((which & SF_CLOEXEC) && -1 != (getfd = fcntl(fd, F_GETFD))) {
+	if ((which & SO_F_CLOEXEC) && -1 != (getfd = fcntl(fd, F_GETFD))) {
 		if (getfd & FD_CLOEXEC)
-			flags |= SF_CLOEXEC;
+			flags |= SO_F_CLOEXEC;
 	}
 
-	if ((which & SF_NONBLOCK) && -1 != (getfl = fcntl(fd, F_GETFL))) {
+	if ((which & SO_F_NONBLOCK) && -1 != (getfl = fcntl(fd, F_GETFL))) {
 		if (getfl & O_NONBLOCK)
-			flags |= SF_NONBLOCK;
+			flags |= SO_F_NONBLOCK;
 	}
 
-	if ((which & SF_REUSEADDR) && so_getboolopt(fd, SOL_SOCKET, SO_REUSEADDR))
-		flags |= SF_REUSEADDR;
+	if ((which & SO_F_REUSEADDR) && so_getboolopt(fd, SOL_SOCKET, SO_REUSEADDR))
+		flags |= SO_F_REUSEADDR;
 
-	if ((which & SF_NODELAY) && so_getboolopt(fd, IPPROTO_TCP, TCP_NODELAY))
-		flags |= SF_NODELAY;
+	if ((which & SO_F_NODELAY) && so_getboolopt(fd, IPPROTO_TCP, TCP_NODELAY))
+		flags |= SO_F_NODELAY;
 
 #if defined TCP_NOPUSH
-	if ((which & SF_NOPUSH) && so_getboolopt(fd, IPPROTO_TCP, TCP_NOPUSH))
-		flags |= SF_NOPUSH;
+	if ((which & SO_F_NOPUSH) && so_getboolopt(fd, IPPROTO_TCP, TCP_NOPUSH))
+		flags |= SO_F_NOPUSH;
 #endif
 
 #if defined O_NOSIGPIPE || defined F_GETNOSIGPIPE || defined SO_NOSIGPIPE
-	if ((which & SF_NOSIGPIPE)) {
+	if ((which & SO_F_NOSIGPIPE)) {
 #if defined O_NOSIGPIPE
 		if (getfl) {
 			if (getfl != -1 && (getfl & O_NOSIGPIPE))
-				flags |= SF_NOSIGPIPE;
+				flags |= SO_F_NOSIGPIPE;
 		} else if (-1 != (getfl = fcntl(fd, F_GETFL))) {
 			if (getfl & O_NOSIGPIPE)
-				flags |= SF_NOSIGPIPE;
+				flags |= SO_F_NOSIGPIPE;
 		}
 #elif defined F_GETNOSIGPIPE
 		int nosigpipe;
 
 		if (-1 != (nosigpipe = fcntl(fd, F_GETNOSIGPIPE))) {
 			if (nosigpipe)
-				flags |= SF_NOSIGPIPE;
+				flags |= SO_F_NOSIGPIPE;
 		}
 #else
 		if (so_getboolopt(fd, SOL_SOCKET, SO_NOSIGPIPE))
-			flags |= SF_NOSIGPIPE;
+			flags |= SO_F_NOSIGPIPE;
 #endif
 	}
 #endif
@@ -967,7 +967,7 @@ struct socket {
 
 
 static _Bool so_needign(struct socket *so, _Bool rdonly) {
-	if (!so->opts.fd_nosigpipe || (so->flags & SF_NOSIGPIPE))
+	if (!so->opts.fd_nosigpipe || (so->flags & SO_F_NOSIGPIPE))
 		return 0;
 	if (so->ssl.ctx)
 		return 1;
@@ -1468,12 +1468,12 @@ error:
 struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct socket *so;
 	struct stat st;
-	int error;
+	int mask, error;
 
 	if (!(so = so_init(malloc(sizeof *so), opts)))
 		goto syerr;
 
-	if ((error = so_rstfl(fd, &so->flags, so_opts2flags(opts), ~0, ~(SF_NODELAY|SF_NOPUSH|SF_NOSIGPIPE))))
+	if ((error = so_rstfl(fd, &so->flags, so_opts2flags(opts), ~0, ~SO_F_NOSIGPIPE)))
 		goto error;
 
 	if (0 != fstat(fd, &st))
@@ -1821,7 +1821,7 @@ retry:
 	}
 
 	so_trace(SO_T_WRITE, so->fd, so->host, src, (size_t)count, "sent %zu bytes", (size_t)len);
-	st_update(&so->st.sent, len, &so->opts);
+	st_update(&so->st.sent, count, &so->opts);
 
 	so_pipeok(so, 0);
 
@@ -1930,6 +1930,99 @@ error:
 
 	return 0;
 } /* so_peek() */
+
+
+int so_sendmsg(struct socket *so, const struct msghdr *msg, int flags) {
+	ssize_t count;
+	int error;
+
+	so_pipeign(so, 0);
+
+	so->todo |= SO_S_SETWRITE;
+
+	if ((error = so_exec(so)))
+		goto error;
+
+	so->events &= ~POLLOUT;
+
+#if defined MSG_NOSIGNAL
+	if (so->opts.fd_nosigpipe)
+		flags |= MSG_NOSIGNAL;
+#endif
+
+retry:
+	if (-1 == (count = sendmsg(so->fd, msg, flags)))
+		goto syerr;
+
+	st_update(&so->st.sent, count, &so->opts);
+
+	so_pipeok(so, 0);
+
+	return 0;
+syerr:
+	error = errno;
+error:
+	switch (error) {
+	case SO_EINTR:
+		goto retry;
+#if SO_EWOULDBLOCK != SO_EAGAIN
+	case SO_EWOULDBLOCK:
+		/* FALL THROUGH */
+#endif
+	case SO_EAGAIN:
+		so->events |= POLLOUT;
+
+		break;
+	} /* switch() */
+
+	so_pipeok(so, 0);
+
+	return error;
+} /* so_sendmsg() */
+
+
+int so_recvmsg(struct socket *so, struct msghdr *msg, int flags) {
+	ssize_t count;
+	int error;
+
+	so_pipeign(so, 1);
+
+	so->todo |= SO_S_SETREAD;
+
+	if ((error = so_exec(so)))
+		goto error;
+
+	so->events &= ~POLLIN;
+
+retry:
+	if (-1 == (count = recvmsg(so->fd, msg, flags)))
+		goto syerr;
+
+	st_update(&so->st.rcvd, count, &so->opts);
+
+	so_pipeok(so, 1);
+
+	return 0;
+syerr:
+	error = errno;
+error:
+	switch (error) {
+	case SO_EINTR:
+		goto retry;
+#if SO_EWOULDBLOCK != SO_EAGAIN
+	case SO_EWOULDBLOCK:
+		/* FALL THROUGH */
+#endif
+	case SO_EAGAIN:
+		so->events |= POLLIN;
+
+		break;
+	} /* switch() */
+
+	so_pipeok(so, 1);
+
+	return error;
+} /* so_recvmsg() */
 
 
 const struct so_stat *so_stat(struct socket *so) {

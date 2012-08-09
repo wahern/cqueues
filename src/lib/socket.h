@@ -30,7 +30,7 @@
 
 #include <sys/types.h>		/* socklen_t in_port_t */
 
-#include <sys/socket.h>		/* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr */
+#include <sys/socket.h>		/* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr struct msghdr struct cmsghdr */
 
 #if defined(AF_UNIX)
 #include <sys/un.h>
@@ -60,9 +60,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120805
-#define SOCKET_V_ABI  0x20120804
-#define SOCKET_V_API  0x20120804
+#define SOCKET_V_REL  0x20120809
+#define SOCKET_V_ABI  0x20120806
+#define SOCKET_V_API  0x20120806
 
 
 const char *socket_vendor(void);
@@ -390,12 +390,12 @@ int so_nopush(int, _Bool);
 int so_nosigpipe(int, _Bool);
 
 
-#define SF_CLOEXEC   0x01
-#define SF_NONBLOCK  0x02
-#define SF_REUSEADDR 0x04
-#define SF_NODELAY   0x08
-#define SF_NOPUSH    0x10
-#define SF_NOSIGPIPE 0x20
+#define SO_F_CLOEXEC   0x01
+#define SO_F_NONBLOCK  0x02
+#define SO_F_REUSEADDR 0x04
+#define SO_F_NODELAY   0x08
+#define SO_F_NOPUSH    0x10
+#define SO_F_NOSIGPIPE 0x20
 
 int so_getfl(int fd, int which); /* no failure mode */
 
@@ -461,6 +461,33 @@ size_t so_peek(struct socket *, void *, size_t, int, int *);
 
 #define so_peekall(so, dst, lim, ep) so_peek((so), (dst), (lim), SO_F_PEEKALL, (ep))
 #define so_peekany(so, dst, lim, ep) so_peek((so), (dst), (lim), 0, (ep))
+
+
+#define so_fdmsgbuf() (&(struct msghdr){ \
+	.msg_iov = &(struct iovec){ 0, 0 }, \
+	.msg_iovlen = 1, \
+	.msg_control = &(union { char buf[CMSG_SPACE(sizeof (int))]; }){ { 0 } }, \
+	.msg_controllen = CMSG_SPACE(sizeof (int)) \
+})
+
+static inline struct msghdr *so_fdmsg_(struct msghdr *msg, const void *p, size_t n, int fd) {
+	msg->msg_iov->iov_base = (void *)p;
+	msg->msg_iov->iov_len = n;
+	struct cmsghdr *cmsg;
+	cmsg = CMSG_FIRSTHDR(msg);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_RIGHTS;
+	cmsg->cmsg_len = CMSG_LEN(sizeof (int));
+	*(int *)CMSG_DATA(cmsg) = fd;
+	return msg;
+} /* so_fdmsg_() */
+
+#define so_fdmsg(p, n, fd) so_fdmsg_(so_fdmsgbuf(), (p), (n), (fd))
+
+int so_sendmsg(struct socket *, const struct msghdr *, int);
+
+int so_recvmsg(struct socket *, struct msghdr *, int);
+
 
 struct so_stat {
 	struct st_log {
