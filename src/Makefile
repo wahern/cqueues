@@ -35,7 +35,7 @@ CFLAGS = -xcode=pic13 $(DFLAGS)
 endif
 
 ifeq ($(VENDOR.OS), SunOS)
-CPPFLAGS += -Usun
+CPPFLAGS += -Usun -D_XPG4_2 -D__EXTENSIONS__
 endif
 
 ifeq ($(VENDOR.OS), Darwin)
