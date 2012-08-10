@@ -1,0 +1,56 @@
+#!/usr/local/lua52/bin/lua
+
+local cqueues = require("cqueues")
+local socket = require("cqueues.socket")
+
+local snd, rcv = socket.pair("stream")
+
+local cq = cqueues.new()
+
+local NLOOP = 1
+
+cq:wrap(function()
+	for i = 1, NLOOP do
+		local con, s = socket.pair("stream")
+		local ok, err = snd:sendfd(os.date(), s)
+
+		if not ok then error(err) end
+
+		for i = 1, 10 do
+			con:write(tostring(i), "\n")
+		end
+
+		con:flush()
+		con:shutdown"w"
+
+		-- Handle OS X bug
+		cq:wrap(function()
+			con:read()
+		end)
+	end
+end)
+
+cq:wrap(function()
+	for i = 1, NLOOP do
+		local msg, con, err = rcv:recvfd(512)
+
+		if not msg then error(err) end
+
+		print(msg)
+
+		for i in con:lines() do
+			print(tostring(i))
+		end
+
+		con:shutdown"w"
+	end
+end)
+
+
+while not cq:empty() do
+	local ok, err = cq:step()
+
+	if not ok then
+		error("cqueue: " .. err)
+	end
+end
