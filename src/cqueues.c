@@ -59,7 +59,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUES_VENDOR "william@25thandClement.com"
-#define CQUEUES_VERSION 20120809L
+#define CQUEUES_VERSION 20120810L
 
 
 /*
@@ -589,7 +589,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 
 
 /*
- * E P H E M E R O N  T A B L E  R O U T I N E S
+ * C O N T I N U A T I O N  Q U E U E  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -646,6 +646,7 @@ struct thread {
 	LIST_HEAD(, event) events;
 	unsigned count;
 
+	struct threads *threads;
 	LIST_ENTRY(thread) le;
 
 	double mintimeout;
@@ -671,17 +672,20 @@ struct cqueue {
 	} pool;
 
 	struct {
-		LIST_HEAD(, thread) polling, pending;
+		LIST_HEAD(threads, thread) polling, pending;
 		unsigned count;
 	} thread;
 
 	LLRB_HEAD(timers, timer) timers;
+
+	struct cstack *cstack;
+	LIST_ENTRY(cqueue) le;
 }; /* struct cqueue */
 
 
 static inline int fileno_cmp(const struct fileno *const a, const struct fileno *const b) {
 	return a->fd - b->fd;
-} /* filno_cmp() */
+} /* fileno_cmp() */
 
 LLRB_GENERATE(table, fileno, rbe, fileno_cmp)
 
@@ -739,6 +743,8 @@ static void cqueue_preinit(struct cqueue *Q) {
 } /* cqueue_preinit() */
 
 
+static void cstack_add(lua_State *, struct cqueue *);
+
 static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	int error;
 
@@ -768,16 +774,24 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	 * anchor our ephemeron table in the global registry
 	 */
 	Q->registry = luaL_ref(L, LUA_REGISTRYINDEX);
+
+	/*
+	 * associate ourselves with global continuation stack
+	 */
+	cstack_add(L, Q);
 } /* cqueue_init() */
 
 
 static void thread_del(lua_State *, struct cqueue *, struct callinfo *, struct thread *);
 static int fileno_del(struct cqueue *, struct fileno *, _Bool);
+static void cstack_del(struct cqueue *);
 
 static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	struct thread *thread;
 	struct fileno *fileno;
 	void *next;
+
+	cstack_del(Q);
 
 	while ((thread = LIST_FIRST(&Q->thread.polling))) {
 		thread_del(L, Q, I, thread);
@@ -827,12 +841,28 @@ static int cqueue__gc(lua_State *L) {
 } /* cqueue__gc() */
 
 
-static struct fileno *fileno_get(struct cqueue *Q, int fd, int *error) {
-	struct fileno key, *fileno;
+static void thread_move(struct thread *T, struct threads *list) {
+	if (T->threads != list) {
+		LIST_REMOVE(T, le);
+		LIST_INSERT_HEAD(list, T, le);
+		T->threads = list;
+	}
+} /* thread_move() */
+
+
+static struct fileno *fileno_find(struct cqueue *Q, int fd) {
+	struct fileno key;
 
 	key.fd = fd;
 
-	if (!(fileno = LLRB_FIND(table, &Q->fileno.table, &key))) {
+	return LLRB_FIND(table, &Q->fileno.table, &key);
+} /* fileno_find() */
+
+
+static struct fileno *fileno_get(struct cqueue *Q, int fd, int *error) {
+	struct fileno *fileno;
+
+	if (!(fileno = fileno_find(Q, fd))) {
 		if (!(fileno = pool_get(&Q->pool.fileno, error)))
 			return NULL;
 
@@ -848,14 +878,20 @@ static struct fileno *fileno_get(struct cqueue *Q, int fd, int *error) {
 } /* fileno_get() */
 
 
-static int fileno_update(struct cqueue *Q, struct fileno *fileno) {
+static void fileno_signal(struct cqueue *Q, struct fileno *fileno, short events) {
 	struct event *event;
-	short events = 0;
-	int error;
 
 	LIST_FOREACH(event, &fileno->events, fle) {
-		events |= event->events;
+		if (event->events & events)
+			event->pending = 1;
+
+		thread_move(event->thread, &Q->thread.pending);
 	}
+} /* fileno_signal() */
+
+
+static int fileno_ctl(struct cqueue *Q, struct fileno *fileno, short events) {
+	int error;
 
 	if ((error = kpoll_ctl(&Q->kp, fileno->fd, &fileno->state, events, fileno)))
 		return error;
@@ -868,6 +904,18 @@ static int fileno_update(struct cqueue *Q, struct fileno *fileno) {
 		LIST_INSERT_HEAD(&Q->fileno.inactive, fileno, le);
 
 	return 0;
+} /* fileno_ctl() */
+
+
+static int fileno_update(struct cqueue *Q, struct fileno *fileno) {
+	struct event *event;
+	short events = 0;
+
+	LIST_FOREACH(event, &fileno->events, fle) {
+		events |= event->events;
+	}
+
+	return fileno_ctl(Q, fileno, events);
 } /* fileno_update() */
 
 
@@ -1094,6 +1142,7 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 	T->L = lua_tothread(L, index);
 
 	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
+	T->threads = &Q->thread.pending;
 	Q->thread.count++;
 } /* thread_add() */
 
@@ -1196,10 +1245,8 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 		timer_add(Q, &T->timer, thread_timeout(T));
 
-		if (!LIST_EMPTY(&T->events) || isfinite(T->timer.timeout)) {
-			LIST_REMOVE(T, le);
-			LIST_INSERT_HEAD(&Q->thread.polling, T, le);
-		}
+		if (!LIST_EMPTY(&T->events) || isfinite(T->timer.timeout))
+			thread_move(T, &Q->thread.polling);
 
 		break;
 	case LUA_OK:
@@ -1240,14 +1287,7 @@ static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 		fileno = kpoll_udata(ke);
 		events = kpoll_pending(ke);
 
-		LIST_FOREACH(event, &fileno->events, fle) {
-			if (event->events & events)
-				event->pending = 1;
-
-			LIST_REMOVE(event->thread, le);
-			LIST_INSERT_HEAD(&Q->thread.pending, event->thread, le);
-		}
-
+		fileno_signal(Q, fileno, events);
 		fileno->state = kpoll_diff(ke, fileno->state);
 	}
 
@@ -1264,8 +1304,7 @@ static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 				event->pending = 1;
 		}
 
-		LIST_REMOVE(T, le);
-		LIST_INSERT_HEAD(&Q->thread.pending, T, le);
+		thread_move(T, &Q->thread.pending);
 	}
 
 	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
@@ -1437,6 +1476,99 @@ static int cqueue_monotime(lua_State *L) {
 } /* cqueue_monotime() */
 
 
+/*
+ * C O N T I N U A T I O N  S T A C K  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+struct cstack {
+	LIST_HEAD(, cqueue) cqueues;
+}; /* struct cstack */
+
+
+static struct cstack *cstack_self(lua_State *L) {
+	static const int index = 47;
+	struct cstack *CS;
+
+	lua_rawgetp(L, LUA_REGISTRYINDEX, &index);
+
+	CS = lua_touserdata(L, -1);
+
+	lua_pop(L, 1);
+
+	if (CS)
+		return CS;
+
+	CS = lua_newuserdata(L, sizeof *CS);
+	memset(CS, 0, sizeof *CS);
+
+	LIST_INIT(&CS->cqueues);
+
+	lua_rawsetp(L, LUA_REGISTRYINDEX, &index);
+
+	return CS;
+} /* cstack_self() */
+
+
+static void cstack_add(lua_State *L, struct cqueue *Q) {
+	Q->cstack = cstack_self(L);
+	LIST_INSERT_HEAD(&Q->cstack->cqueues, Q, le);
+} /* cstack_add() */
+
+
+static void cstack_del(struct cqueue *Q) {
+	if (Q->cstack) {
+		LIST_REMOVE(Q, le);
+		Q->cstack = NULL;
+	}
+} /* cstack_del() */
+
+
+static int cstack_cancelfd(lua_State *L, int fd) {
+	struct cstack *CS = cstack_self(L);
+	struct cqueue *Q;
+	int error;
+
+	LIST_FOREACH(Q, &CS->cqueues, le) {
+		struct fileno *fileno;
+
+		if ((fileno = fileno_find(Q, fd))) {
+			fileno_signal(Q, fileno, POLLIN|POLLOUT);
+			/* FIXME: throw error */
+			fileno_ctl(Q, fileno, 0);
+		}
+	}
+
+	return 0;
+} /* cstack_cancelfd() */
+
+
+static int cstack_cancel(lua_State *L) {
+	int index, fd;
+
+	for (index = 1; index <= lua_gettop(L); index++) {
+		if (!lua_isnil(L, index) && !lua_isnumber(L, index)) {
+			if (LUA_OK != object_pcall(L, index, "pollfd", LUA_TNUMBER))
+				return lua_error(L);
+
+			fd = luaL_optint(L, -1, -1);
+			lua_pop(L, 1);
+		} else {
+			fd = luaL_optint(L, -1, -1);
+		}
+
+		cstack_cancelfd(L, fd);
+	}
+
+	return 0;
+} /* cstack_cancel() */
+
+
+/*
+ * M O D U L E  L I N K A G E
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
 static const luaL_Reg cqueue_methods[] = {
 	{ "step",    &cqueue_step },
 	{ "attach",  &cqueue_attach },
@@ -1460,6 +1592,7 @@ static const luaL_Reg cqueues_globals[] = {
 	{ "new",       &cqueue_new },
 	{ "interpose", &cqueue_interpose },
 	{ "monotime",  &cqueue_monotime },
+	{ "cancel",    &cstack_cancel },
 	{ NULL,        NULL }
 }; /* cqueues_globals[] */
 
