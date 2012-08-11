@@ -1,0 +1,65 @@
+#!/usr/local/lua52/bin/lua
+--
+-- Solaris has no analog to *BSD EVFILT_SIGNAL or Linux signalfd. Rather
+-- than using tricks (signal handlers + pipes, or thread + sigwait + pipe)
+-- which create troublesome global state, especially on fork, the default
+-- signal listener implementation just uses a short timeout for Solaris.
+--
+-- Most of the time signals are used for simple process management. The most
+-- portable solution I can come up with is to use two signals. One signal
+-- will be used to interrupt the process, and another for queueing and
+-- retrieval. (Note that you can't do both. Neither blocked nor ignored
+-- signals guarantee a syscall interrupt.) We install a dummy handler for
+-- the interrupt signal, and block both signals. Then we use pselect
+-- (cqueue:pause()) to wait around for either I/O or our interrupt. When we
+-- wake up, we process our I/O and check for any queued signals.
+--
+-- There's one more caveat, however. pselect is broken on OS X. Therefore,
+-- for the most portable solution we use both methods: a synchronous signal
+-- listener, and a loop using pselect().
+--
+--
+local cqueues = require("cqueues")
+local signal = require("cqueues.signal")
+
+local cq = cqueues.new()
+
+local sl = signal.listen(signal.SIGTERM, signal.SIGINT)
+
+signal.discard(signal.SIGINT)
+signal.block(signal.SIGTERM, signal.SIGINT)
+
+
+cq:wrap(function()
+	sl:settimeout(30)
+
+	while true do
+		cqueues.poll(sl:wait())
+	end
+end)
+
+
+cq:wrap(function()
+	local i = 0
+
+	while true do
+		cqueues.sleep(2)
+		i = i + 1
+		if i > 2 then signal.raise(signal.SIGKILL) end
+		signal.raise(signal.SIGTERM)
+		print("sent", signal.SIGTERM, signal[signal.SIGTERM])
+		signal.raise(signal.SIGINT)
+	end
+end)
+
+
+while not cq:empty() do
+	local signo = sl:wait(0.0)
+
+	if signo then print("rcvd", signo, signal[signo]) end
+
+	local ok, err = cq:step(0.0)
+	if not ok then error(err) end
+	cq:pause(signal.SIGINT)
+end
+
