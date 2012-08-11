@@ -697,6 +697,15 @@ static inline int timer_cmp(const struct timer *const a, const struct timer *con
 LLRB_GENERATE(timers, timer, rbe, timer_cmp)
 
 
+struct stackinfo {
+	lua_State *L; /* stack of cqueue object */
+	int self; /* index of cqueue object */
+	lua_State *T; /* running thread */
+}; /* struct stackinfo */
+
+static void cstack_resumed(struct cstack *, const struct stackinfo *info, struct stackinfo *oinfo);
+
+
 struct callinfo {
 	int self; /* stack index of cqueue object */
 	int registry; /* stack index of ephemeron registry table */
@@ -1208,6 +1217,7 @@ static void luacq_slice(lua_State *L, int index, int count) {
 static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
 	int otop, ntmp, nargs, status, index;
 	struct event *event;
+	struct stackinfo info;
 
 	/*
 	 * Preserve any previously yielded objects on another stack until we
@@ -1233,7 +1243,14 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 	timer_del(Q, &T->timer);
 
-	switch ((status = lua_resume(T->L, L, nargs))) {
+
+	cstack_resumed(Q->cstack, &(struct stackinfo){ L, I->self, T->L }, &info);
+
+	status = lua_resume(T->L, L, nargs);
+
+	cstack_resumed(Q->cstack, &info, NULL);
+
+	switch (status) {
 	case LUA_YIELD:
 		for (index = 1; index <= lua_gettop(T->L); index++) {
 			if (LUA_OK != (status = event_add(L, Q, T, index)))
@@ -1418,6 +1435,47 @@ static int cqueue_count(lua_State *L) {
 } /* cqueue_count() */
 
 
+static int cqueue_cancelfd(struct cqueue *Q, int fd) {
+	struct fileno *fileno;
+
+	if ((fileno = fileno_find(Q, fd))) {
+		fileno_signal(Q, fileno, POLLIN|POLLOUT);
+		/* FIXME: throw error */
+		fileno_ctl(Q, fileno, 0);
+	}
+
+	return 0;
+} /* cqueue_cancelfd() */
+
+
+static int cqueue_checkfd(lua_State *L, int index) {
+	int fd;
+
+	if (!lua_isnil(L, index) && !lua_isnumber(L, index)) {
+		if (LUA_OK != object_pcall(L, index, "pollfd", LUA_TNUMBER))
+			lua_error(L);
+
+		fd = luaL_optint(L, -1, -1);
+		lua_pop(L, 1);
+	} else {
+		fd = luaL_optint(L, -1, -1);
+	}
+
+	return fd;
+} /* cqueue_checkfd() */
+
+
+static int cqueue_cancel(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	int index, fd;
+
+	for (index = 2; index <= lua_gettop(L); index++)
+		cqueue_cancelfd(Q, cqueue_checkfd(L, index));
+
+	return 0;
+} /* cqueue_cancel() */
+
+
 static int cqueue_pollfd(lua_State *L) {
 	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
 
@@ -1483,6 +1541,8 @@ static int cqueue_monotime(lua_State *L) {
 
 struct cstack {
 	LIST_HEAD(, cqueue) cqueues;
+
+	struct stackinfo running;
 }; /* struct cstack */
 
 
@@ -1524,44 +1584,46 @@ static void cstack_del(struct cqueue *Q) {
 } /* cstack_del() */
 
 
-static int cstack_cancelfd(lua_State *L, int fd) {
-	struct cstack *CS = cstack_self(L);
-	struct cqueue *Q;
-	int error;
-
-	LIST_FOREACH(Q, &CS->cqueues, le) {
-		struct fileno *fileno;
-
-		if ((fileno = fileno_find(Q, fd))) {
-			fileno_signal(Q, fileno, POLLIN|POLLOUT);
-			/* FIXME: throw error */
-			fileno_ctl(Q, fileno, 0);
-		}
+static void cstack_resumed(struct cstack *CS, const struct stackinfo *info, struct stackinfo *oinfo) {
+	if (CS) {
+		if (oinfo)
+			*oinfo = CS->running;
+		CS->running = *info;
 	}
-
-	return 0;
-} /* cstack_cancelfd() */
+} /* cstack_resumed() */
 
 
 static int cstack_cancel(lua_State *L) {
+	struct cstack *CS = cstack_self(L);
+	struct cqueue *Q;
 	int index, fd;
 
 	for (index = 1; index <= lua_gettop(L); index++) {
-		if (!lua_isnil(L, index) && !lua_isnumber(L, index)) {
-			if (LUA_OK != object_pcall(L, index, "pollfd", LUA_TNUMBER))
-				return lua_error(L);
+		fd = cqueue_checkfd(L, index);
 
-			fd = luaL_optint(L, -1, -1);
-			lua_pop(L, 1);
-		} else {
-			fd = luaL_optint(L, -1, -1);
+		LIST_FOREACH(Q, &CS->cqueues, le) {
+			cqueue_cancelfd(Q, fd);
 		}
-
-		cstack_cancelfd(L, fd);
 	}
 
 	return 0;
 } /* cstack_cancel() */
+
+
+static int cstack_running(lua_State *L) {
+	struct cstack *CS = cstack_self(L);
+
+	if (CS->running.L) {
+		lua_pushvalue(CS->running.L, CS->running.self);
+		lua_xmove(CS->running.L, L, 1);
+	} else {
+		lua_pushnil(L);
+	}
+
+	lua_pushboolean(L, CS->running.T == L);
+
+	return 2;
+} /* cstack_running() */
 
 
 /*
@@ -1575,6 +1637,7 @@ static const luaL_Reg cqueue_methods[] = {
 	{ "wrap",    &cqueue_wrap },
 	{ "empty",   &cqueue_empty },
 	{ "count",   &cqueue_count },
+	{ "cancel",  &cqueue_cancel },
 	{ "pollfd",  &cqueue_pollfd },
 	{ "events",  &cqueue_events },
 	{ "timeout", &cqueue_timeout },
@@ -1593,6 +1656,7 @@ static const luaL_Reg cqueues_globals[] = {
 	{ "interpose", &cqueue_interpose },
 	{ "monotime",  &cqueue_monotime },
 	{ "cancel",    &cstack_cancel },
+	{ "running",   &cstack_running },
 	{ NULL,        NULL }
 }; /* cqueues_globals[] */
 
