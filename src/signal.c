@@ -31,10 +31,6 @@
 
 #include <unistd.h>
 
-#if defined _REENTRANT || defined _THREAD_SAFE
-#include <pthread.h>
-#endif
-
 #include <lua.h>
 #include <lauxlib.h>
 
