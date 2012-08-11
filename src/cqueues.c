@@ -1539,6 +1539,8 @@ static int cqueue_monotime(lua_State *L) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#undef CS /* defined by Solaris in /usr/include/sys/crtctl.h */
+
 struct cstack {
 	LIST_HEAD(, cqueue) cqueues;
 
