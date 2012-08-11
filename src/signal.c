@@ -25,6 +25,8 @@
  */
 #include <string.h>
 
+#include <math.h>
+
 #include <signal.h>
 
 #include <errno.h>
@@ -61,6 +63,8 @@ struct signalfd {
 	sigset_t desired;
 	sigset_t polling;
 	sigset_t pending;
+
+	double timeout;
 }; /* struct signalfd */
 
 
@@ -70,6 +74,12 @@ static void sfd_preinit(struct signalfd *S) {
 	sigemptyset(&S->desired);
 	sigemptyset(&S->polling);
 	sigemptyset(&S->pending);
+
+#if HAVE_PORTS
+	S->timeout = 1.1;
+#else
+	S->timeout = NAN;
+#endif
 } /* sfd_preinit() */
 
 
@@ -279,16 +289,27 @@ static int lsl_timeout(lua_State *L) {
 
 	if (sfd_diff(&S->pending, &none)) {
 		lua_pushnumber(L, 0.0);
+	} else if (isnormal(S->timeout) && !signbit(S->timeout)) {
+		lua_pushnumber(L, S->timeout);
 	} else {
-#if HAVE_PORTS
-		lua_pushnumber(L, 1.1);
-#else
 		lua_pushnil(L);
-#endif
 	}
 
 	return 1;
 } /* lsl_timeout() */
+
+
+static int lsl_settimeout(lua_State *L) {
+	struct signalfd *S = luaL_checkudata(L, 1, LSL_CLASS);
+
+	lua_settop(L, 2);
+
+	lua_pushnumber(L, S->timeout);
+
+	S->timeout = luaL_optnumber(L, 2, NAN);
+
+	return 1;
+} /* lsl_settimeout() */
 
 
 static int lsl_interpose(lua_State *L) {
@@ -307,11 +328,12 @@ static int lsl_interpose(lua_State *L) {
 
 
 static const luaL_Reg lsl_methods[] = {
-	{ "wait",    &lsl_wait },
-	{ "pollfd",  &lsl_pollfd },
-	{ "events",  &lsl_events },
-	{ "timeout", &lsl_timeout },
-	{ NULL,      NULL },
+	{ "wait",       &lsl_wait },
+	{ "pollfd",     &lsl_pollfd },
+	{ "events",     &lsl_events },
+	{ "timeout",    &lsl_timeout },
+	{ "settimeout", &lsl_settimeout },
+	{ NULL,         NULL },
 }; /* lsl_methods[] */
 
 

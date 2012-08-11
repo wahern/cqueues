@@ -15,11 +15,15 @@ local wait; wait = signal.interpose("wait", function(self, timeout)
 	while not ready() do
 		local curtime = cqueues.monotime()
 
-		if not deadline or curtime >= deadline then
-			return nil
+		if deadline then
+			if curtime >= deadline then
+				return nil
+			else
+				cqueues.poll(self, deadline - curtime)
+			end
+		else
+			cqueues.poll(self)
 		end
-
-		cqueues.poll(self, deadline - curtime)
 	end
 
 	return signo
