@@ -447,6 +447,7 @@ static const luaL_Reg ls_globals[] = {
 	{ "interpose", &lsl_interpose },
 	{ "ignore",    &ls_ignore },
 	{ "default",   &ls_default },
+	{ "discard",   &ls_discard },
 	{ "block",     &ls_block },
 	{ "unblock",   &ls_unblock },
 	{ "raise",     &ls_raise },

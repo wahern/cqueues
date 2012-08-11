@@ -30,12 +30,15 @@
 
 #include <string.h>	/* memset(3) strerror(3) */
 
+#include <signal.h>	/* sigprocmask(2) pthread_sigmask(3) */
+
 #include <time.h>	/* struct timespec clock_gettime(3) */
 
 #include <errno.h>	/* errno */
 
 #include <sys/queue.h>	/* LIST */
 #include <sys/time.h>	/* struct timeval */
+#include <sys/select.h>	/* pselect(3) */
 
 #include <unistd.h>	/* close(2) */
 
@@ -203,7 +206,8 @@ static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
 			ts->tv_nsec = 0;
 		} else {
 			ts->tv_sec = (time_t)f;
-			ts->tv_nsec = (long)(f * 1000000000.0) % 1000000000L;
+			/* SunPRO chokes on modulo here unless unsigned. */
+			ts->tv_nsec = (unsigned long)(f * 1000000000.0) % 1000000000UL;
 		}
 
 		return ts;
@@ -1519,6 +1523,38 @@ static int cqueue_reset(lua_State *L) {
 } /* cqueue_reset() */
 
 
+static int cqueue_pause(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	sigset_t block;
+	fd_set rfds;
+	int index;
+
+	sigemptyset(&block);
+#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS > 0
+	pthread_sigmask(SIG_BLOCK, NULL, &block);
+#else
+	sigprocmask(SIG_BLOCK, NULL, &block);
+#endif
+
+	for (index = 2; index <= lua_gettop(L); index++) {
+		sigdelset(&block, luaL_checkint(L, index));
+	}
+
+	if (Q->kp.fd < 0 || Q->kp.fd >= FD_SETSIZE)
+		return luaL_error(L, "cqueue:pause: fd %d outside allowable range 0..%d", Q->kp.fd, (int)(FD_SETSIZE - 1));
+
+	FD_ZERO(&rfds);
+	FD_SET(Q->kp.fd, &rfds);
+
+	if (-1 == pselect(Q->kp.fd + 1, &rfds, NULL, NULL, f2ts(cqueue_timeout_(Q)), &block)) {
+		if (errno != EINTR)
+			return luaL_error(L, "cqueue:pause: %s", strerror(errno));
+	}
+
+	return 0;
+} /* cqueue_pause() */
+
+
 static int cqueue_pollfd(lua_State *L) {
 	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
 
@@ -1702,6 +1738,7 @@ static const luaL_Reg cqueue_methods[] = {
 	{ "count",   &cqueue_count },
 	{ "cancel",  &cqueue_cancel },
 	{ "reset",   &cqueue_reset },
+	{ "pause",   &cqueue_pause },
 	{ "pollfd",  &cqueue_pollfd },
 	{ "events",  &cqueue_events },
 	{ "timeout", &cqueue_timeout },
