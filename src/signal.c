@@ -85,6 +85,8 @@ static int sfd_init(struct signalfd *S) {
 	S->polling = S->desired;
 
 	return 0;
+#elif HAVE_PORTS
+	return 0;
 #else
 	if (-1 == (S->fd = kqueue()))
 		return errno;
@@ -120,6 +122,8 @@ static int sfd_update(struct signalfd *S) {
 		S->polling = S->desired;
 	}
 
+	return 0;
+#elif HAVE_PORTS
 	return 0;
 #else
 	int signo;
@@ -173,6 +177,13 @@ syerr:
 	}
 
 	return errno;
+#elif HAVE_PORTS
+	int signo;
+	
+	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))
+		sigaddset(&S->pending, signo);
+
+	return 0;
 #else
 	struct kevent event;
 	int n;
@@ -273,7 +284,11 @@ static int lsl_timeout(lua_State *L) {
 	if (sfd_diff(&S->pending, &none)) {
 		lua_pushnumber(L, 0.0);
 	} else {
+#if HAVE_PORTS
+		lua_pushnumber(L, 1.1);
+#else
 		lua_pushnil(L);
+#endif
 	}
 
 	return 1;
