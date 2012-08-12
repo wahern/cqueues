@@ -1194,6 +1194,38 @@ error:
 } /* cqueue_update() */
 
 
+static int cqueue_reboot(struct cqueue *Q, _Bool stop, _Bool restart) {
+	if (stop) {
+		struct fileno *fileno;
+		struct thread *thread;
+
+		while ((fileno = LIST_FIRST(&Q->fileno.polling))) {
+			LIST_REMOVE(fileno, le);
+			LIST_INSERT_HEAD(&Q->fileno.outstanding, fileno, le);
+		}
+
+		LIST_FOREACH(fileno, &Q->fileno.outstanding, le) {
+			fileno->state = 0;
+		}
+
+		while ((thread = LIST_FIRST(&Q->thread.polling))) {
+			thread_move(thread, &Q->thread.pending);
+		}
+
+		kpoll_destroy(&Q->kp);
+	}
+
+	if (restart) {
+		int error;
+
+		if ((error = kpoll_init(&Q->kp)))
+			return error;
+	}
+
+	return 0;
+} /* cqueue_reboot() */
+
+
 static void luacq_xcopy(lua_State *from, lua_State *to, int count) {
 	int index;
 
@@ -1476,6 +1508,17 @@ static int cqueue_cancel(lua_State *L) {
 } /* cqueue_cancel() */
 
 
+static int cqueue_reset(lua_State *L) {
+	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	int error;
+
+	if ((error = cqueue_reboot(Q, 1, 1)))
+		return luaL_error(L, "unable to reset continuation queue: %s", strerror(error));
+
+	return 0;
+} /* cqueue_reset() */
+
+
 static int cqueue_pollfd(lua_State *L) {
 	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
 
@@ -1584,15 +1627,6 @@ static void cstack_del(struct cqueue *Q) {
 } /* cstack_del() */
 
 
-static void cstack_resumed(struct cstack *CS, const struct stackinfo *info, struct stackinfo *oinfo) {
-	if (CS) {
-		if (oinfo)
-			*oinfo = CS->running;
-		CS->running = *info;
-	}
-} /* cstack_resumed() */
-
-
 static int cstack_cancel(lua_State *L) {
 	struct cstack *CS = cstack_self(L);
 	struct cqueue *Q;
@@ -1608,6 +1642,33 @@ static int cstack_cancel(lua_State *L) {
 
 	return 0;
 } /* cstack_cancel() */
+
+
+static int cstack_reset(lua_State *L) {
+	struct cstack *CS = cstack_self(L);
+	struct cqueue *Q;
+	int error;
+
+	LIST_FOREACH(Q, &CS->cqueues, le) {
+		cqueue_reboot(Q, 1, 0);
+	}
+
+	LIST_FOREACH(Q, &CS->cqueues, le) {
+		if ((error = cqueue_reboot(Q, 0, 1)))
+			return luaL_error(L, "unable to reset continuation queue: %s", strerror(error));
+	}
+
+	return 0;
+} /* cstack_reset() */
+
+
+static void cstack_resumed(struct cstack *CS, const struct stackinfo *info, struct stackinfo *oinfo) {
+	if (CS) {
+		if (oinfo)
+			*oinfo = CS->running;
+		CS->running = *info;
+	}
+} /* cstack_resumed() */
 
 
 static int cstack_running(lua_State *L) {
@@ -1638,6 +1699,7 @@ static const luaL_Reg cqueue_methods[] = {
 	{ "empty",   &cqueue_empty },
 	{ "count",   &cqueue_count },
 	{ "cancel",  &cqueue_cancel },
+	{ "reset",   &cqueue_reset },
 	{ "pollfd",  &cqueue_pollfd },
 	{ "events",  &cqueue_events },
 	{ "timeout", &cqueue_timeout },
@@ -1656,6 +1718,7 @@ static const luaL_Reg cqueues_globals[] = {
 	{ "interpose", &cqueue_interpose },
 	{ "monotime",  &cqueue_monotime },
 	{ "cancel",    &cstack_cancel },
+	{ "reset",     &cstack_reset },
 	{ "running",   &cstack_running },
 	{ NULL,        NULL }
 }; /* cqueues_globals[] */
