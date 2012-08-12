@@ -49,7 +49,7 @@
 #define HAVE_KQUEUE (!HAVE_EPOLL && !HAVE_PORTS)
 
 #if HAVE_EPOLL
-#include <sys/epoll.h>
+#include <sys/signalfd.h>
 #elif HAVE_PORTS
 #include <port.h>
 #else
@@ -78,10 +78,19 @@ static void sfd_preinit(struct signalfd *S) {
 
 
 static int sfd_init(struct signalfd *S) {
+#if HAVE_EPOLL
+	if (-1 == (S->fd = signalfd(-1, &S->desired, SFD_NONBLOCK|SFD_CLOEXEC)))
+		return errno;
+
+	S->polling = S->desired;
+
+	return 0;
+#else
 	if (-1 == (S->fd = kqueue()))
 		return errno;
 
 	return 0;
+#endif
 } /* sfd_init() */
 
 
@@ -103,9 +112,18 @@ static int sfd_diff(const sigset_t *a, const sigset_t *b) {
 
 
 static int sfd_update(struct signalfd *S) {
+#if HAVE_EPOLL
+	if (sfd_diff(&S->desired, &S->polling)) {
+		if (-1 == signalfd(S->fd, &S->desired, 0))
+			return errno;
+
+		S->polling = S->desired;
+	}
+
+	return 0;
+#else
 	int signo;
 
-#if HAVE_KQUEUE
 	while ((signo = sfd_diff(&S->desired, &S->polling))) {
 		struct kevent event;
 
@@ -127,14 +145,35 @@ static int sfd_update(struct signalfd *S) {
 	}
 
 	return 0;
-#else
-#error no kqueue
 #endif
 } /* sfd_update() */
 
 
 static int sfd_query(struct signalfd *S) {
-#if HAVE_KQUEUE
+#if HAVE_EPOLL
+	struct signalfd_siginfo info;
+	long n;
+
+retry:
+	if ((n = read(S->fd, &info, sizeof info)) > 0) {
+		sigaddset(&S->pending, info.ssi_signo);
+	} else if (n == -1) {
+		goto syerr;
+	}
+
+	return 0;
+syerr:
+	switch (errno) {
+	case EAGAIN:
+		return 0;
+	case EINTR:
+		goto retry;
+	default:
+		break;
+	}
+
+	return errno;
+#else
 	struct kevent event;
 	int n;
 
@@ -152,8 +191,6 @@ retry:
 	}
 
 	return sfd_update(S);
-#else
-#error no kqueue
 #endif
 } /* sfd_query() */
 
