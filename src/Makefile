@@ -66,10 +66,10 @@ endif
 
 
 ifeq ($(VENDOR.OS), SunOS)
-cqueues.so: cqueues.o socket.o errno.o lib/socket.o lib/dns.o
+cqueues.so: cqueues.o socket.o errno.o signal.o lib/socket.o lib/dns.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 else
-cqueues.so: cqueues.o socket.o errno.o lib/socket.o lib/dns.o
+cqueues.so: cqueues.o socket.o errno.o signal.o lib/socket.o lib/dns.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 endif
 
@@ -85,6 +85,9 @@ errno.o: errno.c
 errno.c: errno.c.m4
 	$(M4) $^ > $@
 
+signal.o: signal.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
 lib/socket.o: lib/socket.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
@@ -92,7 +95,7 @@ lib/dns.o: lib/dns.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
-install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua
+install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua $(lua52path)/cqueues/signal.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -107,6 +110,10 @@ $(lua52path)/cqueues/socket.lua: socket.lua
 	cp -p $< $@
 
 $(lua52path)/cqueues/errno.lua: errno.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+ 
+$(lua52path)/cqueues/signal.lua: signal.lua
 	mkdir -p $(@D)
 	cp -p $< $@
  
