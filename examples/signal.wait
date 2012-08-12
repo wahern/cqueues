@@ -1,0 +1,40 @@
+#!/usr/local/lua52/bin/lua
+
+local cqueues = require("cqueues")
+local signal = require("cqueues.signal")
+
+local cq = cqueues.new()
+
+local sl = signal.listen(signal.SIGTERM, signal.SIGINT)
+
+--signal.ignore(signal.SIGTERM)
+signal.block(signal.SIGTERM, signal.SIGINT)
+
+
+cq:wrap(function()
+	local signo
+
+	while true do
+		signo = sl:wait(0.5)
+
+		print(signo, signal[signo])
+
+		if signo == signal.SIGINT then
+			os.exit(true)
+		end
+	end
+end)
+
+
+cq:wrap(function()
+	while true do
+		cqueues.sleep(1)
+		signal.raise(signal.SIGTERM)
+	end
+end)
+
+
+while not cq:empty() do
+	local ok, err = cq:step()
+	if not ok then error(err) end
+end
