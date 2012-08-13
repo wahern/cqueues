@@ -369,6 +369,27 @@ static int ls_default(lua_State *L) {
 } /* ls_default() */
 
 
+static void ls_noop() {
+	return;
+} /* ls_noop() */
+
+static int ls_discard(lua_State *L) {
+	struct sigaction sa;
+	int index;
+
+	for (index = 1; index <= lua_gettop(L); index++) {
+		sa.sa_handler = &ls_noop;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+
+		if (0 != sigaction(luaL_checkint(L, index), &sa, 0))
+			return luaL_error(L, "signal.discard: %s", strerror(errno));
+	}
+
+	return 0;
+} /* ls_discard() */
+
+
 static int ls_block(lua_State *L) {
 	sigset_t set;
 	int index, error;
