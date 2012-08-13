@@ -1983,7 +1983,7 @@ error:
 
 int so_recvmsg(struct socket *so, struct msghdr *msg, int flags) {
 	ssize_t count;
-	int i, error;
+	int error;
 
 	so_pipeign(so, 1);
 
@@ -1999,7 +1999,7 @@ retry:
 
 	st_update(&so->st.rcvd, count, &so->opts);
 
-	for (i = 0; i < msg->msg_iovlen; i++) {
+	for (unsigned i = 0; i < msg->msg_iovlen; i++) {
 		if ((size_t)count < msg->msg_iov[i].iov_len) {
 			msg->msg_iov[i].iov_len = count;
 
