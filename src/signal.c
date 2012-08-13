@@ -465,9 +465,12 @@ int luaopen__cqueues_signal(lua_State *L) {
 		{ "SIGCHLD", SIGCHLD },
 		{ "SIGHUP",  SIGHUP  },
 		{ "SIGINT",  SIGINT  },
+		{ "SIGKILL", SIGKILL },
 		{ "SIGPIPE", SIGPIPE },
 		{ "SIGQUIT", SIGQUIT },
 		{ "SIGTERM", SIGTERM },
+		{ "SIGUSR1", SIGUSR1 },
+		{ "SIGUSR2", SIGUSR2 },
 	};
 	unsigned i;
 
