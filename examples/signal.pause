@@ -44,8 +44,13 @@ cq:wrap(function()
 
 	while true do
 		cqueues.sleep(2)
+
 		i = i + 1
-		if i > 2 then signal.raise(signal.SIGKILL) end
+
+		if i > 2 then
+			os.exit()
+		end
+
 		signal.raise(signal.SIGTERM)
 		print("sent", signal.SIGTERM, signal[signal.SIGTERM])
 		signal.raise(signal.SIGINT)
