@@ -6,18 +6,22 @@
 -- signal listener implementation just uses a short timeout for Solaris.
 --
 -- Most of the time signals are used for simple process management. The most
--- portable solution I can come up with is to use two signals. One signal
--- will be used to interrupt the process, and another for queueing and
--- retrieval. (Note that you can't do both. Neither blocked nor ignored
--- signals guarantee a syscall interrupt.) We install a dummy handler for
--- the interrupt signal, and block both signals. Then we use pselect
--- (cqueue:pause()) to wait around for either I/O or our interrupt. When we
--- wake up, we process our I/O and check for any queued signals.
+-- portable solution for immediate signal response I can come up with is to
+-- use two signals. One signal will be used to interrupt the process, and
+-- another for queueing and retrieval. (Note that you can't do both. Neither
+-- blocked nor ignored signals guarantee a syscall interrupt.) We install a
+-- dummy handler for the interrupt signal, and block both signals. Then we
+-- use pselect (cqueue:pause()) to wait around for either I/O or our
+-- interrupt. When we wake up, we check for any queued signals and process
+-- any I/O.
 --
 -- There's one more caveat, however. pselect is broken on OS X. Therefore,
--- for the most portable solution we use both methods: a synchronous signal
--- listener, and a loop using pselect().
+-- for the most portable solution we use both methods: polling a signal
+-- listener descriptor, and a loop using pselect().
 --
+-- If all is working well, then the following script should print "sent
+-- SIGTERM" and "rcvd SIGTERM" in rapid succession on all supported
+-- platforms.
 --
 local cqueues = require("cqueues")
 local signal = require("cqueues.signal")
@@ -31,6 +35,8 @@ signal.block(signal.SIGTERM, signal.SIGINT)
 
 
 cq:wrap(function()
+	-- Change the default Solaris timeout so we can confirm we're waking
+	-- up from an interrupt, and not just timing out.
 	sl:settimeout(30)
 
 	while true do
