@@ -60,7 +60,7 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120809
+#define SOCKET_V_REL  0x20120812
 #define SOCKET_V_ABI  0x20120806
 #define SOCKET_V_API  0x20120806
 
@@ -466,8 +466,8 @@ size_t so_peek(struct socket *, void *, size_t, int, int *);
 #define so_fdmsgbuf() (&(struct msghdr){ \
 	.msg_iov = &(struct iovec){ 0, 0 }, \
 	.msg_iovlen = 1, \
-	.msg_control = &(union { char buf[CMSG_SPACE(sizeof (int))]; }){ { 0 } }, \
-	.msg_controllen = CMSG_SPACE(sizeof (int)) \
+	.msg_control = &(union { char buf[64]; struct cmsghdr hdr; }){ { 0 } }, \
+	.msg_controllen = 64 \
 })
 
 static inline struct msghdr *so_fdmsg_(struct msghdr *msg, const void *p, size_t n, int fd) {
