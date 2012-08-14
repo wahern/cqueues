@@ -463,6 +463,12 @@ size_t so_peek(struct socket *, void *, size_t, int, int *);
 #define so_peekany(so, dst, lim, ep) so_peek((so), (dst), (lim), 0, (ep))
 
 
+/*
+ * NOTE: CMSG_SPACE does not evaluate to a constant on OS X or NetBSD, so
+ * cannot be used to declare a compound literal. Instead, a largish constant
+ * is used. It must be adjusted at run-time because some implementations
+ * complain if .msg_controllen is too large.
+ */
 #define so_fdmsgbuf() (&(struct msghdr){ \
 	.msg_iov = &(struct iovec){ 0, 0 }, \
 	.msg_iovlen = 1, \
@@ -473,6 +479,7 @@ size_t so_peek(struct socket *, void *, size_t, int, int *);
 static inline struct msghdr *so_fdmsg_(struct msghdr *msg, const void *p, size_t n, int fd) {
 	msg->msg_iov->iov_base = (void *)p;
 	msg->msg_iov->iov_len = n;
+	msg->msg_controllen = SO_MIN(msg->msg_controllen, CMSG_SPACE(sizeof (int)));
 	struct cmsghdr *cmsg;
 	cmsg = CMSG_FIRSTHDR(msg);
 	cmsg->cmsg_level = SOL_SOCKET;
