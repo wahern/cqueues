@@ -1,0 +1,38 @@
+The following is a list of porting issues discovered while implementing
+cqueues, maintained in the spirit of DJB's portability notes:
+
+	http://cr.yp.to/docs/unixport.html
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+FD_SETSIZE
+
+	         int : Linux 3.2.0 (glibc 2.15)
+	         int : OS X 10.7
+	         int : OpenBSD 5.1
+	         int : Solaris 11.0
+	unsigned int : FreeBSD 9.0
+	         int : NetBSD 5.1.2
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+.msg_iovlen of struct msghdr
+
+	      size_t : Linux 3.2.0 (glibc 2.15)
+	         int : OS X 10.7
+	unsigned int : OpenBSD 5.1
+	         int : Solaris 11.0
+	         int : FreeBSD 9.0
+	         int : NetBSD 5.1.2
+	      size_t : RFC 2292
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+CMSG_SPACE
+	Not always a constant expression, so cannot be used to declare a
+	compound literal.
+
+	    constant : Linux 3.2.0 (glibc 2.15)
+	not constant : OS X 10.7
+	    constant : OpenBSD 5.1
+	    constant : Solaris 11.0
+	    constant : FreeBSD 9.0
+	not constant : NetBSD 5.1.2
+	
