@@ -1999,7 +1999,17 @@ retry:
 
 	st_update(&so->st.rcvd, count, &so->opts);
 
-	for (unsigned i = 0; i < msg->msg_iovlen; i++) {
+	/* RE .msg_iovlen type
+	 *
+	 * 	- Linux    : size_t
+	 * 	- OS X     : int
+	 * 	- OpenBSD  : unsigned int
+	 * 	- Solaris  : int
+	 * 	- FreeBSD  : int
+	 * 	- NetBSD   : int
+	 * 	- RFC 2292 : size_t
+	 */
+	for (size_t i = 0; i < (size_t)msg->msg_iovlen; i++) {
 		if ((size_t)count < msg->msg_iov[i].iov_len) {
 			msg->msg_iov[i].iov_len = count;
 
