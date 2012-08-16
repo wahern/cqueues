@@ -125,7 +125,7 @@ syerr:
 #define lso_error_t int
 #define lso_nargs_t int
 
-#define LSO_CLASS   "Socket"
+#define LSO_CLASS   "CQS Socket"
 #define LSO_BUFSIZ  4096
 #define LSO_MAXLINE 4096
 
@@ -416,12 +416,9 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 } /* lso_starttls() */
 
 
-static lso_nargs_t lso_fdopen(lua_State *L) {
+lso_error_t cqs_socket_fdopen(lua_State *L, int fd) {
 	struct luasocket *S;
-	int fd, error;
-
-	/* FIXME: dup the fd for safety and simplicity. */
-	fd = luaL_checkint(L, 1);
+	int error;
 
 	S = lso_newsocket(L);
 
@@ -429,6 +426,24 @@ static lso_nargs_t lso_fdopen(lua_State *L) {
 		goto error;
 
 	if (!(S->socket = so_fdopen(fd, so_opts(), &error)))
+		goto error;
+
+	return 0;
+error:
+	lua_pop(L, 1);
+
+	return error;
+} /* cqs_socket_fdopen() */
+
+
+static lso_nargs_t lso_fdopen(lua_State *L) {
+	struct luasocket *S;
+	int fd, error;
+
+	/* FIXME: dup the fd for safety and simplicity. */
+	fd = luaL_checkint(L, 1);
+
+	if ((error = cqs_socket_fdopen(L, fd)))
 		goto error;
 
 	return 1;

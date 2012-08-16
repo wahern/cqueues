@@ -56,7 +56,7 @@
 #endif
 
 
-#define LSL_CLASS "Signal Listener"
+#define LSL_CLASS "CQS Signal"
 
 struct signalfd {
 	int fd;

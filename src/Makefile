@@ -16,7 +16,8 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 
 all: cqueues.so
 
-CPPFLAGS = -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
+CPPFLAGS = -D_REENTRANT -D_THREAD_SAFE
+CPPFLAGS += -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
@@ -66,10 +67,10 @@ endif
 
 
 ifeq ($(VENDOR.OS), SunOS)
-cqueues.so: cqueues.o socket.o errno.o signal.o lib/socket.o lib/dns.o
+cqueues.so: cqueues.o socket.o errno.o signal.o thread.o lib/socket.o lib/dns.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 else
-cqueues.so: cqueues.o socket.o errno.o signal.o lib/socket.o lib/dns.o
+cqueues.so: cqueues.o socket.o errno.o signal.o thread.o lib/socket.o lib/dns.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 endif
 
@@ -86,6 +87,9 @@ errno.c: errno.c.m4
 	$(M4) $^ > $@
 
 signal.o: signal.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
+thread.o: thread.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 lib/socket.o: lib/socket.c
