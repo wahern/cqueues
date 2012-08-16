@@ -1542,7 +1542,8 @@ static int cqueue_pause(lua_State *L) {
 		sigdelset(&block, luaL_checkint(L, index));
 	}
 
-	if (Q->kp.fd < 0 || Q->kp.fd >= FD_SETSIZE)
+	/* FD_SETSIZE unsigned on FreeBSD. */
+	if (Q->kp.fd < 0 || Q->kp.fd >= (int)FD_SETSIZE)
 		return luaL_error(L, "cqueue:pause: fd %d outside allowable range 0..%d", Q->kp.fd, (int)(FD_SETSIZE - 1));
 
 	FD_ZERO(&rfds);
