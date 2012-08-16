@@ -31,6 +31,7 @@
 #include <unistd.h> /* close(2) */
 
 #include <lua.h>
+#include <lualib.h>
 #include <lauxlib.h>
 
 
@@ -90,7 +91,7 @@ static void cqs_openlibs(lua_State *L) {
 	luaL_requiref(L, "_cqueues.signal", &luaopen__cqueues_signal, 0);
 	luaL_requiref(L, "_cqueues.thread", &luaopen__cqueues_thread, 0);
 
-	lua_settop(top);
+	lua_settop(L, top);
 } /* cqs_openlibs() */
 
 
@@ -107,6 +108,17 @@ static inline int cqs_interpose(lua_State *L, const char *mt) {
 
 	return 1; /* return old method */
 } /* cqs_interpose() */
+
+
+static inline void cqs_addclass(lua_State *L, const char *name, const luaL_Reg *methods, const luaL_Reg *metamethods) {
+	if (luaL_newmetatable(L, name)) {
+		luaL_setfuncs(L, metamethods, 0);
+		lua_newtable(L);
+		luaL_setfuncs(L, methods, 0);
+		lua_setfield(L, -2, "__index");
+		lua_pop(L, 1);
+	}
+} /* cqs_addclass() */
 
 
 static inline void cqs_closefd(int *fd) {

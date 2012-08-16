@@ -21,12 +21,12 @@ CPPFLAGS += -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
-DFLAGS = -Wall -Wextra $(call cc-option, -Wno-override-init) -Wno-unused -g
+DFLAGS = -Wall -Wextra $(call cc-option, -Wno-missing-field-initializers) $(call cc-option, -Wno-override-init) -Wno-unused -g
 CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
 endif
 
 ifeq ($(VENDOR.CC), clang)
-DFLAGS = -Wall -Wextra -Wno-initializer-overrides -Wno-unused -g
+DFLAGS = -Wall -Wextra -Wno-missing-field-initializers -Wno-initializer-overrides -Wno-unused -g
 CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
 endif
 

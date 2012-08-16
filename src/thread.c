@@ -29,10 +29,11 @@
 #include <errno.h>
 
 #include <sys/uio.h>
+#include <sys/socket.h>
 
 #include <pthread.h>
 
-#include "cqueues.h>
+#include "cqueues.h"
 
 
 struct cthread {
@@ -64,7 +65,7 @@ static void atpanic_once(void) {
 	atpanic.error = pthread_key_create(&atpanic.key, 0);
 } /* atpanic_once() */
 
-static int atpanic_trap(lua_State *L) {
+static int atpanic_trap() {
 	struct cthread *ct;
 
 	if ((ct = pthread_getspecific(atpanic.key)))
@@ -103,9 +104,9 @@ static void ct_release(struct cthread *ct) {
 } /* ct_release() */
 
 
-static void ct_enter(void *arg) {
-	volatile struct cthread *ct = arg, **ud;
-	volatile lua_State *L = NULL;
+static void *ct_enter(void *arg) {
+	struct cthread *ct = arg, **ud;
+	lua_State *L = NULL;
 	int error;
 
 	/*
@@ -135,7 +136,7 @@ static void ct_enter(void *arg) {
 
 	ct->refs++;
 
-	if (!(L = luaL_newstate(L)))
+	if (!(L = luaL_newstate()))
 		goto syerr;
 
 	if ((error = pthread_once(&atpanic.once, &atpanic_once)))
@@ -171,7 +172,7 @@ static void ct_enter(void *arg) {
 
 	ct->fd = -1;
 
-	for (struct iovec *arg = ct->arg[1]; arg < &ct->arg[ct->argc]; arg++)
+	for (struct iovec *arg = &ct->arg[1]; arg < &ct->arg[ct->argc]; arg++)
 		lua_pushlstring(L, arg->iov_base, arg->iov_len);
 
 	pthread_mutex_unlock(&ct->mutex);
@@ -194,8 +195,7 @@ close:
 
 	ct_release(ct);
 
-	return;
-
+	return 0;
 syerr:
 	error = errno;
 error: /* NOTE: Only critical section errors reach here. */
@@ -210,7 +210,7 @@ error: /* NOTE: Only critical section errors reach here. */
 
 static int ct_start(lua_State *L) {
 	struct cthread **ud, *ct;
-	int fd[2] = { -1, -1 }, error;
+	int fd[2] = { -1, -1 }, top, error;
 
 	if (!(top = lua_gettop(L)))
 		return luaL_argerror(L, 1, "expected string, got none");
@@ -229,9 +229,9 @@ static int ct_start(lua_State *L) {
 	ct->refs = 1;
 	ct->fd = -1;
 
-	pthread_mutex_init(ct->mutex, NULL);
-	pthread_cond_init(ct->cond, NULL);
-	pthread_attr_init(&ct->attr, NULL);
+	pthread_mutex_init(&ct->mutex, NULL);
+	pthread_cond_init(&ct->cond, NULL);
+	pthread_attr_init(&ct->attr);
 
 	for (int index = 1, top = lua_gettop(L) - 1; index <= top; index++) {
 		struct iovec *arg = &ct->arg[ct->argc];
@@ -241,7 +241,7 @@ static int ct_start(lua_State *L) {
 			goto error;
 		}
 
-		arg->iov_base = luaL_checklstring(L, index, &arg->iov_len);
+		arg->iov_base = (char *)luaL_checklstring(L, index, &arg->iov_len);
 
 		ct->argc++;
 	}
@@ -264,7 +264,7 @@ static int ct_start(lua_State *L) {
 
 	return 0;
 syerr:
-	errno = errno;
+	error = errno;
 error:
 	cqs_closefd(&fd[0]);
 	cqs_closefd(&fd[1]);
@@ -296,7 +296,7 @@ static const luaL_Reg ct_methods[] = {
 };
 
 
-static const luaL_Reg ct_methods[] = {
+static const luaL_Reg ct_metamethods[] = {
 	{ "__gc", &ct__gc },
 	{ NULL,   NULL }
 };
@@ -309,6 +309,8 @@ static const luaL_Reg ct_globals[] = {
 };
 
 int luaopen__cqueues_thread(lua_State *L) {
+	cqs_addclass(L, CQS_THREAD, ct_methods, ct_metamethods);
+
 	luaL_newlib(L, ct_globals);
 
 	return 1;
