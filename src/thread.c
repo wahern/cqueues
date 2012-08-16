@@ -47,7 +47,7 @@ struct cthread {
 
 	struct iovec arg[32];
 	unsigned argc;
-	int fd;
+	int fd[2];
 }; /* struct cthread */
 
 
@@ -98,7 +98,8 @@ static void ct_release(struct cthread *ct) {
 	pthread_cond_destroy(&ct->cond);
 	pthread_mutex_destroy(&ct->mutex);
 
-	cqs_closefd(&ct->fd);
+	cqs_closefd(&ct->fd[0]);
+	cqs_closefd(&ct->fd[1]);
 
 	free(ct);
 } /* ct_release() */
@@ -167,10 +168,10 @@ static void *ct_enter(void *arg) {
 	lua_pushvalue(L, -1);
 	lua_rawsetp(L, LUA_REGISTRYINDEX, &selfindex);
 
-	if ((error = cqs_socket_fdopen(L, ct->fd)))
+	if ((error = cqs_socket_fdopen(L, ct->fd[1])))
 		goto error;
 
-	ct->fd = -1;
+	ct->fd[1] = -1;
 
 	for (struct iovec *arg = &ct->arg[1]; arg < &ct->arg[ct->argc]; arg++)
 		lua_pushlstring(L, arg->iov_base, arg->iov_len);
@@ -210,7 +211,7 @@ error: /* NOTE: Only critical section errors reach here. */
 
 static int ct_start(lua_State *L) {
 	struct cthread **ud, *ct;
-	int fd[2] = { -1, -1 }, top, error;
+	int top, error;
 
 	if (!(top = lua_gettop(L)))
 		return luaL_argerror(L, 1, "expected string, got none");
@@ -227,11 +228,15 @@ static int ct_start(lua_State *L) {
 	memset(ct, 0, sizeof *ct);
 
 	ct->refs = 1;
-	ct->fd = -1;
+	ct->fd[0] = -1;
+	ct->fd[1] = -1;
 
 	pthread_mutex_init(&ct->mutex, NULL);
 	pthread_cond_init(&ct->cond, NULL);
 	pthread_attr_init(&ct->attr);
+
+	if ((error = pthread_attr_setdetachstate(&ct->attr, 1)))
+		goto error;
 
 	for (int index = 1, top = lua_gettop(L) - 1; index <= top; index++) {
 		struct iovec *arg = &ct->arg[ct->argc];
@@ -246,11 +251,13 @@ static int ct_start(lua_State *L) {
 		ct->argc++;
 	}
 
-	if (0 != socketpair(AF_INET, SOCK_STREAM, PF_UNSPEC, fd))
+	if (0 != socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->fd))
 		goto syerr;
 
-	ct->fd = fd[1];
-	fd[1] = -1;
+	if ((error = cqs_socket_fdopen(L, ct->fd[0])))
+		goto error;
+
+	ct->fd[0] = -1;
 
 	pthread_mutex_lock(&ct->mutex);
 
@@ -262,13 +269,10 @@ static int ct_start(lua_State *L) {
 	if (error)
 		goto error;
 
-	return 0;
+	return 2;
 syerr:
 	error = errno;
 error:
-	cqs_closefd(&fd[0]);
-	cqs_closefd(&fd[1]);
-
 	return luaL_error(L, "thread.start: %s", strerror(error));
 } /* ct_start() */
 

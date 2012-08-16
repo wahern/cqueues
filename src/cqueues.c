@@ -70,12 +70,14 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#if !defined SAY
 #define SAY_(file, func, line, fmt, ...) \
 	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
 
 #define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
 
 #define HAI SAY("hai")
+#endif
 
 #if __GNUC__
 #define NOTUSED __attribute__((unused))

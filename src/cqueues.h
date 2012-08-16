@@ -151,4 +151,20 @@ static inline void cqs_closefd(int *fd) {
 #define endof(a) (&(a)[countof(a)])
 #endif
 
+
+/*
+ * D E B U G  M A C R O S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !defined SAY
+#define SAY_(file, func, line, fmt, ...) \
+	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
+
+#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
+
+#define HAI SAY("hai")
+#endif
+
+
 #endif /* CQUEUES_H */
