@@ -13,6 +13,8 @@ FD_SETSIZE
 	unsigned int : FreeBSD 9.0
 	         int : NetBSD 5.1.2
 
+	Last updated 2012-08-16.
+
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 .msg_iovlen of struct msghdr
 
@@ -23,9 +25,13 @@ FD_SETSIZE
 	         int : FreeBSD 9.0
 	         int : NetBSD 5.1.2
 	      size_t : RFC 2292
+	         int : SUSv4
+
+	Last updated 2012-08-16.
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 CMSG_SPACE
+
 	Not always a constant expression, so cannot be used to declare a
 	compound literal.
 
@@ -35,4 +41,51 @@ CMSG_SPACE
 	    constant : Solaris 11.0
 	    constant : FreeBSD 9.0
 	not constant : NetBSD 5.1.2
-	
+
+	Last updated 2012-08-16.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+sendmsg, SCM_RIGHTS
+
+	OS X will completely shutdown a socket and free pending data for an
+	inflight descriptor lacking a process reference. Nonethelss, recvmsg
+	will return a valid socket descriptor as ancillary SCM_RIGHTS data.
+
+	Confirmed OS X 10.7, OS X 10.8.
+	Last updated 2012-08-14.
+
+	See also SO_NOSIGPIPE.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+SO_NOSIGPIPE, F_SETNOSIGPIPE
+
+	OS X will fail with EINVAL an attempt to set the SO_NOSIGPIPE option
+	on some streams which have been terminated. Examples:
+
+	* On a socketpair descriptor where the peer has called
+	  shutdown(SHUT_RDWR).
+
+	* On a TCP stream after both peers exchanged FIN, e.g. by each
+	  calling shutdown(SHUT_WR).
+
+	* On a TCP stream after a send call has returned EPIPE, e.g. by the
+	  peer calling close, triggering RST.
+
+	Receiving RST from a peer was not sufficient alone to fail
+	setsockopt. Nor was a mere call to shutdown(SHUT_WR) by the host.
+
+	Confirmed OS X 10.7.
+	Last updated 2012-08-16.
+
+	See also shutdown.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+shutdown
+
+	OS X will fail with ENOTCONN a shutdown attempt if the specified
+	SHUT_RD or SHUT_WR flag was already set, or if the respective TCP
+	state was already reached. In particular, if FIN was received from
+	the sender then shutdown(SHUT_RD) will fail.
+
+	Confirmed OS X 10.7.
+	Last updated 2012-08-16.
