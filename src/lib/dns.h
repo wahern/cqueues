@@ -65,9 +65,9 @@
 
 #define DNS_VENDOR "william@25thandClement.com"
 
-#define DNS_V_REL  0x20120805
-#define DNS_V_ABI  0x20120731
-#define DNS_V_API  0x20120731
+#define DNS_V_REL  0x20120806
+#define DNS_V_ABI  0x20120806
+#define DNS_V_API  0x20120806
 
 
 const char *dns_vendor(void);
@@ -226,6 +226,7 @@ enum dns_type {
 	DNS_T_TXT	= 16,
 	DNS_T_AAAA	= 28,
 	DNS_T_SRV	= 33,
+	DNS_T_OPT	= 41,
 	DNS_T_SSHFP	= 44,
 	DNS_T_SPF	= 99,
 
@@ -677,6 +678,38 @@ size_t dns_srv_cname(void *, size_t, struct dns_srv *);
 
 
 /*
+ * OPT  R E S O U R C E  R E C O R D
+ */
+
+#define DNS_OPT_MINDATA 512
+
+#define DNS_OPT_BADVERS 16
+
+struct dns_opt {
+	size_t size, len;
+
+	unsigned char rcode, version;
+	unsigned short maxsize;
+
+	unsigned char data[DNS_OPT_MINDATA];
+}; /* struct dns_opt */
+
+unsigned int dns_opt_ttl(const struct dns_opt *);
+
+unsigned short dns_opt_class(const struct dns_opt *);
+
+struct dns_opt *dns_opt_init(struct dns_opt *, size_t);
+
+int dns_opt_parse(struct dns_opt *, struct dns_rr *, struct dns_packet *);
+
+int dns_opt_push(struct dns_packet *, struct dns_opt *);
+
+int dns_opt_cmp(const struct dns_opt *, const struct dns_opt *);
+
+size_t dns_opt_print(void *, size_t, struct dns_opt *);
+
+
+/*
  * SSHFP  R E S O U R C E  R E C O R D
  */
 
@@ -741,6 +774,7 @@ union dns_any {
 	struct dns_soa soa;
 	struct dns_ptr ptr;
 	struct dns_srv srv;
+	struct dns_opt opt;
 	struct dns_sshfp sshfp;
 	struct dns_txt txt, spf, rdata;
 }; /* union dns_any */

@@ -2891,6 +2891,70 @@ size_t dns_srv_cname(void *dst, size_t lim, struct dns_srv *srv) {
 } /* dns_srv_cname() */
 
 
+unsigned int dns_opt_ttl(const struct dns_opt *opt) {
+	unsigned int ttl = 0;
+
+	ttl |= (0xffU & opt->rcode) << 24U;
+	ttl |= (0xffU & opt->version) << 16U;
+
+	return ttl;
+} /* dns_opt_ttl() */
+
+
+unsigned short dns_opt_class(const struct dns_opt *opt) {
+	return opt->maxsize;
+} /* dns_opt_class() */
+
+
+struct dns_opt *dns_opt_init(struct dns_opt *opt, size_t size) {
+	assert(size >= offsetof(struct dns_opt, data));
+
+	opt->size = size - offsetof(struct dns_opt, data);
+	opt->len  = 0;
+
+	opt->rcode   = 0;
+	opt->version = 0;
+	opt->maxsize = 512;
+
+	return opt;
+} /* dns_opt_init() */
+
+
+int dns_opt_parse(struct dns_opt *opt, struct dns_rr *rr, struct dns_packet *P) {
+	opt->len = 0;
+
+	return 0;
+} /* dns_opt_parse() */
+
+
+int dns_opt_push(struct dns_packet *P, struct dns_opt *opt) {
+	return 0;
+} /* dns_opt_push() */
+
+
+int dns_opt_cmp(const struct dns_opt *a, const struct dns_opt *b) {
+	return 0;
+} /* dns_opt_cmp() */
+
+
+size_t dns_opt_print(void *dst, size_t lim, struct dns_opt *opt) {
+	size_t p = 0, src;
+
+	p += dns__printchar(dst, lim, p, '"');
+
+	for (src = 0; src < opt->len; src++) {
+		p += dns__printchar(dst, lim, p, '\\');
+		p += dns__print10(dst, lim, p, opt->data[src], 3);
+	}
+
+	p += dns__printchar(dst, lim, p, '"');
+
+	dns__printnul(dst, lim, p);
+
+	return p;
+} /* dns_opt_print() */
+
+
 int dns_ptr_parse(struct dns_ptr *ptr, struct dns_rr *rr, struct dns_packet *P) {
 	return dns_ns_parse((struct dns_ns *)ptr, rr, P);
 } /* dns_ptr_parse() */
@@ -3173,6 +3237,7 @@ static const struct {
 	{ DNS_T_CNAME,  "CNAME",  &dns_cname_parse,  &dns_cname_push,  &dns_cname_cmp,  &dns_cname_print,  &dns_cname_cname },
 	{ DNS_T_SOA,    "SOA",    &dns_soa_parse,    &dns_soa_push,    &dns_soa_cmp,    &dns_soa_print,    0                },
 	{ DNS_T_SRV,    "SRV",    &dns_srv_parse,    &dns_srv_push,    &dns_srv_cmp,    &dns_srv_print,    &dns_srv_cname   },
+	{ DNS_T_OPT,    "OPT",    &dns_opt_parse,    &dns_opt_push,    &dns_opt_cmp,    &dns_opt_print,    0                },
 	{ DNS_T_PTR,    "PTR",    &dns_ptr_parse,    &dns_ptr_push,    &dns_ptr_cmp,    &dns_ptr_print,    &dns_ptr_cname   },
 	{ DNS_T_TXT,    "TXT",    &dns_txt_parse,    &dns_txt_push,    &dns_txt_cmp,    &dns_txt_print,    0                },
 	{ DNS_T_SPF,    "SPF",    &dns_txt_parse,    &dns_txt_push,    &dns_txt_cmp,    &dns_txt_print,    0                },
@@ -7786,7 +7851,7 @@ static int parse_packet(int argc, char *argv[]) {
 	P->end	= fread(P->data, 1, P->size, stdin);
 
 	fputs(";; [HEADER]\n", stdout);
-	fprintf(stdout, ";;     qr : %s(%d)\n", (dns_header(P)->qr)? "QUERY" : "RESPONSE", dns_header(P)->qr);
+	fprintf(stdout, ";;     qr : %s(%d)\n", (dns_header(P)->qr)? "RESPONSE" : "QUERY", dns_header(P)->qr);
 	fprintf(stdout, ";; opcode : %s(%d)\n", dns_stropcode(dns_header(P)->opcode), dns_header(P)->opcode);
 	fprintf(stdout, ";;     aa : %s(%d)\n", (dns_header(P)->aa)? "AUTHORITATIVE" : "NON-AUTHORITATIVE", dns_header(P)->aa);
 	fprintf(stdout, ";;     tc : %s(%d)\n", (dns_header(P)->tc)? "TRUNCATED" : "NOT-TRUNCATED", dns_header(P)->tc);
