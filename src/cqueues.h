@@ -28,7 +28,8 @@
 
 #include <errno.h>  /* EINTR */
 
-#include <unistd.h> /* close(2) */
+#include <unistd.h> /* close(2) pipe(2) */
+#include <fcntl.h>  /* fcntl(2) */
 
 #include <lua.h>
 #include <lualib.h>
@@ -128,6 +129,67 @@ static inline void cqs_closefd(int *fd) {
 		*fd = -1;
 	}
 } /* cqs_closefd() */
+
+
+static inline int cqs_setfd(int fd, int flags) {
+	if (flags & O_NONBLOCK) {
+		int oflags = fcntl(fd, F_GETFL);
+		if (-1 == oflags || -1 == fcntl(fd, F_SETFL, oflags|O_NONBLOCK))
+			return errno;
+	}
+
+	if (flags & O_CLOEXEC) {
+		if (-1 == fcntl(fd, F_SETFL, 1))
+			return errno;
+	}
+
+	return 0;
+} /* cqs_setfd() */
+
+
+static inline int cqs_pipe(int fd[2], int flags) {
+#if __linux
+	if (0 != pipe2(fd, flags))
+		return errno;
+
+	return 0;
+#else
+	int error;
+
+	if (0 != pipe(fd))
+		return errno;
+
+	if ((error = cqs_setfd(fd[0], flags)) || (error = cqs_setfd(fd[1], flags)))
+		return error;
+
+	return 0;
+#endif
+} /* cqs_pipe() */
+
+
+static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int flags) {
+#if defined SOCK_NONBLOCK && defined SOCK_CLOEXEC
+	if (flags & O_NONBLOCK)
+		type |= SOCK_NONBLOCK;
+	if (flags & O_CLOEXEC)
+		type |= SOCK_CLOEXEC;
+
+	if (0 != socketpair(family, type, proto, fd))
+		return errno;
+
+	return 0;
+#else
+	int error;
+
+	if (0 != socketpair(family, type, proto, fd))
+		return errno;
+
+	if ((error = cqs_setfd(fd[0], flags)) || (error = cqs_setfd(fd[1], flags)))
+		return error;
+
+	return 0;
+#endif
+} /* cqs_pipe2() */
 
 
 /*

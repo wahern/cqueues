@@ -45,9 +45,13 @@ struct cthread {
 
 	jmp_buf trap;
 
-	struct iovec arg[32];
-	unsigned argc;
-	int fd[2];
+	int pipe[2];
+
+	struct {
+		struct iovec arg[32];
+		unsigned argc;
+		int fd[2];
+	} tmp;
 }; /* struct cthread */
 
 
@@ -98,8 +102,11 @@ static void ct_release(struct cthread *ct) {
 	pthread_cond_destroy(&ct->cond);
 	pthread_mutex_destroy(&ct->mutex);
 
-	cqs_closefd(&ct->fd[0]);
-	cqs_closefd(&ct->fd[1]);
+	cqs_closefd(&ct->pipe[0]);
+	cqs_closefd(&ct->pipe[1]);
+
+	cqs_closefd(&ct->tmp.fd[0]);
+	cqs_closefd(&ct->tmp.fd[1]);
 
 	free(ct);
 } /* ct_release() */
@@ -154,7 +161,7 @@ static void *ct_enter(void *arg) {
 	luaL_openlibs(L);
 	cqs_openlibs(L);
 
-	luaL_loadbuffer(L, ct->arg[0].iov_base, ct->arg[0].iov_len, "[thread enter]");
+	luaL_loadbuffer(L, ct->tmp.arg[0].iov_base, ct->tmp.arg[0].iov_len, "[thread enter]");
 
 	ud = lua_newuserdata(L, sizeof *ud);
 	*ud = NULL;
@@ -168,12 +175,12 @@ static void *ct_enter(void *arg) {
 	lua_pushvalue(L, -1);
 	lua_rawsetp(L, LUA_REGISTRYINDEX, &selfindex);
 
-	if ((error = cqs_socket_fdopen(L, ct->fd[1])))
+	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[1])))
 		goto error;
 
-	ct->fd[1] = -1;
+	ct->tmp.fd[1] = -1;
 
-	for (struct iovec *arg = &ct->arg[1]; arg < &ct->arg[ct->argc]; arg++)
+	for (struct iovec *arg = &ct->tmp.arg[1]; arg < &ct->tmp.arg[ct->tmp.argc]; arg++)
 		lua_pushlstring(L, arg->iov_base, arg->iov_len);
 
 	pthread_mutex_unlock(&ct->mutex);
@@ -184,7 +191,7 @@ static void *ct_enter(void *arg) {
 		goto close;
 	}
 
-	lua_pcall(L, 2 + ct->argc - 1, 0, 0);
+	lua_pcall(L, 2 + ct->tmp.argc - 1, 0, 0);
 close:
 	if (L) {
 		if (!(error = _setjmp(ct->trap))) {
@@ -193,6 +200,8 @@ close:
 			ct->error = error;
 		}
 	}
+
+	cqs_closefd(&ct->pipe[1]);
 
 	ct_release(ct);
 
@@ -228,36 +237,48 @@ static int ct_start(lua_State *L) {
 	memset(ct, 0, sizeof *ct);
 
 	ct->refs = 1;
-	ct->fd[0] = -1;
-	ct->fd[1] = -1;
+
+	ct->pipe[0] = -1;
+	ct->pipe[1] = -1;
+
+	ct->tmp.fd[0] = -1;
+	ct->tmp.fd[1] = -1;
 
 	pthread_mutex_init(&ct->mutex, NULL);
 	pthread_cond_init(&ct->cond, NULL);
 	pthread_attr_init(&ct->attr);
 
-	if ((error = pthread_attr_setdetachstate(&ct->attr, 1)))
+	if ((error = pthread_attr_setdetachstate(&ct->attr, PTHREAD_CREATE_DETACHED)))
 		goto error;
 
-	for (int index = 1, top = lua_gettop(L) - 1; index <= top; index++) {
-		struct iovec *arg = &ct->arg[ct->argc];
+	if ((error = cqs_pipe(ct->pipe, O_NONBLOCK|O_CLOEXEC)))
+		goto error;
 
-		if (arg >= endof(ct->arg)) {
+	for (int i = 0; i < 2; i++) {
+		if ((error = cqs_setfd(ct->pipe[i], O_NONBLOCK|O_CLOEXEC)))
+			goto error;
+	}
+
+	for (int index = 1, top = lua_gettop(L) - 1; index <= top; index++) {
+		struct iovec *arg = &ct->tmp.arg[ct->tmp.argc];
+
+		if (arg >= endof(ct->tmp.arg)) {
 			error = E2BIG;
 			goto error;
 		}
 
 		arg->iov_base = (char *)luaL_checklstring(L, index, &arg->iov_len);
 
-		ct->argc++;
+		ct->tmp.argc++;
 	}
 
-	if (0 != socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->fd))
+	if (0 != cqs_socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->tmp.fd, O_NONBLOCK|O_CLOEXEC))
 		goto syerr;
 
-	if ((error = cqs_socket_fdopen(L, ct->fd[0])))
+	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[0])))
 		goto error;
 
-	ct->fd[0] = -1;
+	ct->tmp.fd[0] = -1;
 
 	pthread_mutex_lock(&ct->mutex);
 
@@ -277,11 +298,42 @@ error:
 } /* ct_start() */
 
 
-static int ct_self(lua_State *L) {
-	lua_rawgetp(L, LUA_REGISTRYINDEX, &selfindex);
+static int ct_join(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+	int error;
+
+	if (pthread_equal(ct->id, pthread_self()))
+		return luaL_error(L, "thread.join: cannot join self");
+
+	if (0 == read(ct->pipe[0], &(char){ 0 }, 1)) {
+		lua_pushboolean(L, 1);
+		lua_pushnil(L); /* FIXME: Push any error code/string */
+
+		return 2;
+	} else {
+		lua_pushboolean(L, 0);
+
+		return 1;
+	}
+} /* ct_join() */
+
+
+static int ct_pollfd(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+
+	lua_pushinteger(L, ct->pipe[0]);
 
 	return 1;
-} /* ct_self() */
+} /* ct_pollfd() */
+
+
+static int ct_events(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+
+	lua_pushliteral(L, "r");
+
+	return 1;
+} /* ct_events() */
 
 
 static int ct__gc(lua_State *L) {
@@ -294,9 +346,18 @@ static int ct__gc(lua_State *L) {
 } /* ct__gc() */
 
 
+static int ct_self(lua_State *L) {
+	lua_rawgetp(L, LUA_REGISTRYINDEX, &selfindex);
+
+	return 1;
+} /* ct_self() */
+
 
 static const luaL_Reg ct_methods[] = {
-	{ NULL, NULL }
+	{ "join",   &ct_join },
+	{ "pollfd", &ct_pollfd },
+	{ "events", &ct_events },
+	{ NULL,     NULL }
 };
 
 
