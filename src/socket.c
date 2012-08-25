@@ -24,6 +24,7 @@
  * ==========================================================================
  */
 #include <stddef.h>	/* NULL offsetof size_t */
+#include <stdlib.h>	/* abs(3) */
 #include <string.h>	/* memset(3) memchr(3) */
 
 #include <errno.h>	/* EAGAIN EPIPE EINTR */
@@ -1045,6 +1046,69 @@ error:
 } /* lso_recvfd2() */
 
 
+static lso_nargs_t lso_pack4(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	lua_Number value;
+	int count, mode, error;
+
+	lua_settop(L, 4);
+
+	value = luaL_checknumber(L, 2);
+	count = luaL_optint(L, 3, 32);
+	mode = lso_imode(luaL_optstring(L, 4, ""), S->obuf.mode);
+
+	if ((error = fifo_pack(&S->obuf.fifo, (unsigned long long)(long long)value, abs(count)))
+		goto error;
+
+	so_clear(S->socket);
+
+	if ((error = lso_doflush(S, mode)))
+		goto error;
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+error:
+	lua_pushboolean(L, 0);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_pack4() */
+
+
+static lso_nargs_t lso_unpack2(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+	unsigned long long llu;
+	int count, error;
+
+	lua_settop(L, 2);
+
+	count = luaL_optint(L, 3, 32);
+
+	so_clear(S->socket);
+
+	if (fifo_rbits(&S->ibuf.fifo) < (unsigned)abs(count))) {
+		size_t rem = (((unsigned)abs(count) - fifo_rbits(&S->ibuf.fifo)) + 7U) / 8U;
+
+		if ((error = lso_fill(S, rem)))
+			goto error;
+	}
+
+	llu = fifo_unpack(&S->ibuf.fifo, (unsigned)abs(count));
+
+	
+
+	lua_pushnumber(L, 1);
+
+	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_unpack2() */
+
+
 static lso_nargs_t lso_clear(lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
 
@@ -1192,6 +1256,8 @@ static luaL_Reg lso_methods[] = {
 	{ "pending",  &lso_pending },
 	{ "sendfd",   &lso_sendfd3 },
 	{ "recvfd",   &lso_recvfd2 },
+	{ "pack",     &lso_pack4 },
+	{ "unpack",   &lso_unpack2 },
 	{ "clear",    &lso_clear },
 	{ "pollfd",   &lso_pollfd },
 	{ "events",   &lso_events },

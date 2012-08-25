@@ -8,6 +8,8 @@ lua52include = $(includedir)/lua/5.2
 lua52path = $(datadir)/lua/5.2
 lua52cpath = $(libdir)/lua/5.2
 
+LUAC = $(prefix)/bin/luac
+
 VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
@@ -107,18 +109,22 @@ $(lua52cpath)/_cqueues.so: cqueues.so
 
 $(lua52path)/cqueues.lua: cqueues.lua
 	mkdir -p $(@D)
+	$(LUAC) -p $<
 	cp -p $< $@
 
 $(lua52path)/cqueues/socket.lua: socket.lua
 	mkdir -p $(@D)
+	$(LUAC) -p $<
 	cp -p $< $@
 
 $(lua52path)/cqueues/errno.lua: errno.lua
 	mkdir -p $(@D)
+	$(LUAC) -p $<
 	cp -p $< $@
  
 $(lua52path)/cqueues/signal.lua: signal.lua
 	mkdir -p $(@D)
+	$(LUAC) -p $<
 	cp -p $< $@
  
 .PHONY: clean clean~
