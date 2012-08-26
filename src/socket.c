@@ -1057,7 +1057,7 @@ static lso_nargs_t lso_pack4(lua_State *L) {
 	count = luaL_optint(L, 3, 32);
 	mode = lso_imode(luaL_optstring(L, 4, ""), S->obuf.mode);
 
-	if ((error = fifo_pack(&S->obuf.fifo, (unsigned long long)(long long)value, abs(count)))
+	if ((error = fifo_pack(&S->obuf.fifo, (unsigned long long)(long long)value, abs(count))))
 		goto error;
 
 	so_clear(S->socket);
@@ -1087,20 +1087,34 @@ static lso_nargs_t lso_unpack2(lua_State *L) {
 
 	so_clear(S->socket);
 
-	if (fifo_rbits(&S->ibuf.fifo) < (unsigned)abs(count))) {
+	if (fifo_rbits(&S->ibuf.fifo) < (unsigned)abs(count)) {
 		size_t rem = (((unsigned)abs(count) - fifo_rbits(&S->ibuf.fifo)) + 7U) / 8U;
 
-		if ((error = lso_fill(S, rem)))
-			goto error;
+		if ((error = lso_fill(S, rem))) {
+			if (fifo_rbits(&S->ibuf.fifo) < (unsigned)abs(count))
+				goto error;
+		}
 	}
 
 	llu = fifo_unpack(&S->ibuf.fifo, (unsigned)abs(count));
 
-	
+	if (count < 0) {
+		long long ll = (long long)llu;
 
-	lua_pushnumber(L, 1);
+		if (ll != (long long)(lua_Number)ll)
+			goto range;
+
+		lua_pushnumber(L, (lua_Number)ll);
+	} else {
+		if (llu != (unsigned long long)(lua_Number)llu)
+			goto range;
+
+		lua_pushnumber(L, (lua_Number)llu);
+	}
 
 	return 1;
+range:
+	error = ERANGE;
 error:
 	lua_pushnil(L);
 	lua_pushinteger(L, error);

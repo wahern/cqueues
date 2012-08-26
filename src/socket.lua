@@ -67,9 +67,7 @@ end)
 --
 -- Yielding socket:read, built on non-blocking socket.recv
 --
-local nread;
-
-nread = function(self, what, ...)
+local nread; nread = function(self, what, ...)
 	if not what then
 		return
 	end
@@ -183,6 +181,42 @@ local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
 	until msg or err ~= errno.EAGAIN
 
 	return msg, fd, err and errno.strerror(err) or nil
+end)
+
+
+--
+-- socket:pack
+--
+local pack; pack = socket.interpose("pack", function (self, num, nbits, mode)
+	local ok, why
+
+	repeat
+		ok, why = pack(self, num, nbits, mode)
+
+		if not ok and why == errno.EAGAIN then
+			cqueues.poll(self)
+		end
+	until ok or why ~= errno.EAGAIN
+
+	return ok, why
+end)
+
+
+--
+-- socket:unpack
+--
+local unpack; unpack = socket.interpose("unpack", function (self, nbits)
+	local num, why
+
+	repeat
+		num, why = unpack(self, nbits)
+
+		if not num and why == errno.EAGAIN then
+			cqueues.poll(self)
+		end
+	until num or why ~= errno.EAGAIN
+
+	return num, why
 end)
 
 
