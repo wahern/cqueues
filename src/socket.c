@@ -1085,7 +1085,7 @@ static lso_nargs_t lso_unpack2(lua_State *L) {
 
 	lua_settop(L, 2);
 
-	count = luaL_optunsigned(L, 3, 32);
+	count = luaL_optunsigned(L, 2, 32);
 
 	so_clear(S->socket);
 
