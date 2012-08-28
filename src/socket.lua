@@ -2,26 +2,32 @@ local socket = require("_cqueues.socket")
 local cqueues = require("cqueues")
 local errno = require("cqueues.errno")
 
+local poll = cqueues.poll
+local monotime = cqueues.monotime
+
+local EAGAIN = errno.EAGAIN;
+local EPIPE = errno.EPIPE;
+
 
 --
 -- Yielding socket:accept
 --
 local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
-	local deadline = (timeout and (cqueues.monotime() + timeout)) or nil
+	local deadline = (timeout and (monotime() + timeout)) or nil
 	local con, syerr = oaccept(self)
 
 	while not con do
-		if syerr == errno.EAGAIN then
-			local curtime = cqueues.monotime()
+		if syerr == EAGAIN then
+			local curtime = monotime()
 
 			if deadline then
 				if deadline <= curtime then
 					return nil
 				end
 
-				cqueues.poll(self, { timeout = function() return curtime - deadline end })
+				poll(self, { timeout = function() return curtime - deadline end })
 			else
-				cqueues.poll(self)
+				poll(self)
 			end
 		else
 			error("socket.flush: " .. errno.strerror(syerr))
@@ -49,9 +55,9 @@ local oflush; oflush = socket.interpose("flush", function(self, mode)
 	local ok, syserr = oflush(self, mode)
 
 	while not ok do
-		if syserr == errno.EAGAIN then
-			cqueues.poll(self)
-		elseif syserr == errno.EPIPE then
+		if syserr == EAGAIN then
+			poll(self)
+		elseif syserr == EPIPE then
 			return false, errno.strerror(syserr)
 		else
 			error("socket.flush: " .. errno.strerror(syserr))
@@ -75,9 +81,9 @@ local nread; nread = function(self, what, ...)
 	local data, syerr = self:recv(what)
 
 	while not data do
-		if syerr == errno.EAGAIN then
-			cqueues.poll(self)
-		elseif syerr == errno.EPIPE then
+		if syerr == EAGAIN then
+			poll(self)
+		elseif syerr == EPIPE then
 			return nil
 		else
 			error("socket.recv: " .. errno.strerror(syerr))
@@ -111,9 +117,9 @@ local writeall; writeall = function(self, data, ...)
 		i = i + n
 
 		if i <= #data then
-			if syerr == errno.EAGAIN then
-				cqueues.poll(self)
-			elseif syerr == errno.EPIPE then
+			if syerr == EAGAIN then
+				poll(self)
+			elseif syerr == EPIPE then
 				return nil, errno.strerror(syerr)
 			else
 				return nil, errno.strerror(syerr)
@@ -157,10 +163,10 @@ local sendfd; sendfd = socket.interpose("sendfd", function (self, msg, fd)
 	repeat
 		ok, err = sendfd(self, msg, fd)
 
-		if not ok and err == errno.EAGAIN then
-			cqueues.poll(self)
+		if not ok and err == EAGAIN then
+			poll(self)
 		end
-	until ok or err ~= errno.EAGAIN
+	until ok or err ~= EAGAIN
 
 	return ok, err and errno.strerror(err) or nil
 end)
@@ -175,10 +181,10 @@ local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
 	repeat
 		msg, fd, err = recvfd(self, prepbufsiz)
 
-		if not msg and err == errno.EAGAIN then
-			cqueues.poll(self)
+		if not msg and err == EAGAIN then
+			poll(self)
 		end
-	until msg or err ~= errno.EAGAIN
+	until msg or err ~= EAGAIN
 
 	return msg, fd, err and errno.strerror(err) or nil
 end)
@@ -193,10 +199,10 @@ local pack; pack = socket.interpose("pack", function (self, num, nbits, mode)
 	repeat
 		ok, why = pack(self, num, nbits, mode)
 
-		if not ok and why == errno.EAGAIN then
-			cqueues.poll(self)
+		if not ok and why == EAGAIN then
+			poll(self)
 		end
-	until ok or why ~= errno.EAGAIN
+	until ok or why ~= EAGAIN
 
 	return ok, why
 end)
@@ -211,10 +217,10 @@ local unpack; unpack = socket.interpose("unpack", function (self, nbits)
 	repeat
 		num, why = unpack(self, nbits)
 
-		if not num and why == errno.EAGAIN then
-			cqueues.poll(self)
+		if not num and why == EAGAIN then
+			poll(self)
 		end
-	until num or why ~= errno.EAGAIN
+	until num or why ~= EAGAIN
 
 	return num, why
 end)
