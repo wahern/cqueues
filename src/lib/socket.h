@@ -29,9 +29,8 @@
 #include <time.h>		/* time_t */
 
 #include <sys/types.h>		/* socklen_t in_port_t */
-
+#include <sys/uio.h>		/* struct iovec */
 #include <sys/socket.h>		/* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr struct msghdr struct cmsghdr */
-
 #if defined(AF_UNIX)
 #include <sys/un.h>
 #endif
