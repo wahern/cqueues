@@ -17,7 +17,7 @@ cq:wrap(function()
 		if not ok then error(err) end
 
 		for i = 1, 10 do
-			con:write(tostring(i), "\n")
+			con:pack(i, 32)
 		end
 
 		con:flush()
@@ -38,7 +38,7 @@ cq:wrap(function()
 
 		print(msg)
 
-		for i in con:lines() do
+		for i in function() return con:unpack(32) end do
 			print(tostring(i))
 		end
 
