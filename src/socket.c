@@ -41,81 +41,7 @@
 #include "lib/fifo.h"
 #include "lib/dns.h"
 
-
-/*
- * U T I L I T Y  R O U T I N E S
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-#if !defined SAY
-#define SAY_(file, func, line, fmt, ...) \
-	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
-
-#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
-
-#define HAI SAY("hai")
-#endif
-
-
-#ifndef MIN
-#define MIN(a, b) (((a) < (b))? (a) : (b))
-#endif
-
-
-static void closefd(int *fd) {
-	if (*fd != -1)  {
-		while (0 != close(*fd) && errno == EINTR)
-			;;
-		*fd = -1;
-	}
-} /* closefd() */
-
-
-#include <sys/stat.h>
-#include <sys/ioctl.h>
-
-#if __sun
-#include <sys/filio.h>
-#include <stropts.h>
-#endif
-
-static void debugfd(int fd) {
-	struct stat st;
-	char descr[64] = "";
-	int pending = -1;
-
-	if (0 != fstat(fd, &st))
-		goto syerr;
-
-	if (S_ISSOCK(st.st_mode)) {
-		int type;
-
-		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
-			goto syerr;
-
-		if (type == SOCK_STREAM)
-			strncat(descr, "stream socket", sizeof descr - 1);
-		else if (type == SOCK_DGRAM)
-			strncat(descr, "dgram socket", sizeof descr - 1);
-		else
-			strncat(descr, "other socket", sizeof descr - 1);
-	} else {
-		if (S_ISFIFO(st.st_mode))
-			strncat(descr, "fifo file", sizeof descr - 1);
-		else if (S_ISREG(st.st_mode))
-			strncat(descr, "regular file", sizeof descr - 1);
-		else
-			strncat(descr, "other file", sizeof descr - 1);
-	}
-
-	ioctl(fd, FIONREAD, &pending);
-
-	SAY("%d: %s (pending:%d)", fd, descr, pending);
-
-	return;
-syerr:
-	SAY("%d: %s", fd, strerror(errno));
-} /* debugfd() */
+#include "cqueues.h"
 
 
 /*
@@ -174,6 +100,8 @@ struct luasocket {
 
 	struct socket *socket;
 
+	cqs_ref_t onerror;
+
 	int error;
 }; /* struct luasocket */
 
@@ -181,6 +109,7 @@ struct luasocket {
 static struct luasocket lso_initializer = {
 	.ibuf = { .mode = LSO_RDMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ },
 	.obuf = { .mode = LSO_WRMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ },
+	.onerror = LUA_NOREF,
 };
 
 
@@ -285,6 +214,12 @@ static struct luasocket *lso_newsocket(lua_State *L) {
 
 	fifo_init(&S->ibuf.fifo);
 	fifo_init(&S->obuf.fifo);
+
+	if (S->onerror != LUA_NOREF && S->onerror != LUA_REFNIL) {
+		cqs_getref(L, S->onerror);
+		S->onerror = LUA_NOREF;
+		cqs_ref(L, &S->onerror);
+	}
 
 	luaL_getmetatable(L, LSO_CLASS);
 	lua_setmetatable(L, -2);
@@ -499,8 +434,8 @@ static lso_nargs_t lso_pair(lua_State *L) {
 syerr:
 	error = errno;
 error:
-	closefd(&fd[0]);
-	closefd(&fd[1]);
+	cqs_closefd(&fd[0]);
+	cqs_closefd(&fd[1]);
 
 	lua_pushnil(L);
 	lua_pushnil(L);
@@ -569,6 +504,30 @@ static lso_nargs_t lso_setmode3(struct lua_State *L) {
 
 	return lso_setmode_(L, luaL_checkudata(L, 1, LSO_CLASS), 2, 3);
 } /* lso_setmode3() */
+
+
+static lso_nargs_t lso_onerror_(struct lua_State *L, struct luasocket *S, int fidx) {
+	cqs_getref(L, S->onerror);
+
+	if (lua_gettop(L) > fidx) {
+		if (!lua_isnil(L, fidx))
+			luaL_checktype(L, fidx, LUA_TFUNCTION);
+		lua_pushvalue(L, fidx);
+		cqs_ref(L, &S->onerror);
+	}
+
+	return 1;
+} /* lso_onerror_() */
+
+
+static lso_nargs_t lso_onerror1(struct lua_State *L) {
+	return lso_onerror_(L, lso_prototype(L), 1);
+} /* lso_onerror1() */
+
+
+static lso_nargs_t lso_onerror2(struct lua_State *L) {
+	return lso_onerror_(L, luaL_checkudata(L, 1, LSO_CLASS), 2);
+} /* lso_onerror2() */
 
 
 static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
@@ -1012,7 +971,7 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 		if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
 			continue;
 
-		closefd(&fd);
+		cqs_closefd(&fd);
 		fd = *(int *)CMSG_DATA(cmsg);
 	}
 
@@ -1036,7 +995,7 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 trunc:
 	error = ENOBUFS;
 error:
-	closefd(&fd);
+	cqs_closefd(&fd);
 
 	lua_pushnil(L);
 	lua_pushnil(L);
@@ -1225,6 +1184,8 @@ error:
 static lso_nargs_t lso__gc(lua_State *L) {
 	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
 
+	cqs_unref(L, &S->onerror);
+
 	fifo_reset(&S->ibuf.fifo);
 	fifo_reset(&S->obuf.fifo);
 
@@ -1256,6 +1217,7 @@ static luaL_Reg lso_methods[] = {
 	{ "starttls", &lso_starttls },
 	{ "setvbuf",  &lso_setvbuf3 },
 	{ "setmode",  &lso_setmode3 },
+	{ "onerror",  &lso_onerror2 },
 	{ "recv",     &lso_recv3 },
 	{ "unget",    &lso_unget2 },
 	{ "send",     &lso_send5 },
@@ -1289,6 +1251,7 @@ static luaL_Reg lso_globals[] = {
 	{ "interpose", &lso_interpose },
 	{ "setvbuf",   &lso_setvbuf2 },
 	{ "setmode",   &lso_setmode2 },
+	{ "onerror",   &lso_onerror1 },
 	{ 0, 0 }
 }; /* lso_globals[] */
 

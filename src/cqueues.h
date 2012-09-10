@@ -193,7 +193,7 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 
 
 /*
- * M A C R O  R O U T I N E S
+ * A U X I L L A R Y  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -214,6 +214,28 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 #endif
 
 
+typedef int cqs_ref_t;
+
+static inline void cqs_unref(lua_State *L, cqs_ref_t *ref) {
+	if (*ref != LUA_NOREF) {
+		luaL_unref(L, LUA_REGISTRYINDEX, *ref);
+		*ref = LUA_NOREF;
+	}
+} /* cqs_unref() */
+
+static inline void cqs_ref(lua_State *L, cqs_ref_t *ref) {
+	cqs_unref(L, ref);
+	*ref = luaL_ref(L, LUA_REGISTRYINDEX);
+} /* cqs_ref() */
+
+static inline void cqs_getref(lua_State *L, cqs_ref_t ref) {
+	if (ref != LUA_NOREF)
+		lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+	else
+		lua_pushnil(L);
+} /* cqs_getref() */
+
+
 /*
  * D E B U G  M A C R O S
  *
@@ -227,6 +249,53 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 
 #define HAI SAY("hai")
 #endif
+
+
+#include <sys/stat.h>
+#include <sys/ioctl.h>
+
+#if __sun
+#include <sys/filio.h>
+#include <stropts.h>
+#endif
+
+static void cqs_debugfd(int fd) {
+	struct stat st;
+	char descr[64] = "";
+	int pending = -1;
+
+	if (0 != fstat(fd, &st))
+		goto syerr;
+
+	if (S_ISSOCK(st.st_mode)) {
+		int type;
+
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
+			goto syerr;
+
+		if (type == SOCK_STREAM)
+			strncat(descr, "stream socket", sizeof descr - 1);
+		else if (type == SOCK_DGRAM)
+			strncat(descr, "dgram socket", sizeof descr - 1);
+		else
+			strncat(descr, "other socket", sizeof descr - 1);
+	} else {
+		if (S_ISFIFO(st.st_mode))
+			strncat(descr, "fifo file", sizeof descr - 1);
+		else if (S_ISREG(st.st_mode))
+			strncat(descr, "regular file", sizeof descr - 1);
+		else
+			strncat(descr, "other file", sizeof descr - 1);
+	}
+
+	ioctl(fd, FIONREAD, &pending);
+
+	SAY("%d: %s (pending:%d)", fd, descr, pending);
+
+	return;
+syerr:
+	SAY("%d: %s", fd, strerror(errno));
+} /* cqs_debugfd() */
 
 
 #endif /* CQUEUES_H */
