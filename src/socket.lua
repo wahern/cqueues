@@ -7,6 +7,24 @@ local monotime = cqueues.monotime
 
 local EAGAIN = errno.EAGAIN;
 local EPIPE = errno.EPIPE;
+local ETIMEDOUT = errno.ETIMEDOUT;
+local strerror = errno.strerror;
+
+
+local function oops(con, op, why)
+	local onerror = con:onerror()
+
+	if onerror then
+		return onerror(con, op, why)
+	elseif why == EPIPE then
+		return EPIPE
+	elseif why == ETIMEDOUT then
+		return ETIMEDOUT
+	else
+		local msg = string.format("socket.%s: %s", op, strerror(why))
+		error(msg)
+	end
+end -- oops
 
 
 --
@@ -14,15 +32,15 @@ local EPIPE = errno.EPIPE;
 --
 local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
 	local deadline = (timeout and (monotime() + timeout)) or nil
-	local con, syerr = oaccept(self)
+	local con, why = oaccept(self)
 
 	while not con do
-		if syerr == EAGAIN then
+		if why == EAGAIN then
 			local curtime = monotime()
 
 			if deadline then
 				if deadline <= curtime then
-					return nil
+					return nil, oops(self, "accept", ETIMEDOUT)
 				end
 
 				poll(self, { timeout = function() return curtime - deadline end })
@@ -30,10 +48,10 @@ local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
 				poll(self)
 			end
 		else
-			error("socket.flush: " .. errno.strerror(syerr))
+			return nil, oops(con, "accept", why)
 		end
 
-		con, syerr = oaccept(self)
+		con, why = oaccept(self)
 	end
 
 	return con
@@ -52,18 +70,16 @@ end)
 -- Yielding socket:flush
 --
 local oflush; oflush = socket.interpose("flush", function(self, mode)
-	local ok, syserr = oflush(self, mode)
+	local ok, why = oflush(self, mode)
 
 	while not ok do
-		if syserr == EAGAIN then
+		if why == EAGAIN then
 			poll(self)
-		elseif syserr == EPIPE then
-			return false, errno.strerror(syserr)
 		else
-			error("socket.flush: " .. errno.strerror(syserr))
+			return false, oops(self, "flush", why)
 		end
 
-		ok, syserr = oflush(self, mode)
+		ok, why = oflush(self, mode)
 	end
 
 	return true
@@ -78,18 +94,16 @@ local nread; nread = function(self, what, ...)
 		return
 	end
 
-	local data, syerr = self:recv(what)
+	local data, why = self:recv(what)
 
 	while not data do
-		if syerr == EAGAIN then
+		if why == EAGAIN then
 			poll(self)
-		elseif syerr == EPIPE then
-			return nil
 		else
-			error("socket.recv: " .. errno.strerror(syerr))
+			return nil, oops(self, "read", why)
 		end
 
-		data, syerr = self:recv(what)
+		data, why = self:recv(what)
 	end
 
 	return data, nread(self, ...)
@@ -112,17 +126,15 @@ local writeall; writeall = function(self, data, ...)
 
 	while i <= #data do
 		-- use only full buffering mode here
-		local n, syerr = self:send(data, i, #data, "f")
+		local n, why = self:send(data, i, #data, "f")
 
 		i = i + n
 
 		if i <= #data then
-			if syerr == EAGAIN then
+			if why == EAGAIN then
 				poll(self)
-			elseif syerr == EPIPE then
-				return nil, errno.strerror(syerr)
 			else
-				return nil, errno.strerror(syerr)
+				return nil, oops(self, "write", why)
 			end
 		end
 	end
@@ -131,10 +143,10 @@ local writeall; writeall = function(self, data, ...)
 end
 
 socket.interpose("write", function (self, ...)
-	local ok, err = writeall(self, ...)
+	local ok, why = writeall(self, ...)
 
 	if not ok then
-		return nil, err
+		return nil, why
 	end
 
 	-- writeall returns once all data is written, even if just to the
@@ -158,17 +170,21 @@ end)
 -- socket:sendfd
 --
 local sendfd; sendfd = socket.interpose("sendfd", function (self, msg, fd)
-	local ok, err
+	local ok, why
 
 	repeat
-		ok, err = sendfd(self, msg, fd)
+		ok, why = sendfd(self, msg, fd)
 
-		if not ok and err == EAGAIN then
-			poll(self)
+		if not ok then
+			if why == EAGAIN then
+				poll(self)
+			else
+				return nil, oops(self, "sendfd", why)
+			end
 		end
-	until ok or err ~= EAGAIN
+	until ok
 
-	return ok, err and errno.strerror(err) or nil
+	return ok
 end)
 
 
@@ -176,17 +192,21 @@ end)
 -- socket:recvfd
 --
 local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
-	local msg, fd, err
+	local msg, fd, why
 
 	repeat
-		msg, fd, err = recvfd(self, prepbufsiz)
+		msg, fd, why = recvfd(self, prepbufsiz)
 
-		if not msg and err == EAGAIN then
-			poll(self)
+		if not msg then
+			if why == EAGAIN then
+				poll(self)
+			else
+				return nil, nil, oops(self, "recvfd", why)
+			end
 		end
-	until msg or err ~= EAGAIN
+	until msg
 
-	return msg, fd, err and errno.strerror(err) or nil
+	return msg, fd
 end)
 
 
@@ -199,12 +219,16 @@ local pack; pack = socket.interpose("pack", function (self, num, nbits, mode)
 	repeat
 		ok, why = pack(self, num, nbits, mode)
 
-		if not ok and why == EAGAIN then
-			poll(self)
+		if not ok then
+			if why == EAGAIN then
+				poll(self)
+			else
+				return false, oops(self, "pack", why)
+			end
 		end
-	until ok or why ~= EAGAIN
+	until ok
 
-	return ok, why
+	return ok
 end)
 
 
@@ -217,12 +241,16 @@ local unpack; unpack = socket.interpose("unpack", function (self, nbits)
 	repeat
 		num, why = unpack(self, nbits)
 
-		if not num and why == EAGAIN then
-			poll(self)
+		if not num then
+			if why == EAGAIN then
+				poll(self)
+			else
+				return nil, oops(self, "unpack", why)
+			end
 		end
-	until num or why ~= EAGAIN
+	until num
 
-	return num, why
+	return num
 end)
 
 
