@@ -58,7 +58,7 @@
 
 #define FIFO_VENDOR "william@25thandClement.com"
 
-#define FIFO_V_REL  0x20120713 /* 0x20111113 */
+#define FIFO_V_REL  0x20120911 /* 0x20120713 */
 #define FIFO_V_ABI  0x20111113 /* 0x20100815 */
 #define FIFO_V_API  0x20111113 /* 0x20100904 */
 
@@ -404,7 +404,7 @@ static inline size_t fifo_update(struct fifo *fifo, size_t count) {
 
 static inline size_t fifo_rewind(struct fifo *fifo, size_t count) {
 	count       = FIFO_MIN(count, fifo->size - fifo->count);
-	fifo->head  = (fifo->head + (fifo->size - fifo->count)) % fifo->size;
+	fifo->head  = (fifo->head + (fifo->size - count)) % fifo->size;
 	fifo->count += count;
 	return count;
 } /* fifo_rewind() */
