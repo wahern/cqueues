@@ -371,7 +371,7 @@ const char *so_strerror(int error) {
 		return strerror(error);
 
 	if (error == SO_EOPENSSL) {
-#if SO_THREAD_SAFE && (!defined(__NetBSD__) || __NetBSD_Prereq__(6,0,0))
+#if SO_THREAD_SAFE && (!defined __NetBSD__ || __NetBSD_Version__ > 600000000)
 		static __thread char sslstr[256];
 #else
 		static char sslstr[256];
