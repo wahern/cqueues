@@ -136,6 +136,12 @@ static inline void cqs_closefd(int *fd) {
 } /* cqs_closefd() */
 
 
+#if !defined O_CLOEXEC
+#if __NetBSD__ /* bad hack for NetBSD < 6.0 until we refactor flags code */
+#define O_CLOEXEC 0x00400000
+#endif
+#endif
+
 static inline int cqs_setfd(int fd, int flags) {
 	if (flags & O_NONBLOCK) {
 		int oflags = fcntl(fd, F_GETFL);
