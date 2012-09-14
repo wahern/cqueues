@@ -60,9 +60,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120913
-#define SOCKET_V_ABI  0x20120806
-#define SOCKET_V_API  0x20120913
+#define SOCKET_V_REL  0x20120914
+#define SOCKET_V_ABI  0x20120914
+#define SOCKET_V_API  0x20120914
 
 
 const char *socket_vendor(void);
@@ -150,6 +150,11 @@ struct so_options {
 		SO_SYSPOLL,
 		SO_LIBEVENT,
 	} fd_events;
+
+	struct {
+		void *arg;
+		int (*cb)(int *fd, void *arg);
+	} fd_close;
 
 	_Bool tls_verify;
 
@@ -375,7 +380,7 @@ int so_socket(int, int, const struct so_options *, int *);
 
 int so_bind(int, sockaddr_arg_t, const struct so_options *);
 
-void so_closesocket(int *);
+void so_closesocket(int *, const struct so_options *);
 
 int so_nonblock(int, _Bool);
 

@@ -1685,6 +1685,16 @@ static int cstack_cancel(lua_State *L) {
 } /* cstack_cancel() */
 
 
+void cqs_cancelfd(lua_State *L, int fd) {
+	struct cstack *CS = cstack_self(L);
+	struct cqueue *Q;
+
+	LIST_FOREACH(Q, &CS->cqueues, le) {
+		cqueue_cancelfd(Q, fd);
+	}
+} /* cqs_cancelfd() */
+
+
 static int cstack_reset(lua_State *L) {
 	struct cstack *CS = cstack_self(L);
 	struct cqueue *Q;

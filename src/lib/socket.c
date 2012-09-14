@@ -545,7 +545,7 @@ void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *error_) {
 			goto syerr;
 
 		if ((error = so_cloexec(udp->fd, 1))) {
-			so_closesocket(&udp->fd);
+			so_closesocket(&udp->fd, NULL);
 
 			goto error;
 		}
@@ -605,7 +605,7 @@ syerr:
 error:
 	*_error = error;
 
-	so_closesocket(&fd);
+	so_closesocket(&fd, opts);
 
 	return -1;
 } /* so_socket() */
@@ -631,7 +631,10 @@ int so_bind(int fd, sockaddr_arg_t arg, const struct so_options *opts) {
 } /* so_bind() */
 
 
-void so_closesocket(int *fd) {
+void so_closesocket(int *fd, const struct so_options *opts) {
+	if (opts->fd_close.cb)
+		opts->fd_close.cb(fd, opts->fd_close.arg);
+
 	if (*fd != -1) {
 #if _WIN32
 		closesocket(*fd);
@@ -1072,7 +1075,7 @@ static int so_socket_(struct socket *so) {
 	if (!so->host)
 		return EINVAL;
 
-	so_closesocket(&so->fd);
+	so_closesocket(&so->fd, &so->opts);
 
 	if (-1 == (so->fd = so_socket(so->host->ai_family, so->host->ai_socktype, &so->opts, &error)))
 		return error;
@@ -1428,7 +1431,7 @@ static int so_destroy(struct socket *so) {
 	free(so->host);
 	so->host = 0;
 
-	so_closesocket(&so->fd);
+	so_closesocket(&so->fd, &so->opts);
 
 	so->events = 0;
 
@@ -1437,6 +1440,7 @@ static int so_destroy(struct socket *so) {
 
 
 struct socket *(so_open)(const char *host, const char *port, int qtype, int domain, int type, const struct so_options *opts, int *error_) {
+	struct dns_options *nsopts;
 	struct addrinfo hints;
 	struct socket *so;
 	int error;
@@ -1444,11 +1448,15 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	if (!(so = so_init(malloc(sizeof *so), opts)))
 		goto syerr;
 
+	nsopts = dns_opts();
+	nsopts->closefd.arg = so->opts.fd_close.arg;
+	nsopts->closefd.cb = so->opts.fd_close.cb;
+
 	hints.ai_flags    = AI_CANONNAME;
 	hints.ai_family   = domain;
 	hints.ai_socktype = type;
 
-	if (!(so->res = dns_ai_open(host, port, qtype, &hints, dns_res_mortal(dns_res_stub(dns_opts(), &error)), &error)))
+	if (!(so->res = dns_ai_open(host, port, qtype, &hints, dns_res_mortal(dns_res_stub(nsopts, &error)), &error)))
 		goto error;
 
 	so->todo = SO_S_GETADDR | SO_S_SOCKET | SO_S_BIND;
