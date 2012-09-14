@@ -19,9 +19,26 @@ cq:wrap(function()
 	http:write("GET / HTTP/1.0\n")
 	http:write(string.format("Host: %s:%d\n\n", host, port))
 
-	for ln in http:lines() do
-		print(ln)
+	local status = http:read()
+	print("!", status)
+
+	for ln in http:lines"*h" do
+		print("|", ln)
 	end
+
+	local empty = http:read"*L"
+
+	if empty and empty:match"^[^\r\n]" then
+		http:unget(empty)
+	end
+
+	print"~"
+
+	for ln in http:lines"*L" do
+		io.stdout:write(ln)
+	end
+
+	http:close()
 end)
 
 while not cq:empty() do
