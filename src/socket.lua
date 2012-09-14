@@ -48,7 +48,7 @@ local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
 				poll(self)
 			end
 		else
-			return nil, oops(con, "accept", why)
+			return nil, oops(self, "accept", why)
 		end
 
 		con, why = oaccept(self)

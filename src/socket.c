@@ -24,15 +24,17 @@
  * ==========================================================================
  */
 #include <stddef.h>	/* NULL offsetof size_t */
+#include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* abs(3) */
-#include <string.h>	/* memset(3) memchr(3) */
+#include <string.h>	/* memset(3) memchr(3) memcpy(3) */
 
 #include <errno.h>	/* EAGAIN EPIPE EINTR */
 
 #include <sys/types.h>
 #include <sys/socket.h>	/* AF_UNIX SOCK_STREAM SOCK_DGRAM PF_UNSPEC socketpair(2) */
+#include <sys/un.h>	/* struct sockaddr_un */
 
-#include <unistd.h>	/* close(2) */
+#include <unistd.h>	/* dup(2) close(2) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -123,6 +125,125 @@ static size_t lso_optsize(struct lua_State *L, int index, size_t def) {
 static size_t lso_checksize(struct lua_State *L, int index) {
 	return luaL_checkunsigned(L, index);
 } /* lso_checksize() */
+
+
+static int lso_tofileno(lua_State *L, int index) {
+	struct luasocket *so;
+	luaL_Stream *fh;
+	int fd;
+
+	if (lua_isnumber(L, index)) {
+		return lua_tointeger(L, index);
+	} else if ((so = luaL_testudata(L, index, LSO_CLASS))) {
+		return so_peerfd(so->socket);
+	} else if ((fh = luaL_testudata(L, index, LUA_FILEHANDLE))) {
+		return (fh->f)? fileno(fh->f) : -1;
+	} else {
+		return -1;
+	}
+} /* lso_tofileno() */
+
+
+static _Bool lso_getfield(lua_State *L, int index, const char *k) {
+	lua_getfield(L, index, k);
+
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+
+		return 0;
+	} else {
+		return 1;
+	}
+} /* lso_getfield() */
+
+
+static _Bool lso_altfield(lua_State *L, int index, ...) {
+	const char *k;
+	va_list ap;
+
+	va_start(ap, index);
+
+	while ((k = va_arg(ap, const char *))) {
+		if (lso_getfield(L, index, k))
+			break;
+	}
+
+	va_end(ap);
+
+	return !!k;
+} /* lso_altfield() */
+
+#define lso_altfield(...) lso_altfield(__VA_ARGS__, (const char *)0)
+
+
+static _Bool lso_popbool(lua_State *L) {
+	_Bool val;
+	luaL_checktype(L, -1, LUA_TBOOLEAN);
+	val = lua_toboolean(L, -1);
+	lua_pop(L, 1);
+	return val;
+} /* lso_popbool() */
+
+
+static struct so_options lso_checkopts(lua_State *L, int index) {
+	struct so_options opts = *so_opts();
+
+	/* TODO: Parse .sa_bind */
+
+	if (lso_altfield(L, index, "mode", "sun_mode")) {
+		if (lua_isnumber(L, -1)) {
+			opts.sun_mode = lua_tointeger(L, -1);
+		} else {
+			const char *mode = luaL_checkstring(L, -1);
+			int i = 9, flag, ch;
+
+			while ((ch = *mode++) && i > 0) {
+				if (ch == 'r' || ch == 'R') 
+					flag = 04;
+				else if (ch == 'w' || ch == 'W')
+					flag = 02;
+				else if (ch == 'x' || ch == 'X')
+					flag = 01;
+				else if (ch == '-')
+					flag = 00;
+				else
+					continue;
+				opts.sun_mode |= (flag << (8 * (--i / 3)));
+			}
+		}
+
+		lua_pop(L, 1);
+	}
+
+	if (lso_altfield(L, index, "unlink", "sun_unlink"))
+		opts.sun_unlink = lso_popbool(L);
+
+	if (lso_altfield(L, index, "reuseaddr", "sin_reuseaddr"))
+		opts.sin_reuseaddr = lso_popbool(L);
+
+	if (lso_altfield(L, index, "nodelay", "sin_nodelay"))
+		opts.sin_nodelay = lso_popbool(L);
+
+	if (lso_altfield(L, index, "nopush", "sin_nopush"))
+		opts.sin_nopush = lso_popbool(L);
+
+	if (lso_altfield(L, index, "nonblock", "fd_nonblock"))
+		opts.fd_nonblock = lso_popbool(L);
+
+	if (lso_altfield(L, index, "cloexec", "fd_cloexec"))
+		opts.fd_cloexec = lso_popbool(L);
+
+	if (lso_altfield(L, index, "nosigpipe", "fd_nosigpipe"))
+		opts.fd_nosigpipe = lso_popbool(L);
+
+	if (lso_altfield(L, index, "verify", "tls_verify"))
+		opts.tls_verify = lso_popbool(L);
+
+	if (lso_altfield(L, index, "time", "st_time"))
+		opts.st_time = lso_popbool(L);
+
+	return opts;
+} /* lso_checkopts() */
 
 
 static int iov_chr(struct iovec *iov, size_t p) {
@@ -304,17 +425,44 @@ static lso_error_t lso_prepsocket(struct luasocket *S) {
 
 
 static lso_nargs_t lso_connect2(lua_State *L) {
+	struct so_options opts;
 	struct luasocket *S;
-	const char *host, *port;
+	const char *path = NULL, *host, *port;
+	size_t plen;
 	int error;
 
-	host = luaL_checkstring(L, 1);
-	port = luaL_checkstring(L, 2);
+	if (lua_istable(L, 1)) {
+		opts = lso_checkopts(L, 1);
+
+		if (lso_getfield(L, 1, "path")) {
+			path = luaL_checklstring(L, -1, &plen);
+		} else {
+			lua_getfield(L, 1, "host");
+			host = luaL_checkstring(L, -1);
+			lua_getfield(L, 1, "port");
+			port = luaL_checkstring(L, -1);
+		}
+	} else {
+		opts = *so_opts();
+		host = luaL_checkstring(L, 1);
+		port = luaL_checkstring(L, 2);
+	}
 
 	S = lso_newsocket(L);
 
-	if (!(S->socket = so_open(host, port, DNS_T_A, PF_INET, SOCK_STREAM, so_opts(), &error)))
-		goto error;
+	if (path) {
+		struct sockaddr_un sun;
+
+		memset(&sun, 0, sizeof sun);
+		sun.sun_family = AF_LOCAL;
+		memcpy(sun.sun_path, path, MIN(plen, sizeof sun.sun_path));
+
+		if (!(S->socket = so_dial((struct sockaddr *)&sun, SOCK_STREAM, &opts, &error)))
+			goto error;
+	} else {
+		if (!(S->socket = so_open(host, port, DNS_T_A, PF_INET, SOCK_STREAM, &opts, &error)))
+			goto error;
+	}
 
 	if ((error = lso_prepsocket(S)))
 		goto error;
@@ -350,17 +498,44 @@ static lso_nargs_t lso_connect1(lua_State *L) {
 
 
 static lso_nargs_t lso_listen2(lua_State *L) {
+	struct so_options opts;
 	struct luasocket *S;
-	const char *host, *port;
+	const char *path = NULL, *host, *port;
+	size_t plen;
 	int error;
 
-	host = luaL_checkstring(L, 1);
-	port = luaL_checkstring(L, 2);
+	if (lua_istable(L, 1)) {
+		opts = lso_checkopts(L, 1);
+
+		if (lso_getfield(L, 1, "path")) {
+			path = luaL_checklstring(L, -1, &plen);
+		} else {
+			lua_getfield(L, 1, "host");
+			host = luaL_checkstring(L, -1);
+			lua_getfield(L, 1, "port");
+			port = luaL_checkstring(L, -1);
+		}
+	} else {
+		opts = *so_opts();
+		host = luaL_checkstring(L, 1);
+		port = luaL_checkstring(L, 2);
+	}
 
 	S = lso_newsocket(L);
 
-	if (!(S->socket = so_open(host, port, DNS_T_A, PF_INET, SOCK_STREAM, so_opts(), &error)))
-		goto error;
+	if (path) {
+		struct sockaddr_un sun;
+
+		memset(&sun, 0, sizeof sun);
+		sun.sun_family = AF_LOCAL;
+		memcpy(sun.sun_path, path, MIN(plen, sizeof sun.sun_path));
+
+		if (!(S->socket = so_dial((struct sockaddr *)&sun, SOCK_STREAM, &opts, &error)))
+			goto error;
+	} else {
+		if (!(S->socket = so_open(host, port, DNS_T_A, PF_INET, SOCK_STREAM, &opts, &error)))
+			goto error;
+	}
 
 	if ((error = lso_prepsocket(S)))
 		goto error;
@@ -414,7 +589,7 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 } /* lso_starttls() */
 
 
-lso_error_t cqs_socket_fdopen(lua_State *L, int fd) {
+lso_error_t cqs_socket_fdopen(lua_State *L, int fd, const struct so_options *opts) {
 	struct luasocket *S;
 	int error;
 
@@ -423,7 +598,7 @@ lso_error_t cqs_socket_fdopen(lua_State *L, int fd) {
 	if ((error = lso_prepsocket(S)))
 		goto error;
 
-	if (!(S->socket = so_fdopen(fd, so_opts(), &error)))
+	if (!(S->socket = so_fdopen(fd, ((opts)? opts : so_opts()), &error)))
 		goto error;
 
 	return 0;
@@ -435,17 +610,44 @@ error:
 
 
 static lso_nargs_t lso_fdopen(lua_State *L) {
+	struct so_options opts;
 	struct luasocket *S;
-	int fd, error;
+	int ofd, fd = -1, error;
 
-	/* FIXME: dup the fd for safety and simplicity. */
-	fd = luaL_checkint(L, 1);
+	if (lua_istable(L, 1)) {
+		opts = lso_checkopts(L, 1);
 
-	if ((error = cqs_socket_fdopen(L, fd)))
+		if (lso_altfield(L, 1, "fd", "file", "socket")) {
+			ofd = lso_tofileno(L, -1);
+		} else {
+			lua_rawgeti(L, 1, 1);
+			ofd = luaL_checkint(L, -1);
+		}
+
+		lua_pop(L, 1);
+	} else {
+		opts = *so_opts();
+		ofd = lso_tofileno(L, 1);
+	}
+
+	if (ofd < 0)
+		goto badfd;
+
+	if (-1 == (fd = dup(ofd)))
+		goto syerr;
+
+	if ((error = cqs_socket_fdopen(L, fd, &opts)))
 		goto error;
 
 	return 1;
+badfd:
+	error = EBADF;
+	goto error;
+syerr:
+	error = errno;
 error:
+	cqs_closefd(&fd);
+
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
 
@@ -1043,18 +1245,8 @@ static lso_nargs_t lso_sendfd3(lua_State *L) {
 
 	src = luaL_checklstring(L, 2, &len);
 
-	if (lua_isnumber(L, 3)) {
-		fd = lua_tointeger(L, 3);
-	} else if ((so = luaL_testudata(L, 3, LSO_CLASS))) {
-		if (-1 == (fd = so_peerfd(so->socket)))
-			goto badfd;
-	} else if ((fh = luaL_testudata(L, 3, LUA_FILEHANDLE))) {
-		if (!fh->f)
-			goto badfd;
-		fd = fileno(fh->f);
-	} else {
+	if ((fd = lso_tofileno(L, 3)) < 0)
 		goto badfd;
-	}
 
 	so_clear(S->socket);
 
@@ -1064,9 +1256,6 @@ static lso_nargs_t lso_sendfd3(lua_State *L) {
 	lua_pushboolean(L, 1);
 
 	return 1;
-syerr:
-	error = errno;
-	goto error;
 badfd:
 	error = EBADF;
 error:

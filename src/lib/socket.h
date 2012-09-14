@@ -60,9 +60,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120816
+#define SOCKET_V_REL  0x20120913
 #define SOCKET_V_ABI  0x20120806
-#define SOCKET_V_API  0x20120806
+#define SOCKET_V_API  0x20120913
 
 
 const char *socket_vendor(void);
@@ -428,6 +428,8 @@ struct socket *so_open(const char *, const char *, int, int, int, const struct s
 #else
 #define so_open(...) so_open(__VA_ARGS__)
 #endif
+
+struct socket *so_dial(const struct sockaddr *, int, const struct so_options *, int *);
 
 struct socket *so_fdopen(int, const struct so_options *, int *);
 

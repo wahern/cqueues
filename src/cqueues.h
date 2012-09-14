@@ -81,7 +81,9 @@ cqs_nargs_t luaopen__cqueues_signal(lua_State *);
 cqs_nargs_t luaopen__cqueues_thread(lua_State *);
 
 
-cqs_error_t cqs_socket_fdopen(lua_State *, int);
+struct so_options;
+
+cqs_error_t cqs_socket_fdopen(lua_State *, int, const struct so_options *);
 
 
 static void cqs_openlibs(lua_State *L) {

@@ -1465,6 +1465,41 @@ error:
 } /* so_open() */
 
 
+struct socket *so_dial(const struct sockaddr *sa, int type, const struct so_options *opts, int *error_) {
+	struct { struct addrinfo ai; struct sockaddr_storage ss; } *host;
+	struct socket *so;
+	int error;
+
+	if (!(so = so_init(malloc(sizeof *so), opts)))
+		goto syerr;
+
+	if (!(host = malloc(sizeof *host)))
+		goto syerr;
+
+	memset(&host->ai, 0, sizeof host->ai);
+	memcpy(&host->ss, sa, SO_MIN(af_len(sa->sa_family), sizeof host->ss));
+
+	so->host = &host->ai;
+	so->host->ai_family = sa->sa_family;
+	so->host->ai_socktype = type;
+	so->host->ai_protocol = PF_UNSPEC;
+	so->host->ai_addrlen = af_len(sa->sa_family);
+	so->host->ai_addr = (struct sockaddr *)&host->ss;
+
+	so->todo = SO_S_SOCKET | SO_S_BIND;
+
+	return so;
+syerr:
+	error = so_syerr();
+error:
+	so_close(so);
+
+	*error_ = error;
+
+	return 0;
+} /* so_dial() */
+
+
 struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct socket *so;
 	struct stat st;
@@ -1588,7 +1623,6 @@ soerr:
 		error = SO_EAGAIN;
 #endif
 error:
-
 	*error_ = error;
 
 	return -1;
