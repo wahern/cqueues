@@ -89,7 +89,7 @@ end)
 --
 -- Yielding socket:read, built on non-blocking socket.recv
 --
-local nread; nread = function(self, what, ...)
+local function read(self, what, ...)
 	if not what then
 		return
 	end
@@ -106,10 +106,12 @@ local nread; nread = function(self, what, ...)
 		data, why = self:recv(what)
 	end
 
-	return data, nread(self, ...)
+	return data, read(self, ...)
 end
 
-socket.interpose("read", nread)
+socket.interpose("read", function(self, ...)
+	return read(self, ... or "*l")
+end)
 
 
 --
