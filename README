@@ -43,12 +43,13 @@ the relevant object(s) which were interested in the triggered event. It's
 analogous to calling poll(2).
 
 :pollfd() returns a descriptor integer or nil. This descriptor must remain
-in existence until the owner object is garbage collected, the coroutine
-executes one additional yield/resume cycle (so the old descriptor is expired
-from the descriptor queue), or until after the coroutine exits. If the
-descriptor is closed prematurely, the kernel will remove it from the
-internal descriptor queue, bringing it out of sync with the controller, and
-probably causing cqueues:step() to return EBADF or ENOENT errors.
+in existence until the owner object is garbage collected, cqueues.cancel is
+used, the coroutine executes one additional yield/resume cycle (so the old
+descriptor is expired from the descriptor queue), or until after the
+coroutine exits. If the descriptor is closed prematurely, the kernel will
+remove it from the internal descriptor queue, bringing it out of sync with
+the controller, and probably causing cqueues:step() to return EBADF or
+ENOENT errors.
 
 :events() returns a string or nil. cqueues searches the string for the
 characters 'r' (POLLIN) or 'w' (POLLOUT). These are events to associate with
@@ -85,6 +86,18 @@ cqueues.monotime()
 	Return the system's monotonic clock time, usually
 	clock_gettime(CLOCK_MONOTONIC).
 
+cqueues.cancel(fd)
+	Cancels the specified descriptor for all controllers. This ensures
+	safe early closure of descriptors. However, the complexity is
+	approximately M 2 log N, where M is the number of controllers, and N
+	the number of descriptors per controller (presuming they're equal).
+	For most purposes this is entirely inconsequential. By contrast,
+	however, implicit cancellation through GC or yield/resume cycling is
+	O(1).
+
+	Any thread polling on that descriptor is placed on it's controller's
+	pending queue.
+
 cqueues.new()
 	Create a new cqueues object
 
@@ -111,6 +124,10 @@ cqueue:empty()
 
 cqueue:count()
 	Returns a count of managed coroutines.
+
+cqueue:cancel(fd)
+	Cancel the specified descriptor for that controller. See
+	cqueues.cancel.
 
 
 == "cqueues.socket" Module ==
@@ -290,7 +307,8 @@ socket:eof()
 	closure (e.g. EPIPE).
 
 socket:close()
-	Explicitly and immediately close all internal descriptors.
+	Explicitly and immediately close all internal descriptors. This
+	routine ensures all descriptors are properly cancelled.
 
 == "cqueues.errno" Module ==
 
