@@ -294,6 +294,27 @@ socket:send(string, i, j, [mode])
 	values: count of bytes written (0 to j-i+1), and numerical error
 	code, if any (usually errno.EAGAIN or errno.EPIPE).
 
+
+socket:recvfd([prepbufsiz])
+	Receive an ancillary socket message with accompanying descriptor.
+	prepbufsiz specifies the maximum message size to expect.
+
+	This routine bypasses I/O buffering.
+
+	Returns message-string, socket-object on success; nil, nil,
+	error-integer on failure. On success socket-object may still be nil.
+	Message truncation is treated as an error condition.
+
+socket:sendfd(msg, socket)
+	Send an ancillary socket message with accompanying descriptor. msg
+	should be a non-zero-length string, which some platforms require.
+	socket should be a Lua file handle, cqueues socket, integer
+	descriptor, or nil.
+
+	This routine bypasses I/O buffering.
+
+	Returns true on sucess; false, error-integer on failure.
+
 socket:shutdown(how)
 	Simple binding to shutdown(2). `how' is a string containing one or
 	both of the flags 'r' or 'w'.
