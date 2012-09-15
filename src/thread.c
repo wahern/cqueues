@@ -69,7 +69,7 @@ static void atpanic_once(void) {
 	atpanic.error = pthread_key_create(&atpanic.key, 0);
 } /* atpanic_once() */
 
-static int atpanic_trap() {
+static int atpanic_trap(lua_State *L NOTUSED) {
 	struct cthread *ct;
 
 	if ((ct = pthread_getspecific(atpanic.key)))
