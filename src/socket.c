@@ -251,7 +251,9 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 static int lso_closefd(int *fd, void *arg) {
 	struct luasocket *S = arg;
 
-	cqs_cancelfd(S->mainthread, *fd);
+	if (S->mainthread)
+		cqs_cancelfd(S->mainthread, *fd);
+
 	cqs_closefd(fd);
 
 	return 0;
@@ -1549,9 +1551,7 @@ error:
 } /* lso_accept() */
 
 
-static lso_nargs_t lso__gc(lua_State *L) {
-	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
-
+static void lso_destroy(lua_State *L, struct luasocket *S) {
 	cqs_unref(L, &S->onerror);
 
 	fifo_reset(&S->ibuf.fifo);
@@ -1559,6 +1559,23 @@ static lso_nargs_t lso__gc(lua_State *L) {
 
 	so_close(S->socket);
 	S->socket = 0;
+} /* lso_destroy() */
+
+
+static lso_nargs_t lso_close(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+
+	lso_destroy(L, S);
+
+	return 0;
+} /* lso_close() */
+
+
+static lso_nargs_t lso__gc(lua_State *L) {
+	struct luasocket *S = luaL_checkudata(L, 1, LSO_CLASS);
+
+	S->mainthread = NULL; // disable poll cancellation
+	lso_destroy(L, S);
 
 	return 0;
 } /* lso__gc() */
@@ -1602,7 +1619,7 @@ static luaL_Reg lso_methods[] = {
 	{ "shutdown", &lso_shutdown },
 	{ "eof",      &lso_eof },
 	{ "accept",   &lso_accept },
-	{ "close",    &lso__gc },
+	{ "close",    &lso_close },
 	{ 0, 0 }
 }; /* lso_methods[] */
 
