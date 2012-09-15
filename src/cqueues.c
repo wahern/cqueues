@@ -1561,7 +1561,7 @@ cqs_error_t cqs_sigmask(int how, const sigset_t *set, sigset_t *oset) {
  * 	  for signals already unblocked.
  */
 static int cqs_pselect(int nfds, fd_set *_rfds, fd_set *wfds, fd_set *efds, const struct timespec *_timeout, const sigset_t *_mask, int *_error) {
-#if __OpenBSD__ || __APPLE__
+#if __OpenBSD__ || __APPLE__ || (__NetBSD__ && __NetBSD_Version__ < 600000000)
 	fd_set rfds;
 	struct timeval *timeout;
 	sigset_t omask, mask, pending;
