@@ -175,7 +175,7 @@ static void *ct_enter(void *arg) {
 	lua_pushvalue(L, -1);
 	lua_rawsetp(L, LUA_REGISTRYINDEX, &selfindex);
 
-	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[1])))
+	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[1], NULL)))
 		goto error;
 
 	ct->tmp.fd[1] = -1;
@@ -275,7 +275,7 @@ static int ct_start(lua_State *L) {
 	if (0 != cqs_socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->tmp.fd, O_NONBLOCK|O_CLOEXEC))
 		goto syerr;
 
-	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[0])))
+	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[0], NULL)))
 		goto error;
 
 	ct->tmp.fd[0] = -1;
