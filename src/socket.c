@@ -1263,6 +1263,23 @@ static lso_nargs_t lso_flush(lua_State *L) {
 } /* lso_flush() */
 
 
+static lso_nargs_t lso_uncork(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	int error;
+
+	if ((error = so_uncork(S->socket))) {
+		lua_pushboolean(L, 0);
+		lua_pushinteger(L, error);
+
+		return 2;
+	} else {
+		lua_pushboolean(L, 1);
+
+		return 1;
+	}
+} /* lso_uncork() */
+
+
 static lso_nargs_t lso_pending(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 
@@ -1573,6 +1590,7 @@ static luaL_Reg lso_methods[] = {
 	{ "unget",    &lso_unget2 },
 	{ "send",     &lso_send5 },
 	{ "flush",    &lso_flush },
+	{ "uncork",   &lso_uncork },
 	{ "pending",  &lso_pending },
 	{ "sendfd",   &lso_sendfd3 },
 	{ "recvfd",   &lso_recvfd2 },
