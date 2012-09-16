@@ -10,6 +10,7 @@ set -e
 : ${VENDOR:=}
 : ${INCLUDE:=}
 : ${TMPFILE:=.$(basename $0).c}
+: ${PREPEND:=}
 : ${EXPAND:=no}
 
 NL="
@@ -18,10 +19,11 @@ NL="
 usage() {
 	cat <<-EOF
 	usage: $(basename $0) -m:v:i:t:xh
-	  -m REGEX    macro regular expression
-	  -v NAME     compiler vendor name (e.g. gcc, clang, sunpro)
 	  -i INCLUDE  include file (e.g. <errno.h>)
+	  -m REGEX    regular expression macro name filter
+	  -s PATH     path to supplemental list, one per line
 	  -t TMPFILE  compiler intermediate tmp file
+	  -v VENDOR   compiler vendor name (e.g. gcc, clang, sunpro)
 	  -x          expand macros
 	  -h          print this usage message
 	
@@ -29,14 +31,8 @@ usage() {
 	EOF
 }
 
-while getopts m:v:i:t:xh OPT; do
+while getopts i:m:s:t:v:xh OPT; do
 	case "${OPT}" in
-	m)
-		MACRO="${OPTARG}"
-		;;
-	v)
-		VENDOR="${OPTARG}"
-		;;
 	i)
 		case "${OPTARG}" in
 		\<*)
@@ -50,8 +46,17 @@ while getopts m:v:i:t:xh OPT; do
 			;;
 		esac
 		;;
+	m)
+		MACRO="${OPTARG}"
+		;;
+	s)
+		PREPEND="${OPTARG}"
+		;;
 	t)
 		TMPFILE="${OPTARG}"
+		;;
+	v)
+		VENDOR="${OPTARG}"
 		;;
 	x)
 		EXPAND=yes
@@ -95,6 +100,10 @@ filter() {
 
 
 macros() {
+	if [ -n "${PREPEND}" ]; then
+		cat "${PREPEND}"
+	fi
+
 	case "${VENDOR:-$(vendor)}" in
 	*sunpro*)
 		trap "rm -f ${TMPFILE}" EXIT
@@ -116,4 +125,4 @@ expand() {
 	fi
 }
 
-macros | expand
+macros | sort -u | expand
