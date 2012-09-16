@@ -450,9 +450,10 @@ static lso_error_t lso_prepsocket(struct luasocket *S) {
 
 
 static lso_nargs_t lso_connect2(lua_State *L) {
+	const char *host NOTUSED = NULL, *port NOTUSED = NULL;
+	const char *path = NULL;
 	struct so_options opts;
 	struct luasocket *S;
-	const char *path = NULL, *host, *port;
 	size_t plen;
 	int error;
 
@@ -526,9 +527,10 @@ static lso_nargs_t lso_connect1(lua_State *L) {
 
 
 static lso_nargs_t lso_listen2(lua_State *L) {
+	const char *host NOTUSED = NULL, *port NOTUSED = NULL;
+	const char *path = NULL;
 	struct so_options opts;
 	struct luasocket *S;
-	const char *path = NULL, *host, *port;
 	size_t plen;
 	int error;
 
