@@ -1,5 +1,5 @@
 /* ==========================================================================
- * kpoll.c - Distillation of Linux epoll, BSD kqueue, and Solaris Ports.
+ * kpoll.c - Brew of Linux epoll, BSD kqueue, and Solaris Ports.
  * --------------------------------------------------------------------------
  * Copyright (c) 2012  William Ahern
  *
