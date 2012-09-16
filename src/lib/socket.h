@@ -60,9 +60,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20120914
-#define SOCKET_V_ABI  0x20120914
-#define SOCKET_V_API  0x20120914
+#define SOCKET_V_REL  0x20120915
+#define SOCKET_V_ABI  0x20120915
+#define SOCKET_V_API  0x20120915
 
 
 const char *socket_vendor(void);
@@ -136,6 +136,7 @@ struct so_options {
 	const void *sa_bind;
 
 	mode_t sun_mode;
+	mode_t sun_mask;
 	_Bool sun_unlink;
 
 	_Bool sin_reuseaddr;

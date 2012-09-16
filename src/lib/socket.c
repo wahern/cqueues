@@ -613,19 +613,43 @@ error:
 
 int so_bind(int fd, sockaddr_arg_t arg, const struct so_options *opts) {
 #if SA_UNIX
-	if (*sa_family(arg) == AF_UNIX && opts->sun_unlink) {
-		(void)unlink(strncpy((char [sizeof sockaddr_ref(arg).sun->sun_path + 1]){ 0 }, sockaddr_ref(arg).sun->sun_path, sizeof sockaddr_ref(arg).sun->sun_path));
+	if (*sa_family(arg) == AF_UNIX) {
+		char *path = strncpy((char [sizeof sockaddr_ref(arg).sun->sun_path + 1]){ 0 }, sockaddr_ref(arg).sun->sun_path, sizeof sockaddr_ref(arg).sun->sun_path);
+		_Bool nochmod = 0;
+		int error;
+
+		if (opts->sun_unlink && *path)
+			(void)unlink(path);
+
+		if (opts->sun_mode) {
+			if (0 == fchmod(fd, (opts->sun_mode & 0777)))
+				nochmod = 1;
+			else if (errno != EINVAL) /* BSDs return EINVAL */
+				return errno;
+		}
+
+		if (opts->sun_mask) {
+			mode_t omask = umask(opts->sun_mask & 0777);
+			error = (0 == bind(fd, sockaddr_ref(arg).sa, sa_len(arg)))? 0 : errno;
+			umask(omask);
+		} else {
+			error = (0 == bind(fd, sockaddr_ref(arg).sa, sa_len(arg)))? 0 : errno;
+		}
+
+		if (error)
+			return error;
+
+		if (opts->sun_mode && !nochmod && *path) {
+			if (0 != chmod(path, (opts->sun_mode & 0777)))
+				return errno;
+		}
+
+		return 0;
 	}
 #endif
+
 	if (0 != bind(fd, sockaddr_ref(arg).sa, sa_len(arg)))
 		return so_soerr();
-
-#if SA_UNIX
-	if (*sa_family(arg) == AF_UNIX && opts->sun_mode) {
-		if (0 != fchmod(fd, opts->sun_mode))
-			return so_syerr();
-	}
-#endif
 
 	return 0;
 } /* so_bind() */

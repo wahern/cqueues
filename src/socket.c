@@ -25,7 +25,7 @@
  */
 #include <stddef.h>	/* NULL offsetof size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
-#include <stdlib.h>	/* abs(3) */
+#include <stdlib.h>	/* abs(3) strtol(3) */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) */
 
 #include <errno.h>	/* EAGAIN EPIPE EINTR */
@@ -187,33 +187,46 @@ static _Bool lso_popbool(lua_State *L) {
 } /* lso_popbool() */
 
 
+static mode_t lso_checkperm(lua_State *L, int index) {
+	const char *mode = luaL_checkstring(L, index);
+	mode_t perm = 0;
+
+	if (*mode >= '0' && *mode <= '9') {
+		perm = strtol(mode, NULL, 0);
+	} else {
+		int i = 9, flag, ch;
+
+		while ((ch = *mode++) && i > 0) {
+			if (ch == 'r' || ch == 'R') 
+				flag = 04;
+			else if (ch == 'w' || ch == 'W')
+				flag = 02;
+			else if (ch == 'x' || ch == 'X')
+				flag = 01;
+			else if (ch == '-')
+				flag = 00;
+			else
+				continue;
+
+			perm |= (flag << (3 * (--i / 3)));
+		}
+	}
+
+	return perm;
+} /* lso_checkperm() */
+
 static struct so_options lso_checkopts(lua_State *L, int index) {
 	struct so_options opts = *so_opts();
 
 	/* TODO: Parse .sa_bind */
 
 	if (lso_altfield(L, index, "mode", "sun_mode")) {
-		if (lua_isnumber(L, -1)) {
-			opts.sun_mode = lua_tointeger(L, -1);
-		} else {
-			const char *mode = luaL_checkstring(L, -1);
-			int i = 9, flag, ch;
+		opts.sun_mode = S_IFSOCK | lso_checkperm(L, -1);
+		lua_pop(L, 1);
+	}
 
-			while ((ch = *mode++) && i > 0) {
-				if (ch == 'r' || ch == 'R') 
-					flag = 04;
-				else if (ch == 'w' || ch == 'W')
-					flag = 02;
-				else if (ch == 'x' || ch == 'X')
-					flag = 01;
-				else if (ch == '-')
-					flag = 00;
-				else
-					continue;
-				opts.sun_mode |= (flag << (8 * (--i / 3)));
-			}
-		}
-
+	if (lso_altfield(L, index, "mask", "sun_mask")) {
+		opts.sun_mask = S_IFSOCK | lso_checkperm(L, -1);
 		lua_pop(L, 1);
 	}
 
