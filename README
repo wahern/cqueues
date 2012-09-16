@@ -163,9 +163,17 @@ socket.connect{ ... }
 
 	.path = UNIX domain socket path (string)
 
-	.mode = fchmod socket after creating UNIX domain socket (string or
-	        number, default:nil). NOTE: not all platforms obey UNIX
-	        domain socket permissions.
+	.mode = fchmod or chmod socket after creating UNIX domain socket
+	        (string or number, default:nil). NOTE: There's a race
+	        between bind and the following chmod. fchmod is attempted
+	        before the bind, however it fails on BSD derivatives. Not
+	        all platforms obey UNIX domain socket permissions (e.g.
+	        Solaris). Check peer credentials, instead, to be portable.
+
+	.mask = Set and restore umask when binding UNIX domain sockets
+	        (string or number, default:nil). NOTE: Not all platforms
+		obey UNIX domain socket permissions. Check peer credentials,
+		instead, to be portable.
 
 	.unlink = unlink socket path before binding (boolean, default:false)
 
