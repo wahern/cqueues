@@ -6,28 +6,52 @@
 set -e 
 
 : ${CC:=cc}
+: ${xflag:=}
+: ${ELAST=no}
 
-PATH="$(dirname $0):${PATH}"
 
-TMPFILE=".$(basename $0).c"
-trap "rm -f ${TMPFILE}" EXIT
-
-filter() {
-	awk '$1~/^#define/ && $2~/^E/{ print $2 }'
+usage() {
+	cat <<-EOF
+	usage: $(basename $0) -lxh
+	  -l  print or compute ELAST value
+	  -x  expand macros
+	  -h  print this usage message
+	
+	Report bugs to <william@25thandClement.com>
+	EOF
 }
 
-vendor() {
-	case "$(vendor.cc)" in
-		*sunpro*)
-			echo "#include <errno.h>" >| ${TMPFILE}
-			${CC} -xM ${TMPFILE} | awk '/\.h$/{ print $2 }' | sort -u | xargs cat | filter
-			rm ${TMPFILE}
-			;;
-		*)
-			echo "#include <errno.h>" | ${CC} -dM -E - | filter
-			;;
+while getopts lxh OPT; do
+	case "${OPT}" in
+	l)
+		if [ -n "${xflag}" ]; then
+			echo "$0: -l and -x are exclusive" >&2
+			usage >&2
+			exit 1
+		fi
+
+		ELAST=yes
+		;;
+	x)
+		if [ "${ELAST}" != "no" ]; then
+			echo "$0: -l and -x are exclusive" >&2
+			usage >&2
+			exit 1
+		fi
+
+		xflag="-x"
+		;;
+	h)
+		usage
+		exit 0
+		;;
+	*)
+		usage >&2
+		exit 1
+		;;
 	esac
-}
+done
+
 
 posix() {
 	cat <<-EOF | tr " " "\n"
@@ -47,5 +71,15 @@ posix() {
 	EOF
 }
 
-(posix; vendor) | sort -u
+errno_h() {
+	posix | env PATH="$(dirname $0):${PATH}" CC="${CC}" macros.ls -i "errno.h" -m "^E" -s - ${xflag}
+}
 
+
+if [ "${ELAST}" = "yes" ]; then
+	xflag=""
+	(echo "#include <errno.h>"; errno_h) | ${CC} -E - | \
+	sed -ne 's/^[ 	]*\([0123456789][0123456789]*\).*$/\1/p' | sort -n | tail -1
+else
+	errno_h
+fi
