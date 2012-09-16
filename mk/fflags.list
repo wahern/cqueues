@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# List all O_XXXX macros
+#
+
+set -e 
+
+: ${CC:=cc}
+
+PATH="$(dirname $0):${PATH}"
+
+TMPFILE=".$(basename $0).c"
+trap "rm -f ${TMPFILE}" EXIT
+
+filter() {
+	awk '$1~/^#define/ && $2~/^O_/{ print $2 }'
+}
+
+vendor() {
+	case "$(vendor.cc)" in
+		*sunpro*)
+			echo "#include <fcntl.h>" >| ${TMPFILE}
+			${CC} -xM ${TMPFILE} | awk '/\.h$/{ print $2 }' | sort -u | xargs cat | filter
+			rm ${TMPFILE}
+			;;
+		*)
+			echo "#include <fcntl.h>" | ${CC} -dM -E - | filter
+			;;
+	esac
+}
+
+posix() { # old POSIX
+	cat <<-EOF | tr " " "\n"
+		O_CREAT O_EXCL O_TRUNC O_APPEND O_NONBLOCK O_RDONLY O_RDWR
+		O_WRONLY
+	EOF
+}
+
+(posix; vendor) | sort -u
+
