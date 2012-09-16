@@ -40,7 +40,7 @@ static const struct {
 } errlist[] = {
 changequote(<<<,>>>)dnl
 ifdef(<<<esyscmd>>>,<<<esyscmd>>>,<<<syscmd>>>)(<<<
-../mk/errno.list | awk '{ print "#ifdef "$1"\n\t{ \""$1"\", "$1" },\n#endif" }'
+../mk/errno.ls | awk '{ print "#ifdef "$1"\n\t{ \""$1"\", "$1" },\n#endif" }'
 >>>)dnl
 };
 
