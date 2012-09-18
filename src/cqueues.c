@@ -63,7 +63,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUES_VENDOR "william@25thandClement.com"
-#define CQUEUES_VERSION 20120917L
+#define CQUEUES_VERSION 20120918L
 
 
 /*
@@ -1660,7 +1660,7 @@ error:
 
 	return -1;
 #else
-	if (-1 == (nfds = pselect(nfds, _rfds, wfds, efds, ts, mask)))
+	if (-1 == (nfds = pselect(nfds, _rfds, wfds, efds, _timeout, _mask)))
 		*_error = errno;
 
 	return nfds;

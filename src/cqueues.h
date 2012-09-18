@@ -45,7 +45,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define HAVE_EPOLL  (__linux)
-#define HABE_PORTS  (__sun)
+#define HAVE_PORTS  (__sun)
 #define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
 
 #if __GNUC__
