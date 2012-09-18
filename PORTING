@@ -126,6 +126,26 @@ AF_UNIX socket file permissions
 
 	Last updated 2012-09-15.
 
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+pselect
+
+	     OK : Linux 3.2.0 (glibc 2.15)
+	 broken : OS X 10.8.1
+	     NO : OpenBSD 5.1
+	     OK : Solaris 11.0
+	     OK : FreeBSD 9.0
+	 broken : NetBSD 5.1.2
+
+	OS X appears to merely set and reset the signal mask around a call
+	to select, which doesn't address the signal race at all.
+
+	OpenBSD 5.1 does not provide pselect.
+
+	NetBSD 5.1 fails to deliver signals inside pselect, including
+	pending signals, although it does interrupt when a signal arrives.
+
+	Last update 2012-09-18.
+
 
 A P P E N D I X
 = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
@@ -226,5 +246,44 @@ int main(int argc, char **argv) {
 
 	return 0;
 } /* main() */
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// pselect
+#define USE_PTHREAD 0
+#include <signal.h>
+#include <sys/select.h>
+#include <unistd.h>
+
+static void noop() {
+	write(STDERR_FILENO, "rcvd\n", 5);
+}
+
+int main(void) {
+	struct sigaction act;
+	sigset_t omask, mask;
+
+	act.sa_handler = &noop;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGINT, &act, NULL);
+
+	raise(SIGINT);
+
+	sigemptyset(&mask);
+	sigemptyset(&omask);
+	sigaddset(&mask, SIGINT);
+#if USE_PTHREAD
+	pthread_sigmask(SIG_BLOCK, &mask, &omask);
+#else
+	sigprocmask(SIG_BLOCK, &mask, &omask);
+#endif
+
+	raise(SIGINT);
+
+	sigdelset(&omask, SIGINT);
+	pselect(0, NULL, NULL, NULL, NULL, &omask);
+
+	return 0;
+}
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
