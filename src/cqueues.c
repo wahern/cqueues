@@ -1534,71 +1534,119 @@ cqs_error_t cqs_sigmask(int how, const sigset_t *set, sigset_t *oset) {
 } /* cqs_sigmask() */
 
 
-static int cqs_pselect(int nfds, fd_set *_rfds, fd_set *wfds, fd_set *efds, const struct timespec *ts, const sigset_t *mask, int *_error) {
+/*
+ * cqs_pselect
+ *
+ * kqueue-backed pselect for OpenBSD and Apple. Though Apple provides
+ * pselect in libc, it's a broken wrapper around select which doesn't solve
+ * the race condition.
+ *
+ * Logical steps:
+ *
+ * 1) check for signals which will be unmasked and deliverable on select;
+ * 2) if any are pending, allow delivery and return EINTR; otherwise,
+ * 3) setup kqueue listener before we unblock;
+ * 4) execute select with specified signal mask.
+ *
+ * NOTES:
+ * 	o EVFILT_SIGNAL is an edge-triggered filter, which means that if a
+ * 	  signal is already pending when we add the listener, we won't be
+ * 	  notified when it's subsequently delivered. The solution is just to
+ * 	  check the pending set ahead of time.
+ *
+ * 	o This implementation doesn't try to minimize the signal disposition
+ * 	  race where the application doesn't use the proper mask/unmask
+ * 	  pattern. In particular, it calls sigpending earlier rather later.
+ * 	  In the future it might even optimize by not installing a filter
+ * 	  for signals already unblocked.
+ */
+static int cqs_pselect(int nfds, fd_set *_rfds, fd_set *wfds, fd_set *efds, const struct timespec *_timeout, const sigset_t *_mask, int *_error) {
 #if __OpenBSD__ || __APPLE__
 	fd_set rfds;
-	struct timeval *timeout = (ts)? &(struct timeval){ ts->tv_sec, ts->tv_nsec / 1000 } : NULL;
-	_Bool restore = 0;
-	sigset_t omask;
+	struct timeval *timeout;
+	sigset_t omask, mask, pending;
 	int kq = -1, error;
+	struct kevent event[NSIG];
+	unsigned nevent = 0;
 
 	if (_rfds)
 		FD_COPY(_rfds, &rfds);
 	else
 		FD_ZERO(&rfds);
 
-	if (mask) {
-		struct kevent event[NSIG];
-		unsigned n = 0;
+	timeout = (_timeout)? &(struct timeval){ _timeout->tv_sec, _timeout->tv_nsec / 1000 } : NULL;
 
+	if (_mask)
+		mask = *_mask;
+	else
+		cqs_sigmask(SIG_SETMASK, NULL, &mask);
+
+	sigpending(&pending);
+
+	for (int i = 1; i < NSIG && nevent < countof(event); i++) {
+		struct sigaction sa;
+
+		if (i == SIGKILL || i == SIGSTOP)
+			continue;
+
+		if (sigismember(&mask, i))
+			continue;
+
+		if (0 != sigaction(i, NULL, &sa))
+			goto syerr;
+
+		if (sa.sa_handler == SIG_DFL || sa.sa_handler == SIG_IGN)
+			continue;
+
+		if (sigismember(&pending, i)) {
+			/* allow signals to be delivered */
+			if ((error = cqs_sigmask(SIG_SETMASK, &mask, &omask)))
+				goto error;
+
+			cqs_sigmask(SIG_SETMASK, &omask, NULL);
+
+			error = EINTR;
+			goto error;
+		}
+
+		EV_SET(&event[nevent], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+		nevent++;
+	}
+
+	if (nevent > 0) {
 		if (-1 == (kq = kqueue()))
 			goto syerr;
 
-		for (int i = 1; i < NSIG && n < countof(event); i++) {
-			struct sigaction sa;
+		if (0 != kevent(kq, event, nevent, 0, 0, 0))
+			goto syerr;
 
-			if (i == SIGKILL || i == SIGSTOP)
-				continue;
-
-			if (sigismember(mask, i))
-				continue;
-
-			if (0 != sigaction(i, NULL, &sa))
-				goto syerr;
-
-			if (sa.sa_handler == SIG_DFL || sa.sa_handler == SIG_IGN)
-				continue;
-
-			EV_SET(&event[n], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
-			n++;
-		}
-
-		if (n > 0) {
-			if (0 != kevent(kq, event, n, 0, 0, 0))
-				goto syerr;
-
-			if (kq >= (int)FD_SETSIZE) {
-				error = EINVAL;
-				goto error;
-			}
-
-			FD_SET(kq, &rfds);
-
-			if (kq >= nfds)
-				nfds = kq + 1;
-		}
-
-		if ((error = cqs_sigmask(SIG_SETMASK, mask, &omask)))
+		if (kq >= (int)FD_SETSIZE) {
+			error = EINVAL;
 			goto error;
+		}
 
-		restore = 1;
+		FD_SET(kq, &rfds);
 	}
 
-	if (-1 == (nfds = select(nfds, &rfds, wfds, efds, timeout)))
-		goto syerr;
-
-	if (restore && (error = cqs_sigmask(SIG_SETMASK, &omask, NULL)))
+	if ((error = cqs_sigmask(SIG_SETMASK, &mask, &omask)))
 		goto error;
+
+	if (-1 == (nfds = select(MAX(nfds, kq + 1), &rfds, wfds, efds, timeout)))
+		*_error = errno;
+
+	cqs_sigmask(SIG_SETMASK, &omask, NULL);
+
+	if (nfds > 0 && kq != -1) {
+		if (FD_ISSET(kq, &rfds) && !--nfds) {
+			error = EINTR;
+			goto error;
+		}
+
+		FD_CLR(kq, &rfds);
+
+		if (_rfds)
+			FD_COPY(&rfds, _rfds);
+	}
 
 	cqs_closefd(&kq);
 
@@ -1606,9 +1654,6 @@ static int cqs_pselect(int nfds, fd_set *_rfds, fd_set *wfds, fd_set *efds, cons
 syerr:
 	error = errno;
 error:
-	if (restore)
-		cqs_sigmask(SIG_SETMASK, &omask, NULL);
-
 	cqs_closefd(&kq);
 
 	*_error = error;
