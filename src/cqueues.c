@@ -52,6 +52,7 @@
 #include <lauxlib.h>
 
 #include "lib/llrb.h"
+#include "cqueues.h"
 
 
 /*
@@ -352,10 +353,6 @@ static void *pool_get(struct pool *P, int *_error) {
  * K P O L L  ( K Q U E U E / E P O L L )  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-#define HAVE_KQUEUE __FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__
-#define HAVE_EPOLL __linux__
-#define HAVE_PORTS __sun
 
 #if HAVE_EPOLL
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
@@ -1525,18 +1522,115 @@ static int cqueue_reset(lua_State *L) {
 } /* cqueue_reset() */
 
 
+cqs_error_t cqs_sigmask(int how, const sigset_t *set, sigset_t *oset) {
+	if (oset)
+		sigemptyset(oset);
+
+#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS > 0
+	return pthread_sigmask(how, set, oset);
+#else
+	return sigprocmask(how, set, oset)? errno : 0;
+#endif
+} /* cqs_sigmask() */
+
+
+static int cqs_pselect(int nfds, fd_set *_rfds, fd_set *wfds, fd_set *efds, const struct timespec *ts, const sigset_t *mask, int *_error) {
+#if __OpenBSD__ || __APPLE__
+	fd_set rfds;
+	struct timeval *timeout = (ts)? &(struct timeval){ ts->tv_sec, ts->tv_nsec / 1000 } : NULL;
+	_Bool restore = 0;
+	sigset_t omask;
+	int kq = -1, error;
+
+	if (_rfds)
+		FD_COPY(_rfds, &rfds);
+	else
+		FD_ZERO(&rfds);
+
+	if (mask) {
+		struct kevent event[NSIG];
+		unsigned n = 0;
+
+		if (-1 == (kq = kqueue()))
+			goto syerr;
+
+		for (int i = 1; i < NSIG && n < countof(event); i++) {
+			struct sigaction sa;
+
+			if (i == SIGKILL || i == SIGSTOP)
+				continue;
+
+			if (sigismember(mask, i))
+				continue;
+
+			if (0 != sigaction(i, NULL, &sa))
+				goto syerr;
+
+			if (sa.sa_handler == SIG_DFL || sa.sa_handler == SIG_IGN)
+				continue;
+
+			EV_SET(&event[n], i, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+			n++;
+		}
+
+		if (n > 0) {
+			if (0 != kevent(kq, event, n, 0, 0, 0))
+				goto syerr;
+
+			if (kq >= (int)FD_SETSIZE) {
+				error = EINVAL;
+				goto error;
+			}
+
+			FD_SET(kq, &rfds);
+
+			if (kq >= nfds)
+				nfds = kq + 1;
+		}
+
+		if ((error = cqs_sigmask(SIG_SETMASK, mask, &omask)))
+			goto error;
+
+		restore = 1;
+	}
+
+	if (-1 == (nfds = select(nfds, &rfds, wfds, efds, timeout)))
+		goto syerr;
+
+	if (restore && (error = cqs_sigmask(SIG_SETMASK, &omask, NULL)))
+		goto error;
+
+	cqs_closefd(&kq);
+
+	return nfds;
+syerr:
+	error = errno;
+error:
+	if (restore)
+		cqs_sigmask(SIG_SETMASK, &omask, NULL);
+
+	cqs_closefd(&kq);
+
+	*_error = error;
+
+	return -1;
+#else
+	if (-1 == (nfds = pselect(nfds, _rfds, wfds, efds, ts, mask)))
+		*_error = errno;
+
+	return nfds;
+#endif
+} /* cqs_pselect() */
+
+
 static int cqueue_pause(lua_State *L) {
 	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
 	sigset_t block;
 	fd_set rfds;
-	int index;
+	int index, error;
 
-	sigemptyset(&block);
-#if (defined _REENTRANT || defined _THREAD_SAFE) && _POSIX_THREADS > 0
-	pthread_sigmask(SIG_BLOCK, NULL, &block);
-#else
-	sigprocmask(SIG_BLOCK, NULL, &block);
-#endif
+	if ((error = cqs_sigmask(SIG_SETMASK, NULL, &block)))
+		goto error;
 
 	for (index = 2; index <= lua_gettop(L); index++) {
 		sigdelset(&block, luaL_checkint(L, index));
@@ -1549,12 +1643,14 @@ static int cqueue_pause(lua_State *L) {
 	FD_ZERO(&rfds);
 	FD_SET(Q->kp.fd, &rfds);
 
-	if (-1 == pselect(Q->kp.fd + 1, &rfds, NULL, NULL, f2ts(cqueue_timeout_(Q)), &block)) {
-		if (errno != EINTR)
-			return luaL_error(L, "cqueue:pause: %s", strerror(errno));
+	if (-1 == cqs_pselect(Q->kp.fd + 1, &rfds, NULL, NULL, f2ts(cqueue_timeout_(Q)), &block, &error)) {
+		if (error != EINTR)
+			goto error;
 	}
 
 	return 0;
+error:
+	return luaL_error(L, "cqueue:pause: %s", strerror(error));
 } /* cqueue_pause() */
 
 

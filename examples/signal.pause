@@ -40,7 +40,7 @@ cq:wrap(function()
 	sl:settimeout(30)
 
 	while true do
-		cqueues.poll(sl:wait())
+		sl:wait()
 	end
 end)
 

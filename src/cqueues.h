@@ -26,10 +26,13 @@
 #ifndef CQUEUES_H
 #define CQUEUES_H
 
-#include <errno.h>  /* EINTR */
+#include <errno.h>	/* EINTR */
 
-#include <unistd.h> /* close(2) pipe(2) */
-#include <fcntl.h>  /* fcntl(2) */
+#include <sys/types.h>
+#include <sys/socket.h>	/* socketpair(2) */
+
+#include <unistd.h>	/* close(2) pipe(2) */
+#include <fcntl.h>	/* fcntl(2) */
 
 #include <lua.h>
 #include <lualib.h>
@@ -201,6 +204,9 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 	return 0;
 #endif
 } /* cqs_pipe2() */
+
+
+cqs_error_t cqs_sigmask(int, const sigset_t *, sigset_t *);
 
 
 /*

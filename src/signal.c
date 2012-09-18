@@ -36,15 +36,13 @@
 #include <lua.h>
 #include <lauxlib.h>
 
+#include "cqueues.h"
+
 
 /*
  * S I G N A L  L I S T E N E R  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-#define HAVE_EPOLL (defined __linux)
-#define HAVE_PORTS (defined __sun)
-#define HAVE_KQUEUE (!HAVE_EPOLL && !HAVE_PORTS)
 
 #if HAVE_EPOLL
 #include <sys/signalfd.h>
@@ -348,15 +346,6 @@ static const luaL_Reg lsl_metatable[] = {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-static int xsigmask(int how, const sigset_t *set, sigset_t *oset) {
-#if defined _REENTRANT || defined _THREAD_SAFE
-	return pthread_sigmask(how, set, oset);
-#else
-	return (0 == sigprocmask(how, set, oset))? 0 : errno;
-#endif
-} /* xsigmask() */
-
-
 static int ls_ignore(lua_State *L) {
 	struct sigaction sa;
 	int index;
@@ -422,7 +411,7 @@ static int ls_block(lua_State *L) {
 		sigaddset(&set, luaL_checkint(L, index));
 	}
 
-	if ((error = xsigmask(SIG_BLOCK, &set, 0)))
+	if ((error = cqs_sigmask(SIG_BLOCK, &set, 0)))
 		return luaL_error(L, "signal.block: %s", strerror(error));
 
 	return 0;
@@ -439,7 +428,7 @@ static int ls_unblock(lua_State *L) {
 		sigaddset(&set, luaL_checkint(L, index));
 	}
 
-	if ((error = xsigmask(SIG_UNBLOCK, &set, 0)))
+	if ((error = cqs_sigmask(SIG_UNBLOCK, &set, 0)))
 		return luaL_error(L, "signal.unblock: %s", strerror(error));
 
 	return 0;
