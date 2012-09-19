@@ -1,3 +1,5 @@
+local loader = function(loader, ...)
+
 local socket = require("_cqueues.socket")
 local cqueues = require("cqueues")
 local errno = require("cqueues.errno")
@@ -255,5 +257,10 @@ local unpack; unpack = socket.interpose("unpack", function (self, nbits)
 	return num
 end)
 
+socket.loader = loader
 
 return socket
+
+end -- loader
+
+return loader(loader, ...)

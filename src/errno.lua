@@ -1,3 +1,9 @@
-local errno = require("_cqueues.errno")
+local loader = function(loader, ...)
+	local errno = require("_cqueues.errno")
 
-return errno
+	errno.loader = loader
+
+	return errno
+end
+
+return loader(loader, ...)
