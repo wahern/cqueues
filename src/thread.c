@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
+#include <signal.h>
 #include <errno.h>
 
 #include <sys/uio.h>
@@ -229,6 +230,7 @@ error: /* NOTE: Only critical section errors reach here. */
 
 static int ct_start(lua_State *L) {
 	struct cthread **ud, *ct;
+	sigset_t mask, omask;
 	int top, error;
 
 	if (!(top = lua_gettop(L)))
@@ -289,12 +291,19 @@ static int ct_start(lua_State *L) {
 
 	ct->tmp.fd[0] = -1;
 
+	sigfillset(&mask);
+	sigemptyset(&omask);
+	if ((error = pthread_sigmask(SIG_SETMASK, &mask, &omask)))
+		goto error;
+
 	pthread_mutex_lock(&ct->mutex);
 
 	if (!(error = pthread_create(&ct->id, &ct->attr, &ct_enter, ct)))
 		pthread_cond_wait(&ct->cond, &ct->mutex);
 
 	pthread_mutex_unlock(&ct->mutex);
+
+	pthread_sigmask(SIG_SETMASK, &omask, NULL);
 
 	if (error)
 		goto error;
