@@ -95,8 +95,8 @@ cqueues.cancel(fd)
 	however, implicit cancellation through GC or yield/resume cycling is
 	O(1).
 
-	Any thread polling on that descriptor is placed on it's controller's
-	pending queue.
+	Any Lua thread polling on the canceled descriptor is placed on it's
+	controller's pending queue.
 
 cqueues.new()
 	Create a new cqueues object
@@ -128,6 +128,18 @@ cqueue:count()
 cqueue:cancel(fd)
 	Cancel the specified descriptor for that controller. See
 	cqueues.cancel.
+
+cqueue:pause([signal ...])
+	A wrapper around pselect which suspends execution until the
+	controller polls ready or a signal is delivered. This interface is
+	provided as a very basic least common denominator for simple slave
+	process controller loops and similar scenarios, where immediate
+	response to signal delivery is required on platforms like Solaris
+	without a proper signal polling primitive. (cqueues.signal.listen on
+	Solaris merely periodically queries the pending set.)
+
+	Much better alternatives are possible for Solaris, but require
+	global process state or an LWP thread helper.
 
 
 == "cqueues.socket" Module ==
@@ -339,6 +351,7 @@ socket:close()
 	Explicitly and immediately close all internal descriptors. This
 	routine ensures all descriptors are properly cancelled.
 
+
 == "cqueues.errno" Module ==
 
 errno[]
@@ -350,3 +363,97 @@ errno[]
 errno.strerror(code)
 	Returns string returned by strerror(3). [FUTURE: Will also handle
 	embedded socket.c and dns.c library error codes.]
+
+
+== "cqueues.signal Module ==
+
+signal[]
+	A table mapping signal string macros to numerical signal codes.
+	Example: cqueues.signal.SIGKILL likely evaluates to the number 9.
+
+signal.strsignal(code)
+	Returns string returned by strsignal(3).
+
+signal.ignore(signal [, signal ...])
+	Set the signal handler to SIG_IGN for the specified signals.
+
+signal.default(signal [, signal ...])
+	Set the signal handler to SIG_DFL for the specified signals.
+
+signal.discard(signal [, signal ...])
+	Set the signal handler to a builtin "noop" handler for the
+	specified signals. Use this is you want signal interrupts.
+
+signal.block(signal [, signal ...])
+	Block the specified signals.
+
+signal.unblock(signal [, signal ...])
+	Unblock the specified signals.
+
+signal.raise(signal [, signal ...])
+	raise(3) the specified signals.
+
+signal.interpose(name, function)
+	Add or interpose a signal listener class method. Returns the
+	previous method, if any.
+
+signal.listen(signal [, signal ...])
+	Returns a signal listener object for the specified signals.
+	Semantics differ between platforms:
+
+	o BSD kqueue provides the most intuitive and desirable behavior. All
+	listeners will detect a signal sent to the process irrespective of
+	whether the signal is ignored, blocked, or delivered. However,
+	EVFILT_SIGNAL is edge-triggered, which means no notification of
+	subsequent delivery of a pending signal which has been unblocked.
+
+	o Linux signalfd will not detect ignored or delivered signals, and
+	only one signalfd object will poll ready per signal.
+
+	o Solaris provides no signal polling kernel primitive. Instead, the
+	pending set is periodically queried using sigtimedwait. See
+	signal:settimeout. Like Linux, only one listener can notify per
+	interrupt.
+
+	To be portable the application must block the relevant signals. See
+	signal.block. Otherwise, neither Linux nor Solaris will be able to
+	detect the interrupt. Any signal should be assigned to one listener
+	only, although any listener may query multiple signals.
+
+	Alternatively, applications may start a dedicated thread to field
+	incoming signals, and send notifications over a socket. In the
+	future this may be provided as an optional listener implementation.
+
+	See also cqueue:pause for another, if crude, alternative.
+
+signal:wait([timeout])
+	Polls for the signal set passed to the constructor. Returns the
+	signal number, or nil on timeout.
+
+signal:settimeout(timeout)
+	Set the polling period for implementations such as Solaris which
+	lack a signal polling kernel primitive. On such systems signal:wait
+	merely queries the pending set every `timeout' seconds.
+
+
+== "cqueues.thread" Module [IN PROGRESS] ==
+
+thread.self
+	Returns the Lua VM thread context. Lua instances not started via
+	thread.start return nil.
+
+thread.start(function [, string [, string ...]])
+	Generates a socket pair, starts a new POSIX LWP thread, initializes
+	a new Lua VM instance, preloads the cqueues library, and loads and
+	executes the specified function from the new LWP thread and Lua
+	instance. The function receives as the first parameter one end of
+	the socket pair--instantiated as a cqueues.socket object--followed
+	by the string parameters passed to thread.start.
+
+	Returns a thread object and a socket object--the other end of the
+	socket pair.
+
+thread:join([timeout])
+	Wait for the thread to terminate. Calling the equivalent of
+	thread.self():join() is disallowed.
+
