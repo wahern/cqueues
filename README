@@ -381,8 +381,8 @@ signal.default(signal [, signal ...])
 	Set the signal handler to SIG_DFL for the specified signals.
 
 signal.discard(signal [, signal ...])
-	Set the signal handler to a builtin "noop" handler for the
-	specified signals. Use this is you want signal interrupts.
+	Set the signal handler to a builtin "noop" handler for the specified
+	signals. Use this is you want signals to interrupt syscalls.
 
 signal.block(signal [, signal ...])
 	Block the specified signals.
