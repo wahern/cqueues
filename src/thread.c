@@ -37,7 +37,9 @@
 
 
 struct cthread {
-	int refs, error;
+	int refs, error, status;
+	char *msg;
+
 	pthread_t id;
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
@@ -108,6 +110,7 @@ static void ct_release(struct cthread *ct) {
 	cqs_closefd(&ct->tmp.fd[0]);
 	cqs_closefd(&ct->tmp.fd[1]);
 
+	free(ct->msg);
 	free(ct);
 } /* ct_release() */
 
@@ -191,7 +194,13 @@ static void *ct_enter(void *arg) {
 		goto close;
 	}
 
-	lua_pcall(L, 2 + ct->tmp.argc - 1, 0, 0);
+	ct->status = lua_pcall(L, 2 + ct->tmp.argc - 1, 0, 0);
+
+	if (ct->status != LUA_OK && lua_isstring(L, -1)) {
+		if (!(ct->msg = strdup(lua_tostring(L, -1)))) {
+			ct->error = errno;
+		}
+	}
 close:
 	if (L) {
 		if (!(error = _setjmp(ct->trap))) {
@@ -294,7 +303,11 @@ static int ct_start(lua_State *L) {
 syerr:
 	error = errno;
 error:
-	return luaL_error(L, "thread.start: %s", strerror(error));
+	lua_pushnil(L);
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 3;
 } /* ct_start() */
 
 
@@ -307,13 +320,21 @@ static int ct_join(lua_State *L) {
 
 	if (0 == read(ct->pipe[0], &(char){ 0 }, 1)) {
 		lua_pushboolean(L, 1);
-		lua_pushnil(L); /* FIXME: Push any error code/string */
+
+		if (ct->error)
+			lua_pushinteger(L, ct->error);
+		else if (ct->msg)
+			lua_pushstring(L, ct->msg);
+		else
+			lua_pushnil(L);
 
 		return 2;
 	} else {
+		error = errno;
 		lua_pushboolean(L, 0);
+		lua_pushinteger(L, error);
 
-		return 1;
+		return 2;
 	}
 } /* ct_join() */
 
@@ -336,6 +357,16 @@ static int ct_events(lua_State *L) {
 } /* ct_events() */
 
 
+static int ct__eq(lua_State *L) {
+	struct cthread **a = luaL_testudata(L, 1, CQS_THREAD);
+	struct cthread **b = luaL_testudata(L, 2, CQS_THREAD);
+
+	lua_pushboolean(L, a && b && (*a == *b));
+
+	return 1;
+} /* ct__eq() */
+
+
 static int ct__gc(lua_State *L) {
 	struct cthread **ud = luaL_checkudata(L, 1, CQS_THREAD);
 
@@ -344,6 +375,11 @@ static int ct__gc(lua_State *L) {
 
 	return 0;
 } /* ct__gc() */
+
+
+static int ct_interpose(lua_State *L) {
+	return cqs_interpose(L, CQS_THREAD);
+} /* ct_interpose() */
 
 
 static int ct_self(lua_State *L) {
@@ -362,15 +398,17 @@ static const luaL_Reg ct_methods[] = {
 
 
 static const luaL_Reg ct_metamethods[] = {
+	{ "__eq", &ct__eq },
 	{ "__gc", &ct__gc },
 	{ NULL,   NULL }
 };
 
 
 static const luaL_Reg ct_globals[] = {
-	{ "start", &ct_start },
-	{ "self",  &ct_self },
-	{ NULL,    NULL }
+	{ "start",     &ct_start },
+	{ "interpose", &ct_interpose },
+	{ "self",      &ct_self },
+	{ NULL,        NULL }
 };
 
 int luaopen__cqueues_thread(lua_State *L) {

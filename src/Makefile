@@ -19,7 +19,7 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 all: cqueues.so
 
 CPPFLAGS = -D_REENTRANT -D_THREAD_SAFE
-CPPFLAGS += -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) # -DSOCKET_DEBUG
+CPPFLAGS += -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
@@ -101,7 +101,9 @@ lib/dns.o: lib/dns.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
-install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua $(lua52path)/cqueues/signal.lua
+install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
+         $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua \
+         $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -123,6 +125,11 @@ $(lua52path)/cqueues/errno.lua: errno.lua
 	cp -p $< $@
  
 $(lua52path)/cqueues/signal.lua: signal.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+ 
+$(lua52path)/cqueues/thread.lua: thread.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
