@@ -6,6 +6,7 @@
 set -e 
 
 : ${CC:=cc}
+: ${CPPFLAGS:=}
 : ${MACRO:=.}
 : ${VENDOR:=}
 : ${INCLUDE:=}
@@ -108,18 +109,18 @@ macros() {
 	*sunpro*)
 		trap "rm -f ${TMPFILE}" EXIT
 		echo "${INCLUDE}" >| ${TMPFILE}
-		${CC} -xM ${TMPFILE} | awk '/\.h$/{ print $2 }' | sort -u | xargs cat | filter
+		${CC} ${CPPFLAGS} -xM ${TMPFILE} | awk '/\.h$/{ print $2 }' | sort -u | xargs cat | filter
 		rm ${TMPFILE}
 		;;
 	*)
-		echo "${INCLUDE}" | ${CC} -dM -E - | filter
+		echo "${INCLUDE}" | ${CC} ${CPPFLAGS} -dM -E - | filter
 		;;
 	esac
 }
 
 expand() {
 	if [ "${EXPAND}" = "yes" ]; then
-		(echo "${INCLUDE}"; awk '{ print "\"<<<< "$1" >>>>\" "$1 }') | ${CC} -E - | awk '$1~/^"<<<</{ print $2""substr($0, index($0, ">>>>") + 5) }'
+		(echo "${INCLUDE}"; awk '{ print "\"<<<< "$1" >>>>\" "$1 }') | ${CC} ${CPPFLAGS} -E - | awk '$1~/^"<<<</{ print $2""substr($0, index($0, ">>>>") + 5) }'
 	else
 		cat
 	fi
