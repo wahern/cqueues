@@ -42,7 +42,7 @@
 #include <sys/types.h>	/* socklen_t mode_t in_port_t */
 #include <sys/stat.h>	/* fchmod(2) fstat(2) */
 #include <sys/select.h>	/* FD_ZERO FD_SET fd_set select(2) */
-#include <sys/socket.h>	/* AF_UNIX AF_INET AF_INET6 SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
+#include <sys/socket.h>	/* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 
 #if defined(AF_UNIX)
 #include <sys/un.h>	/* struct sockaddr_un */
@@ -583,6 +583,7 @@ error:
 
 
 static int so_opts2flags(const struct so_options *);
+static int so_type2mask(int, int);
 
 int so_socket(int domain, int type, const struct so_options *opts, int *_error) {
 	int error, fd, flags, mask, need;
@@ -591,7 +592,7 @@ int so_socket(int domain, int type, const struct so_options *opts, int *_error) 
 		goto syerr;
 
 	flags = so_opts2flags(opts);
-	mask  = (domain == SOCK_STREAM)? ~0 : ~(SO_F_NODELAY|SO_F_NOPUSH);
+	mask  = so_type2mask(domain, type);
 	need  = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
 
 	if ((error = so_setfl(fd, flags, mask, need)))
@@ -793,6 +794,16 @@ static int so_opts2flags(const struct so_options *opts) {
 
 	return flags;
 } /* so_opts2flags() */
+
+
+static int so_type2mask(int family, int type) {
+	if (family == AF_INET || family == AF_INET6) {
+		if (type == SOCK_STREAM)
+			return ~0;
+	}
+
+	return ~(SO_F_NODELAY|SO_F_NOPUSH);
+} /* so_type2mask() */
 
 
 int so_getfl(int fd, int which) {
@@ -1535,19 +1546,34 @@ error:
 struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct socket *so;
 	struct stat st;
-	int mask, error;
+	int family = AF_UNSPEC, type = 0, flags, mask, need, error;
 
 	if (!(so = so_init(malloc(sizeof *so), opts)))
 		goto syerr;
 
-	if ((error = so_rstfl(fd, &so->flags, so_opts2flags(opts), ~0, ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE))))
-		goto error;
-
 	if (0 != fstat(fd, &st))
 		goto syerr;
 
-	so->mode = st.st_mode;
+	if (st.st_mode & S_IFSOCK) {
+		struct sockaddr_storage ss;
 
+		if (0 != getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
+			goto syerr;
+
+		family = ss.ss_family;
+
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
+			goto syerr;
+	}
+
+	flags = so_opts2flags(opts);
+	mask  = so_type2mask(family, type);
+	need  = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
+
+	if ((error = so_rstfl(fd, &so->flags, flags, mask, need)))
+		goto error;
+
+	so->mode = st.st_mode;
 	so->fd = fd;
 
 	return so;
