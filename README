@@ -438,22 +438,27 @@ signal:settimeout(timeout)
 
 == "cqueues.thread" Module [IN PROGRESS] ==
 
-thread.self
+thread.self()
 	Returns the Lua VM thread context. Lua instances not started via
 	thread.start return nil.
 
 thread.start(function [, string [, string ...]])
-	Generates a socket pair, starts a new POSIX LWP thread, initializes
-	a new Lua VM instance, preloads the cqueues library, and loads and
+	Generates a socket pair, starts a POSIX LWP thread, initializes a
+	new Lua VM instance, preloads the cqueues library, and loads and
 	executes the specified function from the new LWP thread and Lua
 	instance. The function receives as the first parameter one end of
 	the socket pair--instantiated as a cqueues.socket object--followed
 	by the string parameters passed to thread.start.
 
 	Returns a thread object and a socket object--the other end of the
-	socket pair.
+	socket pair. On error returns two nils and an error code.
 
 thread:join([timeout])
 	Wait for the thread to terminate. Calling the equivalent of
 	thread.self():join() is disallowed.
 
+	Returns a boolean and error value. If false, error value is an error
+	code describing a local error, usually EAGAIN or ETIMEDOUT.  If
+	true, error value is 1) an error code describing a system error
+	which the thread encountered, 2) an error message string returned by
+	the new Lua instance, or 3) nil if completed successfully.
