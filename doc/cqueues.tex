@@ -41,6 +41,7 @@
 \maketitle
 
 \maxtocdepth{subsubsection}
+\setsecnumdepth{subsection}
 \tableofcontents
 \pagenumbering{roman}
 \clearpage
@@ -102,15 +103,18 @@ The Makefile expects Lua 5.2 headers to exist in \$(includedir)/lua/5.2. This is
 
 \chapter{Usage}
 
-\section{Underlying Pattern}
+\section{Conventions}
 
-\cqueues works through a simple protocol. When a coroutine yields to its parent \cqueues controller, it can pass one or more objects. These objects are introspected for three methods: \method{:pollfd}, \method{:events}, and \method{:timeout}. These methods specify the parameters for installing descriptor and timeout events. When one of these events fires, \cqueues will resume the coroutine, passing the relevant objects which were interested in the triggered event. It's analogous to calling \syscall{poll}.
 
-\method{:pollfd} returns a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
+\subsection{Polling}
 
-\method{:events} returns a string or nil. \cqueues searches the string for the characters 'r' (POLLIN) or 'w' (POLLOUT). These are events to associate with the descriptor.
+\cqueues works through a simple protocol. When a coroutine yields to its parent \cqueues controller, it can pass one or more objects. These objects are introspected for three methods: \method{:pollfd}, \method{:events}, and \method{:timeout}. These methods specify the parameters for installing descriptor and timeout events. When one of these events fires, \cqueues will resume the coroutine, passing the relevant objects which were interested in the triggered event. It's analogous to calling \syscall{poll}, and in fact the routine \routine{cqueues.poll} is provided as a wrapper for \routine{coroutine.yield}.\footnote{In the future this wrapper may be able to detect if the current coroutine was resumed by a controller, and if not chain yield calls until a controller is reached.}
 
-\method{:timeout} returns a number or nil. This specifies an independent timeout event. To effect a simple 1 second timeout, you can do
+\subsubsection[\method{object:pollfd}]{\method{:pollfd()}} The \method{:pollfd} method should return a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
+
+\subsubsection[\method{object:events}]{\method{:events()}} The \method{:events} method should return a string or nil. \cqueues searches the string for the flags `r' and `w', which describe the events to associate with the descriptor---respectively, POLLIN and POLLOUT.
+
+\subsubsection[\method{object:timeout}]{\method{:timeout()}} The \method{:timeout} should return a number or nil. This schedules an independent timeout event. To effect a simple one second timeout, you can do
 
 \begin{code}{perl}
         cqueues.poll({ timeout = function() return 1.0 end })
@@ -119,20 +123,34 @@ The Makefile expects Lua 5.2 headers to exist in \$(includedir)/lua/5.2. This is
 which is equivalent to
 
 \begin{code}{perl}
-        coroutine.yield({ timeout = function() return 1.0 end })
+	coroutine.yield({ timeout = function() return 1.0 end })
 \end{code}
 
-Instantiated \cqueues objects implement all three methods. In particular, this means that you can stack \cqueues, or poll on a \cqueues object using some other event loop library. Each \cqueues object is entirely self-contained, without any global state.
+but is not as simple as the shortcut
+
+\begin{code}{perl}
+	cqueues.poll(1.0)
+\end{code}
+
+Instantiated \cqueues objects implement all three methods.\footnote{\method{:pollfd} returns the internal \syscall{kqueue}, \syscall{epoll}, or Ports descriptor; \method{:events} returns ``r''; and \method{:timeout} returns the time to the next internal timeout event.} In particular, this means that you can stack \cqueues, or poll on a \cqueues object using some other event loop library. Each \cqueues object is entirely self-contained, without any global state.
+
+
+\subsection{Errors}
+
+The usual behavior is for errors to be returned directly. But see \routine{socket.onerror}. If a routine is specified to return an object or string, nil is returned; if a boolean, false is returned. In both cases, these  are usually followed by a numeric error code. Thus, if a routine is specified to return two values on success, then on error three values are returned, the first two nil or false.
+
+\cqueues is a relatively low-level component library. In almost all cases errors will be system errors, returned as numeric error codes for easy and efficient comparison. For example, attempting to create a UNIX domain socket with \routine{socket.listen} in a directory without sufficient permissions might return nil, EPERM.
+
 
 \section{Modules}
 
 \subsection{\cqueues}
 
 \subsubsection{\routine{cqueues.VENDOR}}
-String describing the vendor. Default: ``william@25thandClement.com''.
+String describing the vendor, e.g.\ william@25thandClement.com. If you fork this project please change this string so I don't receive unwarranted scorn or praise.
 
 \subsubsection{\routine{cqueues.VERSION}}
-Number describing the latest release version. Formatted as YYYYMMDD.
+Number describing the running version, formatted as YYYYMMDD. Official releases are tagged in the git repo as rel-YYYYMMDD.
 
 \subsubsection{\routine{cqueues.COMMIT}}
 Git commit hash string of HEAD.
@@ -171,7 +189,7 @@ Returns a count of managed coroutines.
 \subsubsection[\routine{cqueues:cancel}]{\routine{cqueue:cancel(fd)}}
 Cancel the specified descriptor for that controller. See cqueues.cancel.
 
-\subsubsection[\routine{cqueues:pause}]{\routine{cqueue:pause([signal ...])}}
+\subsubsection[\routine{cqueues:pause}]{\routine{cqueue:pause(signal [, signal $\ldots$ ])}}
 A wrapper around \syscall{pselect} which suspends execution until the controller polls ready or a signal is delivered. This interface is provided as a very basic least common denominator for simple slave process controller loops and similar scenarios, where immediate response to signal delivery is required on platforms like Solaris without a proper signal polling primitive. (\routine{signal.listen} on Solaris merely periodically queries the pending set.)
 
 Much better alternatives are possible for Solaris, but require global process state or an LWP thread helper.
@@ -188,11 +206,11 @@ Return a new socket immediately ready for reading or writing. DNS lookup and TCP
 
 \begin{ctabular}{r | p{6in}}
 flag & description \\\hline
-``t'' & text mode; input and output undergo LF/CRLF translation \\
-``b'' & binary mode; no LF/CRLF translation \\
-``n'' & no output buffering \\
-``l'' & line buffered output \\ 
-``f'' & fully buffered output \\
+t & text mode; input and output undergo LF/CRLF translation \\
+b & binary mode; no LF/CRLF translation \\
+n & no output buffering \\
+l & line buffered output \\ 
+f & fully buffered output \\
 \end{ctabular}
 At present the default mode is ``tl''---text translation and line buffering. This may change depending on how much confusion it creates, perhaps to ``tn''.
 
@@ -313,7 +331,7 @@ field & type:default & description\\\hline
 \subsubsection[\fn{socket:uncork}]{\fn{socket:uncork()}}
 	Disables TCP\_NOPUSH, TCP\_CORK, or equivalent socket option.
 
-\subsubsection[\fn{socket:recv}]{\fn{socket:recv(format, [mode])}}
+\subsubsection[\fn{socket:recv}]{\fn{socket:recv(format [, mode])}}
 	Similar to file:read, except takes only a single format and returns
 	immediately. On success returns the string or number. On failure
 	returns nil and a numeric error code--usually errno.EAGAIN or
@@ -333,7 +351,7 @@ field & type:default & description\\\hline
 	Mode is as described in socket.connect. Defaults to configured
 	input mode.
 
-\subsubsection[\fn{socket:send}]{\fn{socket:send(string, i, j, [mode])}}
+\subsubsection[\fn{socket:send}]{\fn{socket:send(string, i, j [, mode])}}
 	Write out the slice string[i,j]. Similar to passing string:sub(i, j)
 	without instantiating a new string object. Immediately returns 2
 	values: count of bytes written (0 to j-i+1), and numerical error
@@ -390,28 +408,28 @@ This, signal.SIGKILL likely evaluates to the number 9.
 \subsubsection[\fn{signal.strsignal}]{\fn{signal.strsignal(code)}}
 Returns string returned by strsignal(3).
 
-\subsubsection[\fn{signal.ignore}]{\fn{signal.ignore(signal [, signal $\ldots$])}}
+\subsubsection[\fn{signal.ignore}]{\fn{signal.ignore(signal [, signal $\ldots $ ])}}
 Set the signal handler to SIG\_IGN for the specified signals.
 
-\subsubsection[\fn{signal.default}]{\fn{signal.default(signal [, signal $\ldots$])}}
+\subsubsection[\fn{signal.default}]{\fn{signal.default(signal [, signal $\ldots$ ])}}
 Set the signal handler to SIG\_DFL for the specified signals.
 
-\subsubsection[\fn{signal.discard}]{\fn{signal.discard(signal [, signal $\ldots$])}}
+\subsubsection[\fn{signal.discard}]{\fn{signal.discard(signal [, signal $\ldots$ ])}}
 Set the signal handler to a builtin ``noop'' handler for the specified signals. Use this is you want signals to interrupt syscalls.
 
-\subsubsection[\fn{signal.block}]{\fn{signal.block(signal [, signal $\ldots$])}}
+\subsubsection[\fn{signal.block}]{\fn{signal.block(signal [, signal $\ldots$ ])}}
 Block the specified signals.
 
-\subsubsection[\fn{signal.unblock}]{\fn{signal.unblock(signal [, signal $\ldots$])}}
+\subsubsection[\fn{signal.unblock}]{\fn{signal.unblock(signal [, signal $\ldots$ ])}}
 Unblock the specified signals.
 
-\subsubsection[\fn{signal.raise}]{\fn{signal.raise(signal [, signal $\ldots$])}}
+\subsubsection[\fn{signal.raise}]{\fn{signal.raise(signal [, signal $\ldots$ ])}}
 raise(3) the specified signals.
 
 \subsubsection[\fn{signal.interpose}]{\fn{signal.interpose(name, function)}}
 Add or interpose a signal listener class method. Returns the previous method, if any.
 
-\subsubsection[\fn{signal.listen}]{\fn{signal.listen(signal [, signal ...])}}
+\subsubsection[\fn{signal.listen}]{\fn{signal.listen(signal [, signal $\ldots$ ])}}
 Returns a signal listener object for the specified signals. Semantics differ between platforms:
 
 \paragraph{kqueue}
@@ -441,9 +459,9 @@ Set the polling period for implementations such as Solaris which lack a signal p
 Returns the LWP thread object for the running Lua instances. Threads not started via thread.start return nil.
 
 \subsubsection[\fn{thread.start}]{\fn{thread.start(function [, string [, string $\ldots$ ]])}}
-Generates a socket pair, starts a POSIX LWP thread, initializes a new Lua VM instance, preloads the cqueues library, and loads and executes the specified function from the new LWP thread and Lua instance. The function receives as the first parameter one end of the socket pair---instantiated as a cqueues.socket object---followed by the string parameters passed to thread.start.
+Generates a socket pair, starts a POSIX LWP thread, initializes a new Lua VM instance, preloads the \cqueues library, and loads and executes the specified function from the new LWP thread and Lua instance. The function receives as the first parameter one end of the socket pair---instantiated as a cqueues.socket object---followed by the string parameters passed to thread.start.
 
-All signals are initially blocked by the new LWP thread.
+The new LWP thread starts with all signals blocked.
 
 Returns a thread object and a socket object---the other end of the socket pair. On error returns two nils and an error code.
 
