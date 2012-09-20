@@ -1,0 +1,384 @@
+\documentclass[11pt, oneside]{memoir}
+
+\usepackage{fullpage}
+\usepackage{xspace}
+\usepackage{makeidx}
+\usepackage{listings}
+\usepackage[colorlinks=true, linkcolor=blue]{hyperref}
+
+\setlength{\parindent}{0pt}
+\nonzeroparskip
+
+% add padding to ctabular tables
+\renewcommand{\arraystretch}{1.2}
+
+\makeindex
+
+%
+% COMMANDS
+%
+\newcommand*{\cqueues}[0]{\texttt{cqueues}\xspace}
+\newcommand*{\key}[1]{#1\index{#1}\xspace}
+\newcommand*{\syscall}[1]{\texttt{#1}\xspace}
+\newcommand*{\routine}[1]{\texttt{#1}\xspace}
+\newcommand*{\fn}[1]{\texttt{#1}\xspace}
+\newcommand*{\method}[1]{\texttt{#1}\xspace}
+\newcommand*{\module}[1]{\texttt{#1}\xspace}
+
+%
+% ENVIRONMENTS
+%
+\lstnewenvironment{code}[1]{
+	\lstset{language=#1}
+}{
+}
+
+\begin{document}
+
+\title{\cqueues Userguide}
+\date{\today}
+\author{William Ahern}
+\maketitle
+
+\maxtocdepth{subsubsection}
+\tableofcontents
+\pagenumbering{roman}
+\clearpage
+\setcounter{page}{1}
+\pagenumbering{arabic}
+
+\chapter{Dependencies}
+
+\section{Operating Systems}
+
+\cqueues heavily relies on a modern POSIX environment. But the fundamental premise is to build on the new but non-standard polling facilities provided by contemporary Unix environments. Specifically, BSD \syscall{kqueue}, Linux \syscall{epoll}, and Solaris Ports.
+
+\cqueues should work on recent versions of Linux, OS X, Solaris, NetBSD, FreeBSD, OpenBSD, and derivatives. The only other possible candidate is AIX, if and when support for AIX's \syscall{pollset} interface is added to the embedded ``kpoll'' library.
+
+\subsection{$\lnot$ Microsoft Windows}
+
+Microsoft Windows support is basically out of the question, for far too many reasons to put here. Aside from the more technical reasons, Windows I/O and networking programming interfaces have a fundamentally different character than on Unix. Unix historically relies on readiness polling, while Windows uses event completion callbacks. There are strengths and weaknesses to each approach. Trying to paper over the chasm between the two approaches invariably results in a framework with the strengths of neither and the weaknesses of both. The purpose of \cqueues is to leverage the strengths of polling as well as address the weaknesses.
+
+\section{Libraries}
+
+\subsection{Lua 5.2}
+\cqueues requires Lua 5.2. It's not fully portable to Lua 5.1 because it relies on ephemeron tables to prevent coroutine/controller reference cycles. Nonetheless, Lua 5.1 and LuaJIT patches are welcome if not too intrusive, or if they provide a clean refactoring of code.
+
+\subsection{OpenSSL}
+The \cqueues sockets module provides seamless SSL/TLS support using OpenSSL.
+In the future a \module{cqueues.ssl} module will be provided with OpenSSL bindings for certificate and key management.
+
+\subsection{pthreads}
+
+\cqueues provides an optional threading module, using POSIX threads.\footnote{Building without threading enabled is not well tested.} Internally, it also strives to use thread-safe routines when built with either the \_REENTRANT or \_THREAD\_SAFE macros defined. Thread support is enabled by default 
+
+\paragraph{Linking}
+Note that on some systems, such as NetBSD and FreeBSD, the loading application must be linked against pthreads (using -lpthread or -pthread). It is not enough for the cqueues module to pull in the dependency at load time. In particular, if using the stock Lua interpreter, it must have been linked against pthreads at build time. Add the appropriate linker flag to MYLIBS in lua-5.2.x/src/Makefile.
+
+\paragraph{OpenBSD}
+OpenBSD 5.1 threading is completely fubar, especially with regard to signals. If using OpenBSD, be sure to compile \emph{without} the thread-safe macros predefined.
+
+\section{Compilers}
+
+The source code is mostly ISO C99 compliant, and even more so with regards to ISO C11. Regardless, it aims to build cleanly with the native compiler for each targeted platform. It presently builds with recent versions of GCC, clang, and SunPro.
+
+GCC and especially clang may emit copious warnings about initializers and unused parameters. These warnings are stupid, particularly the former. The Makefile uses -Wno-override-init (GCC), -Wno-initializer-overrides (clang), and -Wno-unused to quiet these.
+
+SunPro has a broken diagnostic pass confused by macro-generated function calls.\footnote{\texttt{e.g.\ "lib/fifo.h", line 348:\ warning:\ argument mismatch}.} Likewise, older versions of GCC---especially on the BSDs---cannot do code flow analysis sufficiently well to justify the emitted warnings.
+
+For other warnings, patches are welcome.
+
+\section{Makefile}
+
+The Makefile requires GNU Make, usually installed as gmake on platforms other than Linux or OS X.
+
+The Makefile expects Lua 5.2 headers to exist in \$(includedir)/lua/5.2. This is unfortunately not the default install location for Lua headers, although it quite obviously ought to be. To source the usual location, try something like
+
+\begin{code}{sh}
+        make prefix=/opt/lua52 lua52include=/opt/lua52/include
+\end{code}
+
+\key{M4} and \key{awk} are required to generate errno.c, which also relies on mk/errno.ls and mk/macros.ls to enumerate the system error macro names.
+
+\chapter{Usage}
+
+\section{Underlying Pattern}
+
+\cqueues works through a simple protocol. When a coroutine yields to its parent \cqueues controller, it can pass one or more objects. These objects are introspected for three methods: \method{:pollfd}, \method{:events}, and \method{:timeout}. These methods specify the parameters for installing descriptor and timeout events. When one of these events fires, \cqueues will resume the coroutine, passing the relevant objects which were interested in the triggered event. It's analogous to calling \syscall{poll}.
+
+\method{:pollfd} returns a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
+
+\method{:events} returns a string or nil. \cqueues searches the string for the characters 'r' (POLLIN) or 'w' (POLLOUT). These are events to associate with the descriptor.
+
+\method{:timeout} returns a number or nil. This specifies an independent timeout event. To effect a simple 1 second timeout, you can do
+
+\begin{code}{perl}
+        cqueues.poll({ timeout = function() return 1.0 end })
+\end{code}
+
+which is equivalent to
+
+\begin{code}{perl}
+        coroutine.yield({ timeout = function() return 1.0 end })
+\end{code}
+
+Instantiated \cqueues objects implement all three methods. In particular, this means that you can stack \cqueues, or poll on a \cqueues object using some other event loop library. Each \cqueues object is entirely self-contained, without any global state.
+
+\section{\cqueues}
+
+\subsection{\routine{cqueues.VENDOR}}
+String describing the vendor. Default: ``william@25thandClement.com''.
+
+\subsection{\routine{cqueues.VERSION}}
+Number describing the latest release version. Formatted as YYYYMMDD.
+
+\subsection{\routine{cqueues.COMMIT}}
+Git commit hash string of HEAD.
+
+\subsection[\routine{cqueues.interpose}]{\routine{cqueues.interpose(name, function)}}
+Add or interpose a \cqueues class method. Returns the previous method, if any.
+
+\subsection[\routine{cqueues.monotime}]{\routine{cqueues.monotime()}}
+Return the system's monotonic clock time, usually clock\_gettime(CLOCK\_MONOTONIC).
+
+\subsection[\routine{cqueues.cancel}]{\routine{cqueues.cancel(fd)}}
+Cancels the specified descriptor for all controllers. This ensures safe early closure of descriptors. However, the complexity is approximately M 2 log N, where M is the number of controllers, and N the number of descriptors per controller (presuming they're equal). For most purposes this is entirely inconsequential. By contrast, however, implicit cancellation through GC or yield/resume cycling is O(1).
+
+Any Lua thread polling on the canceled descriptor is placed on it's controller's pending queue.
+
+\subsection[\routine{cqueues.new}]{\routine{cqueues.new()}}
+Create a new cqueues object
+
+\subsection[\routine{cqueues:attach}]{\routine{cqueue:attach(coroutine)}}
+Attach and manage the specified coroutine.
+
+\subsection[\routine{cqueues:wrap}]{\routine{cqueue:wrap(function)}}
+        Execute function inside a new coroutine managed by the controller.
+
+\subsection[\routine{cqueues:step}]{\routine{cqueue:step([timeout])}}
+Step once through the event queue. If no timeout is provided, it blocks indefinitely until a descriptor event or timeout fires.
+
+Returns true or false. If false, then a second return value holds the error message. :step() can be called again after errors, for example if a coroutine threw an error. [However, at the moment the controller cannot recover from synchronization errors with the kernel queue. In the future, internal, unrecoverable errors should be thrown and only coroutine errors returned directly.]
+
+\subsection[\routine{cqueues:empty}]{\routine{cqueue:empty()}}
+Returns true if there are no more descriptor or timeout events queued, false otherwise.
+
+\subsection[\routine{cqueues:count}]{\routine{cqueue:count()}}
+Returns a count of managed coroutines.
+
+\subsection[\routine{cqueues:cancel}]{\routine{cqueue:cancel(fd)}}
+Cancel the specified descriptor for that controller. See cqueues.cancel.
+
+\subsection[\routine{cqueues:pause}]{\routine{cqueue:pause([signal ...])}}
+A wrapper around \syscall{pselect} which suspends execution until the controller polls ready or a signal is delivered. This interface is provided as a very basic least common denominator for simple slave process controller loops and similar scenarios, where immediate response to signal delivery is required on platforms like Solaris without a proper signal polling primitive. (cqueues.signal.listen on Solaris merely periodically queries the pending set.)
+
+Much better alternatives are possible for Solaris, but require global process state or an LWP thread helper.
+
+\section{\module{cqueues.socket}}
+
+\subsection[\fn{socket.interpose}]{\fn{socket.interpose(name, function)}}
+Add or interpose a socket class method. Returns the previous method, if any.
+
+\subsection[\fn{socket.connect}]{\fn{socket.connect(host, port [, mode])}}
+Return a new socket immediately ready for reading or writing. DNS lookup and TCP connection handling are handled transparently.
+
+`mode' is a string containing one or more of the following flags
+
+\begin{ctabular}{r | p{6in}}
+flag & description \\\hline
+``t'' & text mode; input and output undergo LF/CRLF translation \\
+``b'' & binary mode; no LF/CRLF translation \\
+``n'' & no output buffering \\
+``l'' & line buffered output \\ 
+``f'' & fully buffered output \\
+\end{ctabular}
+At present the default mode is ``tl''---text translation and line buffering. This may change depending on how much confusion it creates, perhaps to ``tn''.
+
+\subsection[\fn{socket.connect}]{\fn{socket.connect\{ $\ldots$ \}}}
+	Like socket.connect, but takes a table of options:
+
+\begin{ctabular}{r | c | p{4.5in}}
+field & type:default & description\\\hline
+.host & string:nil & IP address or host domain name \\
+
+.port & string:nil & host port \\
+
+.path & string:nil & UNIX domain socket path \\
+
+.mode & string:nil & fchmod or chmod socket after creating UNIX domain socket
+%NOTE: There's a race between bind and the following chmod. fchmod is attempted before the bind, however it fails on BSD derivatives. Not all platforms obey UNIX domain socket permissions (e.g. Solaris). Check peer credentials, instead, to be portable.
+\\
+
+.mask & string:nil & set and restore umask when binding UNIX domain sockets %NOTE: Not all platforms obey UNIX domain socket permissions. Check peer credentials, instead, to be portable.
+\\
+
+.unlink & boolean:false & unlink socket path before binding \\
+
+.reuseaddr & boolean:true & SO\_REUSEADDDR socket option \\
+
+.nodelay & boolean:false & TCP\_NODELAY IP option \\
+
+.nopush & boolean:false & TCP\_NOPUSH, TCP\_CORK, or equivalent IP option \\
+
+.nonblock & boolean:true & O\_NONBLOCK descriptor flag \\
+
+.cloexec & boolean:true & O\_CLOEXEC descriptor flag \\
+
+.nosigpipe & boolean:true & O\_NOSIGPIPE, SO\_NOSIGPIPE, MSG\_NOSIGNAL, or equivalent descriptor flag \\
+
+.verify & boolean:false & require SSL certificate verification (UNFINISHED) \\
+
+.time & boolean:true & track elapsed time for statistics \\
+\end{ctabular}
+
+\subsection[\fn{socket.listen}]{\fn{socket.listen(host, port)}}
+	Return a new socket immediately ready for accepting connections.
+
+\subsection[\fn{socket.listen}]{\fn{socket.listen\{ $\ldots$ \}}}
+	Like socket.listen. See socket.connect\{\}.
+
+\subsection[\fn{socket.pair}]{\fn{socket.pair([type])}}
+	Return two bound sockets. Type is either "stream" or "dgram", and
+	defaults to "stream".
+
+\subsection[\fn{socket.setvbuf}]{\fn{socket.setvbuf(mode [, size])}}
+	Set the default output buffering. See socket:setvbuf.
+
+\subsection[\fn{socket.setmode}]{\fn{socket.setmode([input], [output])}}
+	Set the default I/O mode. See socket:setmode.
+
+\subsection[\fn{socket.onerror}]{\fn{socket.onerror([function])}}
+	Set the default error handler. See socket:onerror.
+
+\subsection[\fn{socket:connect}]{\fn{socket:connect()}}
+	Wait for connection establishment to succeed. [UNFINISHED]
+
+\subsection[\fn{socket:listen}]{\fn{socket:listen()}}
+	Wait for socket binding to complete, which may have been delayed if
+	the specified host required DNS resolution. [UNFINISHED]
+
+\subsection[\fn{socket:accept}]{\fn{socket:accept([timeout])}}
+	Wait for and return an incoming client socket on a listening object.
+
+\subsection[\fn{socket:clients}]{\fn{socket:clients([timeout])}}
+	Iterator over socket:accept: for con in srv:clients() do ... end.
+
+%\subsection[\fn{socket:certify}]{\fn{socket:certify(certificate)}}
+%	Associate a certificate for subsequent :starttls operation.
+%	[UNFINISHED]
+
+\subsection[\fn{socket:starttls}]{\fn{socket:starttls()}}
+	Place socket into TLS mode. Returns immediately. [FUTURE: take
+	parameter to return immediately or wait for channel establishment.]
+
+\subsection[\fn{socket:setvbuf}]{\fn{socket:setvbuf(mode [, size])}}
+	Same as Lua file:setvbuf. Analagous to "n", "l", and "f" mode flags.
+
+\subsection[\fn{socket:setmode}]{\fn{socket:setmode([input], [output])}}
+	See socket.connect for mode flags. One or both modes can be nil,
+	in which case the mode is left unchanged.
+
+	Returns the previous input and output modes as fixed-sized strings.
+	At present the first character is one of "t" or "b", and the second
+	character one of "n", "l", "f", or "-" (for in the input mode).
+
+\subsection[\fn{socket:onerror}]{\fn{socket:onerror([function])}}
+	Set the error handler. The error handler is passed the tuple
+	socket-object, method-string, error-number, and is expected to
+	either throw an error or return an error-number--to be returned to
+	the caller as part of the documented return interface.
+
+	The default error handler returns EPIPE and ETIMEDOUT directly, and
+	throws everything else. EAGAIN is handled internally for blocking
+	calls.
+
+	Returns the previous error handler, if any.
+
+\subsection[\fn{socket:read}]{\fn{socket:read(...)}}
+	Same as Lua file:read, except for addition of limit and header
+	formats. See socket:recv. [UNFINISHED: Does not yet implement "*a"
+	or "*n".]
+
+\subsection[\fn{socket:write}]{\fn{socket:write(...)}}
+	Same as Lua file:write.
+
+\subsection[\fn{socket:flush}]{\fn{socket:flush([mode])}}
+	Flushes output buffer. Mode is one of the "nlf" flags described in
+	socket.connect. A nil mode implies "n", i.e. no buffering and thus
+	effects a full flush. An empty string mode resolves to the existing
+	configured output buffering mode.
+
+\subsection[\fn{socket:uncork}]{\fn{socket:uncork()}}
+	Disables TCP\_NOPUSH, TCP\_CORK, or equivalent socket option.
+
+\subsection[\fn{socket:recv}]{\fn{socket:recv(format, [mode])}}
+	Similar to file:read, except takes only a single format and returns
+	immediately. On success returns the string or number. On failure
+	returns nil and a numeric error code--usually errno.EAGAIN or
+	errno.EPIPE. Does not use error handler.
+
+	In addition to the Lua file:read formats, also supports limit block
+	reads. That is, whereas :recv(1024) returns nil or a 1024 byte
+	string, :recv(-1024) returns nil or a string with length in the
+	range 1 to 1024 bytes.
+
+	Also adds "*h" and "*H" modes, for reading MIME compliant headers,
+	including folded headers. *h will strip all CRLF, while *H returns
+	the complete header with CRLFs intact---unless the input is in text
+	mode, then CRs are stripped. Returns nil when a compliant header
+	cannot be read from the beginning of the buffer.
+
+	Mode is as described in socket.connect. Defaults to configured
+	input mode.
+
+\subsection[\fn{socket:send}]{\fn{socket:send(string, i, j, [mode])}}
+	Write out the slice string[i,j]. Similar to passing string:sub(i, j)
+	without instantiating a new string object. Immediately returns 2
+	values: count of bytes written (0 to j-i+1), and numerical error
+	code, if any (usually errno.EAGAIN or errno.EPIPE).
+
+\subsection[\fn{socket:recvfd}]{\fn{socket:recvfd([prepbufsiz])}}
+	Receive an ancillary socket message with accompanying descriptor.
+	`prepbufsiz' specifies the maximum message size to expect.
+
+	This routine bypasses I/O buffering.
+
+	Returns message-string, socket-object on success; nil, nil,
+	error-integer on failure. On success socket-object may still be nil.
+	Message truncation is treated as an error condition.
+
+\subsection[\fn{socket:sendfd}]{\fn{socket:sendfd(msg, socket)}}
+	Send an ancillary socket message with accompanying descriptor. msg
+	should be a non-zero-length string, which some platforms require.
+	socket should be a Lua file handle, \cqueues socket, integer
+	descriptor, or nil.
+
+	This routine bypasses I/O buffering.
+
+	Returns true on success; false, error-integer on failure.
+
+\subsection[\fn{socket:shutdown}]{\fn{socket:shutdown(how)}}
+Simple binding to \syscall{shutdown(2)}. `how' is a string containing one or both of the flags `r' or `w'.
+
+\begin{tabular}{r | l}
+`r' & analagous to \syscall{shutdown(SHUT\_RD)} \\
+`w' & analagous to \syscall{shutdown(SHUT\_WR)} \\
+\end{tabular}
+
+\subsection[\fn{socket:eof}]{\fn{socket:eof()}}
+Returns 2 boolean values representing whether EOF has been received on the input channel, and whether the output channel has signaled closure (e.g. EPIPE).
+
+\subsection[\fn{socket:close}]{\fn{socket:close()}}
+Explicitly and immediately close all internal descriptors. This routine ensures all descriptors are properly cancelled.
+
+
+
+
+
+
+
+
+\appendix
+\printindex
+
+\end{document}
