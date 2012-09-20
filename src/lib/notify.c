@@ -167,9 +167,9 @@ const char *notify_strfeature(int flag) {
 
 static int cloexec(int fd) {
 	int flags;
-	if (-1 == (flags = fcntl(F_GETFD, fd)))
+	if (-1 == (flags = fcntl(fd, F_GETFD)))
 		return errno;
-	if (-1 == fcntl(F_SETFD, fd, flags|FD_CLOEXEC))
+	if (-1 == fcntl(fd, F_SETFD, flags|FD_CLOEXEC))
 		return errno;
 	return 0;
 } /* cloexec() */
@@ -179,9 +179,9 @@ static int nonblock(int) NOTUSED;
 
 static int nonblock(int fd) {
 	int flags;
-	if (-1 == (flags = fcntl(F_GETFL, fd)))
+	if (-1 == (flags = fcntl(fd, F_GETFL)))
 		return errno;
-	if (-1 == fcntl(F_SETFL, fd, flags|O_NONBLOCK))
+	if (-1 == fcntl(fd, F_SETFL, flags|O_NONBLOCK))
 		return errno;
 	return 0;
 } /* nonblock() */
