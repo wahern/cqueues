@@ -144,8 +144,45 @@ pselect
 	NetBSD 5.1 fails to deliver signals inside pselect, including
 	pending signals, although it does interrupt when a signal arrives.
 
-	Last update 2012-09-18.
+	A kqueue-portable implementation is feasible using EVFILT_SIGNAL:
 
+	1) install EVFILT_SIGNAL for the signal set currently blocked but
+	   soon to be unblocked
+	2) check sigpending for such signal set
+	3) install requested signal mask
+	4) call select with kqueue descriptor added to the read fd_set
+	5) restore signal mask
+	6) check return values from select and kqueue
+
+	Non-obviousness:
+
+	o Any other signal set than described above could be lost even with
+	  a kernel pselect. An implementation could elect to minimize the
+	  race condition, but that would merely postpone the inevitable.
+
+	o EVFILT_SIGNAL is edge triggered, so it won't catch pending signals
+	  delivered when unblocked, thus the necessity to call sigpending
+	  after kevent, but before sigprocmask/pthread_sigmask.
+
+	o The above scheme is susceptiple to spurious wakeup, e.g. by
+	  SIG_IGN handlers which wouldn't interrupt a kernel pselect.
+
+	Last updated 2012-09-21.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+(struct kevent).udata
+
+	  void * : OS X 10.8.2
+	  void * : OpenBSD 5.1
+	  void * : FreeBSD 9.0
+	intptr_t : NetBSD 5.1.2
+
+	NetBSD circa 2002 changed the .udata type to intptr_t.
+	Workaround: cast to (__typeof__(((struct kevent *)0)->udata)).
+
+	Last updated 2012-09-21.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 A P P E N D I X
 = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
