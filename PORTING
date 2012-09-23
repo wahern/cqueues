@@ -161,7 +161,7 @@ pselect
 	  race condition, but that would merely postpone the inevitable.
 
 	o EVFILT_SIGNAL is edge triggered, so it won't catch pending signals
-	  delivered when unblocked, thus the necessity to call sigpending
+	  delivered upon unblocking, thus the necessity to call sigpending
 	  after kevent, but before sigprocmask/pthread_sigmask.
 
 	o The above scheme is susceptiple to spurious wakeup, e.g. by
