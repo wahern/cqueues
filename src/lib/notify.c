@@ -55,13 +55,24 @@
 #define HAVE_IN_CLOEXEC (defined IN_CLOEXEC)
 
 #if HAVE_INOTIFY
+
 #include <sys/inotify.h>
+
 #elif HAVE_FEN
+
+#include <sys/stat.h>
 #include <sys/port.h>
 #include <port.h>
+
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif
+
 #else
+
 #include <sys/event.h>
 #define NFY_SET(ev, id, filt, fl, ffl, d, ud) EV_SET((ev), (id), (filt), (fl), (ffl), (d), (__typeof__(((struct kevent *)0)->udata))(intptr_t)(ud))
+
 #endif
 
 
@@ -110,7 +121,11 @@ const char *notify_strfeature(int flag) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#if __GNUC__ || __clang__
 #define NOTUSED __attribute__((unused))
+#else
+#define NOTUSED
+#endif
 
 #if __clang__
 #pragma clang diagnostic ignored "-Winitializer-overrides"
@@ -311,6 +326,19 @@ static DIR *nfy_opendir(const char *path, int *error) {
 #endif
 
 
+static void fenfo_init(struct file_obj *fo, char *path) {
+	struct stat st;
+
+	if (0 == stat(path, &st)) {
+		fo->fo_atime = st.st_atim;
+		fo->fo_mtime = st.st_mtim;
+		fo->fo_ctime = st.st_ctim;
+	}
+
+	fo->fo_name = path;
+} /* fenfo_init() */
+
+
 /*
  * N O T I F I C A T I O N  R O U T I N E S
  *
@@ -318,6 +346,10 @@ static DIR *nfy_opendir(const char *path, int *error) {
 
 struct file {
 	int fd;
+
+#if HAVE_FEN
+	struct file_obj fo;
+#endif
 
 	int flags, events, error;
 
@@ -331,8 +363,16 @@ struct file {
 	LIST_ENTRY(file) le, sle;
 	LLRB_ENTRY(file) rbe;
 
+#if HAVE_FEN
+	char *name;
+	size_t namelen;
+
+	size_t pathlen;
+	char path[];
+#else
 	size_t namelen;
 	char name[];
+#endif
 }; /* struct file */
 
 static inline int filecmp(const struct file *a, const struct file *b)
@@ -353,6 +393,10 @@ struct notify {
 
 	int flags, events;
 
+#if HAVE_FEN
+	struct file_obj dirfo;
+#endif
+
 	int dirfd, dirwd;
 	size_t dirlen;
 	char dirpath[];
@@ -363,6 +407,11 @@ LLRB_GENERATE(files, file, rbe, filecmp)
 
 
 static struct file *lookup(struct notify *nfy, const char *name, size_t namelen) {
+#if HAVE_FEN
+	struct file key = { .name = (char *)name, .namelen = namelen };
+
+	return LLRB_FIND(files, &nfy->files, &key);
+#else
 	struct file *key = &((union { char pad[offsetof(struct file, name) + NAME_MAX + 1]; struct file file; }){ { 0 } }).file;
 
 	if (namelen > NAME_MAX)
@@ -372,6 +421,7 @@ static struct file *lookup(struct notify *nfy, const char *name, size_t namelen)
 	key->namelen = namelen;
 
 	return LLRB_FIND(files, &nfy->files, key);
+#endif
 } /* lookup() */
 
 
@@ -452,6 +502,13 @@ static int process(struct notify *nfy, struct file *file) {
 	}
 #endif
 
+#if HAVE_FEN
+	fenfo_init(&file->fo, file->path);
+
+	if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, file))
+		goto syerr;
+#endif	
+
 	return 0;
 syerr:
 	error = errno;
@@ -526,6 +583,14 @@ struct notify *notify_opendir(const char *dirpath, int flags, int *_error) {
 
 	if ((error = cloexec(nfy->fd)))
 		goto error;
+
+	if ((error = nfy_openfd(&nfy->dirfd, .path = nfy->dirpath, .rdonly = 1, .cloexec = 1, .directory = 1)))
+		goto error;
+
+	fenfo_init(&nfy->dirfo, nfy->dirpath);
+
+	if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&nfy->dirfo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, nfy))
+		goto syerr;
 #else
 #if HAVE_KQUEUE1 && HAVE_O_CLOEXEC
 	if (-1 == (nfy->fd = kqueue1(O_CLOEXEC)))
@@ -630,6 +695,8 @@ static int decode(int flags) {
 
 #define NOTIFY_MAXSTEP 32
 
+#define ms2ts(ms) (((ms) >= 0)? &(struct timespec){ (ms) / 1000, (((ms) % 1000) * 1000000) } : NULL)
+
 
 #if HAVE_INOTIFY
 #define NFY_STEP in_step
@@ -707,16 +774,70 @@ error:
 
 #elif HAVE_FEN
 #define NFY_STEP fen_step
+#define NFY_POST fen_post
 
-static int fen_step(struct notif *nfy, int timeout) {
-	return poll(NULL, 0, timeout)? errno : 0;
+static int fen_step(struct notify *nfy, int timeout) {
+	port_event_t event[NOTIFY_MAXSTEP];
+	uint_t count = 1, i;
+	int error;
+
+	if (0 != port_getn(nfy->fd, event, countof(event), &count, ms2ts(timeout)))
+		goto syerr;
+
+	for (i = 0; i < count; i++) {
+		struct file *file;
+
+		if (event[i].portev_source != PORT_SOURCE_FILE)
+			continue;
+
+		if (event[i].portev_user == nfy) {
+			nfy->events |= decode(event[i].portev_events);
+		} else if ((file = event[i].portev_user)) {
+			file->events |= decode(event[i].portev_events);
+			LIST_MOVE(&nfy->pending, file, le);
+		}
+	}
+
+	return 0;
+syerr:
+	error = errno;
+
+	switch (error) {
+	case ETIME:
+		/* FALL THROUGH */
+	case EINTR:
+		return 0;
+	default:
+		return error;
+	}
 } /* fen_step() */
+
+static int fen_post(struct notify *nfy) {
+	struct file *file;
+	int error;
+
+	fenfo_init(&nfy->dirfo, nfy->dirpath);
+
+	if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&nfy->dirfo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, nfy))
+		goto syerr;
+
+	LIST_FOREACH(file, &nfy->pending, le) {
+		fenfo_init(&file->fo, file->path);
+
+		if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, file))
+			goto syerr;
+	}
+
+	return 0;
+syerr:
+	error = errno;
+
+	return error;
+} /* fen_post() */
 
 #else
 #define NFY_STEP kq_step
 #define NFY_POST kq_post
-
-#define ms2ts(ms) (((ms) >= 0)? &(struct timespec){ (ms) / 1000, (((ms) % 1000) * 1000000) } : NULL)
 
 static int kq_step(struct notify *nfy, int timeout) {
 	struct kevent event[NOTIFY_MAXSTEP];
@@ -828,8 +949,22 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	if ((file = lookup(nfy, name, namelen)))
 		return 0;
 
+#if HAVE_FEN
+	size_t pathlen = nfy->dirlen + 1 + namelen;
+
+	if (!(file = calloc(1, offsetof(struct file, path) + pathlen + 1)))
+		return errno;
+
+	memcpy(file->path, nfy->dirpath, nfy->dirlen);
+	file->path[nfy->dirlen] = '/';
+	file->pathlen = pathlen;
+	file->name = &file->path[nfy->dirlen + 1];
+
+	fenfo_init(&file->fo, file->path);
+#else
 	if (!(file = calloc(1, offsetof(struct file, name) + namelen + 1)))
 		return errno;
+#endif
 
 	file->fd = -1;
 	file->flags = flags;
