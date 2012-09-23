@@ -686,8 +686,13 @@ static int in_step1(struct notify *nfy) {
 				nfy->changes |= decode(msg->mask);
 				nfy->dirty = 1;
 
-				if (msg->mask & (IN_Q_OVERFLOW|IN_IGNORED|IN_UNMOUNT)
-					msg->critical = 1;
+				if (msg->mask & (IN_Q_OVERFLOW|IN_IGNORED|IN_UNMOUNT))
+					nfy->critical = 1;
+			}
+
+			if (msg->mask & (IN_CREATE|IN_DELETE|IN_MOVE)) {
+				nfy->changes |= decode(msg->mask & (IN_CREATE|IN_DELETE|IN_MOVE));
+				nfy->dirty = 1;
 			}
 
 			++count;
@@ -738,6 +743,22 @@ error:
 
 
 static int in_post(struct notify *nfy) {
+	struct file *file, *next;
+
+	for (file = LIST_FIRST(&nfy->pending); file; file = next) {
+		next = LIST_NEXT(file, le);
+
+		file->changes &= file->flags;
+
+		if (file->changes)
+			LIST_MOVE(&nfy->changed, file, le);
+		else
+			LIST_MOVE(&nfy->dormant, file, le);
+	}
+
+	nfy->dirty = 0;
+	nfy->changes &= nfy->flags;
+
 	return 0;
 } /* in_post() */
 
