@@ -21,10 +21,11 @@
 #include <port.h>
 #else
 #include <sys/event.h>
-#define xEV_SET(a, b, c, d, e, f) EV_SET((a), (b), (c), (d), (e), (__typeof__(((struct kevent)*0)->udata))(intptr_t)(f))
+#define xEV_SET(ev, id, filt, fl, ffl, d, ud) EV_SET((ev), (id), (filt), (fl), (ffl), (d), (__typeof__(((struct kevent *)0)->udata))(intptr_t)(ud))
 #endif
 
 #include "llrb.h"
+#include "notify.h"
 
 
 #ifndef countof
@@ -35,6 +36,19 @@
 	LIST_REMOVE((elm), le); \
 	LIST_INSERT_HEAD((head), (elm), le); \
 } while (0)
+
+#define NOTUSED __attribute__((unused))
+
+
+#include <stdio.h>
+
+#define SAY_(file, func, line, fmt, ...) \
+	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
+
+#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
+
+#define HAI SAY("hai")
+
 
 
 static int cloexec(int fd) {
@@ -95,7 +109,7 @@ static int (openfd)(int *_fd, const struct openopts *opts) {
 
 	if (opts->rdwr)	
 		flags |= O_RDWR;
-	else if (opt->wronly)
+	else if (opts->wronly)
 		flags |= O_WRONLY;
 	else
 		flags |= O_RDONLY;
@@ -149,7 +163,7 @@ static int (openfd)(int *_fd, const struct openopts *opts) {
 		}
 #endif
 	} else {
-		if (-1 == (fd = open(path, flags, opts->mode)))
+		if (-1 == (fd = open(opts->path, flags, opts->mode)))
 			goto syerr;
 	}
 
@@ -233,7 +247,7 @@ LLRB_GENERATE(files, file, rbe, filecmp)
 
 
 static struct file *lookup(struct notify *dir, const char *name, size_t namelen) {
-	struct file *key = (&(union { char pad[offsetof(struct file, name) + NAME_MAX + 1]; struct file file; }){ { 0 } })->file;
+	struct file *key = &((union { char pad[offsetof(struct file, name) + NAME_MAX + 1]; struct file file; }){ { 0 } }).file;
 
 	if (namelen > NAME_MAX)
 		return NULL;
@@ -245,31 +259,31 @@ static struct file *lookup(struct notify *dir, const char *name, size_t namelen)
 } /* lookup() */
 
 
-static void status(struct notify *dir, struct file *F, enum status status) {
-	switch (F->status = status) {
+static void status(struct notify *dir, struct file *file, enum status status) {
+	switch (file->status = status) {
 	case S_DEFUNCT:
-		LIST_MOVE(&dir->defunct);
+		LIST_MOVE(&dir->defunct, file, sle);
 		break;
 	case S_REGULAR:
-		LIST_MOVE(&dir->defunct);
+		LIST_MOVE(&dir->regular, file, sle);
 		break;
 	case S_REVOKED:
-		LIST_MOVE(&dir->defunct);
+		LIST_MOVE(&dir->revoked, file, sle);
 		break;
 	case S_DELETED:
-		LIST_MOVE(&dir->defunct);
+		LIST_MOVE(&dir->deleted, file, sle);
 		break;
 	} /* switch() */
 } /* status() */
 
 
-static int reopen(struct notify *dir, struct file *F) {
+static int reopen(struct notify *dir, struct file *file) {
 	struct kevent event;
 	int error;
 
-	closefd(&F->fd);
+	closefd(&file->fd);
 
-	status(dir, F, S_DEFUNCT);
+	status(dir, file, S_DEFUNCT);
 
 	dir->dirpath[dir->dirlen] = '/';
 	memcpy(&dir->dirpath[dir->dirlen + 1], file->name, file->namelen);
@@ -281,20 +295,15 @@ static int reopen(struct notify *dir, struct file *F) {
 
 	switch (error) {
 	case 0:
-		xEV_SET(&event, file->fd, EVFILT_VNODE, EV_ADD, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, file);
-
-		if (0 != kevent(dir->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
-			goto syerr;
-
-		status(dir, F, S_REGULAR);
+		status(dir, file, S_REGULAR);
 
 		break;
 	case ENOENT:
-		status(dir, F, S_DELETED);
+		status(dir, file, S_DELETED);
 
 		break;
 	case EPERM:
-		status(dir, F, S_REVOKED);
+		status(dir, file, S_REVOKED);
 
 		break;
 	default:
@@ -305,17 +314,36 @@ static int reopen(struct notify *dir, struct file *F) {
 syerr:
 	error = errno;
 error:
-	return F->error = error;
+	return file->error = error;
 } /* reopen() */
 
 
 static int process(struct notify *dir, struct file *file) {
-	if (file->events & (NOTIFY_DELETE|NOTIFY_REVOKE)) {
+	int error;
+
+	if ((file->events & (NOTIFY_DELETE|NOTIFY_REVOKE)) || file->fd == -1) {
 		if ((error = reopen(dir, file)))
-			return error;
+			goto error;
+	}
+
+	if (file->fd != -1) {
+		struct kevent event;
+
+		xEV_SET(&event, file->fd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_RENAME|NOTE_REVOKE, 0, file);
+
+		if (0 != kevent(dir->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
+			goto syerr;
 	}
 
 	return 0;
+syerr:
+	error = errno;
+error:
+	file->error = error;
+
+	status(dir, file, S_DEFUNCT);
+
+	return error;
 } /* process() */
 
 
@@ -330,13 +358,13 @@ static void discard(struct notify *dir, struct file *file) {
 } /* discard() */
 
 
-struct notify *notify_open(const char *dirpath, const struct notify_options *opts, int *_error) {
+struct notify *notify_open(const char *dirpath, const struct notify_options *opts NOTUSED, int *_error) {
 	struct notify *dir;
-	size_t dirlen = strlen(dir);
-	size_t padlen = NAME_LEN + 2;
+	size_t dirlen = strlen(dirpath);
+	size_t padlen = NAME_MAX + 2;
 	int error;
 
-	while (dirlen > 1 && dir[dirlen - 1] == '/')
+	while (dirlen > 1 && dirpath[dirlen - 1] == '/')
 		--dirlen;
 
 	if (~padlen < dirlen) {
@@ -344,7 +372,7 @@ struct notify *notify_open(const char *dirpath, const struct notify_options *opt
 		goto error;
 	}
 
-	if (!(dir = calloc(1, offsetof(struct notify, path, dirlen + padlen))))
+	if (!(dir = calloc(1, offsetof(struct notify, dirpath) + dirlen + padlen)))
 		goto syerr;
 
 	dir->fd = -1;
@@ -352,7 +380,7 @@ struct notify *notify_open(const char *dirpath, const struct notify_options *opt
 	dir->dirfd = -1;
 	dir->dirwd = -1;
 	dir->dirlen = dirlen;
-	memcpy(dir->dirpath, dir, dirlen);
+	memcpy(dir->dirpath, dirpath, dirlen);
 
 #if NOTIFY_INOTIFY
 #if defined IN_NONBLOCK && defined IN_CLOEXEC
@@ -397,7 +425,7 @@ struct notify *notify_open(const char *dirpath, const struct notify_options *opt
 
 	struct kevent event;
 
-	xEV_SET(&event, dir->dirfd, EVFILT_VNODE, EV_ADD, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, dir);
+	xEV_SET(&event, dir->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, dir);
 
 	if (0 != kevent(dir->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 		goto syerr;
@@ -483,27 +511,32 @@ static int decode(int flags) {
 
 #define NOTIFY_MAXSTEP 32
 
-int notify_step(struct notify *dir) {
+int notify_step(struct notify *dir, int timeout) {
 #if NOTIFY_INOTIFY
 	return 0;
 #elif NOTIFY_FEN
 	return 0;
 #else
 	struct kevent event[NOTIFY_MAXSTEP];
-	struct file *file;
+	struct timespec *ts = (timeout >= 0)? &(struct timespec){ timeout / 1000, ((timeout % 1000) * 1000000) } : NULL;
+	struct file *file, *next;
 	int count, error;
-	int fflags = 0;
 
-	if (-1 == (count = kevent(dir->fd, NULL, 0, event, countof(event), &(struct timespec){ 0, 0 })))
+	if (-1 == (count = kevent(dir->fd, NULL, 0, event, countof(event), ts)))
 		return errno;
 
 	for (int i = 0; i < count; i++) {
 		if ((void *)event[i].udata == dir) {
 			dir->events |= decode(event[i].fflags);
+
+			xEV_SET(&event[i], dir->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, dir);
+
+			if (0 != kevent(dir->fd, &event[i], 1, NULL, 0, &(struct timespec){ 0, 0 }))
+				return errno;
 		} else {
 			file = (void *)event[i].udata;
 
-			LIST_MOVE(&N->pending, file, le);
+			LIST_MOVE(&dir->pending, file, le);
 
 			file->events |= decode(event[i].fflags);
 		}
@@ -513,8 +546,34 @@ int notify_step(struct notify *dir) {
 		if ((void *)event[i].udata == dir)
 			continue;
 
-		if ((error = process(dir)))
+		if ((error = process(dir, (void *)event[i].udata)))
 			return error;
+	}
+
+	if (dir->events & (NOTIFY_MODIFY|NOTIFY_ATTRIB)) {
+		for (file = LIST_FIRST(&dir->revoked); file; file = next) {
+			next = LIST_NEXT(file, sle);
+
+			if ((error = process(dir, file)))
+				return error;
+
+			if (file->status != S_REVOKED) {
+				LIST_MOVE(&dir->pending, file, le);
+				file->events |= NOTIFY_ATTRIB;
+			}
+		}
+
+		for (file = LIST_FIRST(&dir->deleted); file; file = next) {
+			next = LIST_NEXT(file, sle);
+
+			if ((error = process(dir, file)))
+				return error;
+
+			if (file->status != S_DELETED) {
+				LIST_MOVE(&dir->pending, file, le);
+				file->events |= NOTIFY_CREATE;
+			}
+		}
 	}
 
 	return 0;
@@ -525,10 +584,11 @@ int notify_step(struct notify *dir) {
 int notify_add(struct notify *dir, const char *name) {
 	size_t namelen = strlen(name);
 	struct file *file;
+	int error;
 
 	if (namelen > NAME_MAX)
 		return ENAMETOOLONG;
-	if (memchr(name, '/', namelen)
+	if (memchr(name, '/', namelen))
 		return EISDIR;
 
 	if ((file = lookup(dir, name, namelen)))
@@ -538,7 +598,7 @@ int notify_add(struct notify *dir, const char *name) {
 		return errno;
 
 	file->fd = -1;
-	memcpy(file->name, name, namelen)
+	memcpy(file->name, name, namelen);
 	file->namelen = namelen;
 
 	LIST_INSERT_HEAD(&dir->dormant, file, le);
@@ -546,7 +606,7 @@ int notify_add(struct notify *dir, const char *name) {
 	LLRB_INSERT(files, &dir->files, file);
 
 #if NOTIFY_KQUEUE
-	if ((error = reopen(dir, file)))
+	if ((error = process(dir, file)))
 		goto error;
 #endif
 
@@ -574,3 +634,58 @@ static int notify_del(struct notify *dir, const char *name) {
 } /* notify_del() */
 
 
+static const char *notify_get(struct notify *dir, int *events, int *error) {
+	struct file *file;
+
+	if ((file = LIST_FIRST(&dir->pending))) {
+		LIST_MOVE(&dir->dormant, file, le);
+
+		if (events)
+			*events = file->events;
+		if (error)
+			*error = file->error;
+
+		file->events = 0;
+
+		return file->name;
+	}
+
+	return NULL;
+} /* notify_get() */
+
+
+#if NOTIFY_MAIN
+
+#include <stdio.h>
+#include <err.h>
+
+int main(int argc, char *argv[]) {
+	const char *path = (argc > 1)? argv[1] : "/tmp";
+	struct notify *notify;
+	const char *file;
+	int error;
+
+	if (!(notify = notify_open(path, notify_opts(), &error)))
+		errx(1, "%s: %s", path, strerror(error));
+
+	if (argc > 2) {
+		for (int i = 2; i < argc; i++) {
+			if ((error = notify_add(notify, argv[i])))
+				errx(1, "%s: %s", argv[i], strerror(error));
+		}
+	} else if ((error = notify_add(notify, "test.file")))
+		errx(1, "test.file: %s", strerror(error));
+
+	while (!(error = notify_step(notify, -1))) {
+		while ((file = notify_get(notify, NULL, NULL)))
+			puts(file);
+	}
+
+	return 0;
+error:
+	errx(1, "%s: %s", path, strerror(error));
+
+	return 0;
+} /* main() */
+
+#endif
