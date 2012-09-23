@@ -34,6 +34,7 @@
 #include <unistd.h>	/* close(2) */
 #include <fcntl.h>	/* O_CLOEXEC O_DIRECTORY ... open(2) openat(2) fcntl(2) */
 #include <dirent.h>	/* DIR fdopendir(3) opendir(3) readdir_r(3) closedir(3) */
+#include <poll.h>	/* POLLIN poll(2) */
 
 #include "notify.h"
 #include "llrb.h"
@@ -96,8 +97,8 @@ int notify_features(void) {
 
 const char *notify_strfeature(int flag) {
 	static const char *table[16] = {
-		"inotify", "fen", "kqueue", "kqueue1", "openat", "fdopendir",
-		"o_cloexec", "in_cloexec",
+		"inotify", "FEN", "kqueue", "kqueue1", "openat", "fdopendir",
+		"O_CLOEXEC", "IN_CLOEXEC",
 	};
 
 	return (ffs(0xFFFF0000 & flag))? table[ffs(0xFFFF0000 & flag) - 17] : NULL;
@@ -114,9 +115,11 @@ const char *notify_strfeature(int flag) {
 #if __clang__
 #pragma clang diagnostic ignored "-Winitializer-overrides"
 #pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunused-label"
 #elif (__GNUC__ == 4 && __GNUC_MINOR__ >= 6) || __GNUC__ > 4
 #pragma GCC diagnostic ignored "-Woverride-init"
 #pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-label"
 #endif
 
 #include <stdio.h>
@@ -365,7 +368,7 @@ static struct file *lookup(struct notify *nfy, const char *name, size_t namelen)
 	if (namelen > NAME_MAX)
 		return NULL;
 
-	memcpy(key->name, name, key->namelen);
+	memcpy(key->name, name, namelen);
 	key->namelen = namelen;
 
 	return LLRB_FIND(files, &nfy->files, key);
@@ -431,11 +434,14 @@ error:
 static int process(struct notify *nfy, struct file *file) {
 	int error;
 
+#if HAVE_KQUEUE
 	if ((file->events & (NOTIFY_DELETE|NOTIFY_REVOKE)) || file->fd == -1) {
 		if ((error = reopen(nfy, file)))
 			goto error;
 	}
+#endif
 
+#if HAVE_KQUEUE
 	if (file->fd != -1) {
 		struct kevent event;
 
@@ -444,6 +450,7 @@ static int process(struct notify *nfy, struct file *file) {
 		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 			goto syerr;
 	}
+#endif
 
 	return 0;
 syerr:
@@ -508,7 +515,7 @@ struct notify *notify_opendir(const char *dirpath, int flags, int *_error) {
 		goto error;
 #endif
 
-	if (-1 == (nfy->dirwd = inotify_add_watch(nfy->fd, nfy->dirpath, IN_ATTRIB|IN_CREATE|IN_DELETE|IN_MODIFY|IN_MOVE|IN_ONLYDIR)))
+	if (-1 == (nfy->dirwd = inotify_add_watch(nfy->fd, nfy->dirpath, IN_ATTRIB|IN_CREATE|IN_DELETE|IN_DELETE_SELF|IN_MODIFY|IN_MOVE|IN_MOVE_SELF|IN_ONLYDIR)))
 		goto syerr;
 #elif HAVE_FEN
 	if (-1 == (nfy->fd = port_create())) {
@@ -587,8 +594,8 @@ static int decode(int flags) {
 		{ IN_DELETE_SELF, NOTIFY_DELETE },
 		{ IN_MODIFY,      NOTIFY_MODIFY },
 		{ IN_MOVE_SELF,   NOTIFY_DELETE },
-		{ IN_MOVE_FROM,   NOTIFY_DELETE },
-		{ IN_MOVE_TO,     NOTIFY_CREATE },
+		{ IN_MOVED_FROM,  NOTIFY_DELETE },
+		{ IN_MOVED_TO,    NOTIFY_CREATE },
 	};
 #elif HAVE_FEN
 	static const int table[][2] = {
@@ -623,18 +630,100 @@ static int decode(int flags) {
 
 #define NOTIFY_MAXSTEP 32
 
-int notify_step(struct notify *nfy, int timeout) {
+
 #if HAVE_INOTIFY
+#define NFY_STEP in_step
+
+#define IN_BUFSIZ 2048
+#define in_msgbuf(bufsiz) (&((union { char pad[bufsiz]; struct inotify_event event; }){ { 0 } }).event)
+#define in_msgend(msg, len) (struct inotify_event *)((unsigned char *)(msg) + (len))
+#define in_msgnxt(msg) (struct inotify_event *)((unsigned char *)(msg) + offsetof(struct inotify_event, name) + (msg)->len)
+
+static int in_step1(struct notify *nfy) {
+	struct inotify_event *msg, *end;
+	ssize_t len;
+	int count = 0;
+
+	msg = in_msgbuf(IN_BUFSIZ);
+
+	while ((len = read(nfy->fd, msg, IN_BUFSIZ)) > 0) {
+		for (end = in_msgend(msg, len); msg < end; msg = in_msgnxt(msg)) {
+			size_t namelen = strlen(msg->name);
+
+			if (namelen) {
+				struct file *file;
+
+				if ((file = lookup(nfy, msg->name, namelen))) {
+					file->events |= decode(msg->mask);
+					LIST_MOVE(&nfy->pending, file, le);
+				}
+			}
+
+			++count;
+		}
+
+		if (count >= NOTIFY_MAXSTEP)
+			return 0;
+	}
+
+	if (count > 0)
+		return 0;
+	else if (len == 0)
+		return EPIPE;
+	else
+		return errno;
+} /* in_step1() */
+
+
+static int in_step(struct notify *nfy, int timeout) {
+	int error;
+
+	if (!(error = in_step1(nfy)))
+		return 0;
+	else if (error != EAGAIN)
+		goto error;
+	else if (timeout == 0)
+		return 0;
+
+	if (-1 == poll(&(struct pollfd){ nfy->fd, POLLIN, 0 }, 1, timeout))
+		goto syerr;
+
+	if ((error = in_step1(nfy)))
+		goto error;
+
 	return 0;
+syerr:
+	error = errno;
+error:
+	switch (error) {
+	case EINTR:
+		/* FALL THROUGH */
+	case EAGAIN:
+		return 0;
+	default:
+		return error;
+	}
+} /* in_step() */
+
 #elif HAVE_FEN
-	return 0;
+#define NFY_STEP fen_step
+
+static int fen_step(struct notif *nfy, int timeout) {
+	return poll(NULL, 0, timeout)? errno : 0;
+} /* fen_step() */
+
 #else
+#define NFY_STEP kq_step
+#define NFY_POST kq_post
+
+#define ms2ts(ms) (((ms) >= 0)? &(struct timespec){ (ms) / 1000, (((ms) % 1000) * 1000000) } : NULL)
+
+static int kq_step(struct notify *nfy, int timeout) {
 	struct kevent event[NOTIFY_MAXSTEP];
-	struct timespec *ts = (timeout >= 0)? &(struct timespec){ timeout / 1000, ((timeout % 1000) * 1000000) } : NULL;
 	struct file *file, *next;
 	int i, count, error;
 
-	if (-1 == (count = kevent(nfy->fd, NULL, 0, event, countof(event), ts)))
+	if (-1 == (count = kevent(nfy->fd, NULL, 0, event, countof(event), ms2ts(timeout))))
 		return errno;
 
 	for (i = 0; i < count; i++) {
@@ -643,7 +732,7 @@ int notify_step(struct notify *nfy, int timeout) {
 
 			xEV_SET(&event[i], nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
 
-			if (0 != kevent(nfy->fd, &event[i], 1, NULL, 0, &(struct timespec){ 0, 0 }))
+			if (0 != kevent(nfy->fd, &event[i], 1, NULL, 0, ms2ts(0)))
 				return errno;
 		} else {
 			file = (void *)event[i].udata;
@@ -654,13 +743,12 @@ int notify_step(struct notify *nfy, int timeout) {
 		}
 	}
 
-	for (i = 0; i < count; i++) {
-		if ((void *)event[i].udata == nfy)
-			continue;
+	return 0;
+} /* kq_step() */
 
-		if ((error = process(nfy, (void *)event[i].udata)))
-			return error;
-	}
+static int kq_post(struct notify *nfy) {
+	struct file *file, *next;
+	int error;
 
 	if (nfy->events & (NOTIFY_MODIFY|NOTIFY_ATTRIB)) {
 		for (file = LIST_FIRST(&nfy->revoked); file; file = next) {
@@ -689,7 +777,37 @@ int notify_step(struct notify *nfy, int timeout) {
 	}
 
 	return 0;
+} /* kq_post() */
 #endif
+
+
+static _Bool notify_pending(struct notify *nfy) {
+	return nfy->events || !LIST_EMPTY(&nfy->pending);
+} /* notify_pending() */
+
+
+int notify_step(struct notify *nfy, int timeout) {
+	struct file *file, *next;
+	int error;
+
+	if (notify_pending(nfy))
+		return 0;
+
+	if ((error = NFY_STEP(nfy, timeout)))
+		return error;
+
+	for (file = LIST_FIRST(&nfy->pending); file; file = next) {
+		next = LIST_NEXT(file, le);
+
+		process(nfy, file);
+	}
+
+#if defined NFY_POST
+	if ((error = NFY_POST(nfy)))
+		return error;
+#endif
+
+	return 0;
 } /* notify_step() */
 
 
@@ -718,10 +836,8 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	LIST_INSERT_HEAD(&nfy->defunct, file, sle);
 	LLRB_INSERT(files, &nfy->files, file);
 
-#if HAVE_KQUEUE
 	if ((error = process(nfy, file)))
 		goto error;
-#endif
 
 	return 0;
 error:
@@ -759,6 +875,16 @@ int notify_get(struct notify *nfy, const char **name) {
 
 		events = file->events;
 		file->events = 0;
+
+		return events;
+	}
+
+	if (nfy->events) {
+		if (name)
+			*name = ".";
+
+		events = nfy->events;
+		nfy->events = 0;
 
 		return events;
 	}
