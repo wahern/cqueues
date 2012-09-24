@@ -61,7 +61,7 @@
 #include <port.h>
 #else
 #include <sys/event.h>
-#define xEV_SET(ev, id, filt, fl, ffl, d, ud) EV_SET((ev), (id), (filt), (fl), (ffl), (d), (__typeof__(((struct kevent *)0)->udata))(intptr_t)(ud))
+#define NFY_SET(ev, id, filt, fl, ffl, d, ud) EV_SET((ev), (id), (filt), (fl), (ffl), (d), (__typeof__(((struct kevent *)0)->udata))(intptr_t)(ud))
 #endif
 
 
@@ -445,7 +445,7 @@ static int process(struct notify *nfy, struct file *file) {
 	if (file->fd != -1) {
 		struct kevent event;
 
-		xEV_SET(&event, file->fd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_RENAME|NOTE_REVOKE, 0, file);
+		NFY_SET(&event, file->fd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_RENAME|NOTE_REVOKE, 0, file);
 
 		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 			goto syerr;
@@ -543,7 +543,7 @@ struct notify *notify_opendir(const char *dirpath, int flags, int *_error) {
 
 	struct kevent event;
 
-	xEV_SET(&event, nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
+	NFY_SET(&event, nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
 
 	if (0 != kevent(nfy->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
 		goto syerr;
@@ -720,8 +720,8 @@ static int fen_step(struct notif *nfy, int timeout) {
 
 static int kq_step(struct notify *nfy, int timeout) {
 	struct kevent event[NOTIFY_MAXSTEP];
-	struct file *file, *next;
-	int i, count, error;
+	struct file *file;
+	int i, count;
 
 	if (-1 == (count = kevent(nfy->fd, NULL, 0, event, countof(event), ms2ts(timeout))))
 		return errno;
@@ -729,11 +729,6 @@ static int kq_step(struct notify *nfy, int timeout) {
 	for (i = 0; i < count; i++) {
 		if ((void *)event[i].udata == nfy) {
 			nfy->events |= decode(event[i].fflags);
-
-			xEV_SET(&event[i], nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
-
-			if (0 != kevent(nfy->fd, &event[i], 1, NULL, 0, ms2ts(0)))
-				return errno;
 		} else {
 			file = (void *)event[i].udata;
 
@@ -749,6 +744,15 @@ static int kq_step(struct notify *nfy, int timeout) {
 static int kq_post(struct notify *nfy) {
 	struct file *file, *next;
 	int error;
+
+	if (nfy->events) {
+		struct kevent event;
+
+		NFY_SET(&event, nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
+
+		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, ms2ts(0)))
+			return errno;
+	}
 
 	if (nfy->events & (NOTIFY_MODIFY|NOTIFY_ATTRIB)) {
 		for (file = LIST_FIRST(&nfy->revoked); file; file = next) {
