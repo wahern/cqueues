@@ -347,10 +347,10 @@ static void fenfo_init(struct file_obj *fo, char *path) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 struct file {
+	int fd;
+
 #if HAVE_FEN
 	struct file_obj fo;
-#elif HAVE_KQUEUE
-	int fd;
 #endif
 
 	int flags, changes, error;
@@ -479,7 +479,7 @@ static void discard(struct notify *nfy, struct file *file) {
 	closefd(&file->fd);
 
 #if HAVE_FEN
-	port_disassociate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo);
+	port_dissociate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo);
 #endif
 
 	LLRB_REMOVE(files, &nfy->files, file);
@@ -598,6 +598,10 @@ void notify_close(struct notify *nfy) {
 
 	closefd(&nfy->fd);
 	closefd(&nfy->dirfd);
+
+#if HAVE_FEN
+	port_dissociate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&nfy->dirfo);
+#endif
 
 	free(nfy);
 } /* notify_close() */
