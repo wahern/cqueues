@@ -902,29 +902,56 @@ int notify_get(struct notify *nfy, const char **name) {
 #include <stdio.h>
 #include <err.h>
 
-int main(int argc, char *argv[]) {
-	const char *path = (argc > 1)? argv[1] : "/tmp";
+
+#define USAGE \
+	"notify [-fh] [DIR [FILE ...]]\n" \
+	"  -f  print kernel notification features\n" \
+	"  -h  print usage message\n" \
+	"\n" \
+	"Report bugs to <william@25thandClement.com>\n"
+
+static void printfeat(void) {
+	int features = notify_features();
+	int flag;
+
+	while (features) {
+		flag = 1 << (ffs(features) - 1);
+		printf("%s\n", notify_strfeature(flag));
+		features &= ~flag;
+	}
+} /* printfeat() */
+
+int main(int argc, char **argv) {
+	extern int optind;
+	const char *path;
 	struct notify *notify;
 	const char *file;
-	int i, error;
+	int optc, i, error;
 
-	{
-		int features = notify_features();
-		int fl;
-
-		while ((fl = ffs(features))) {
-			fl = 1 << (fl - 1);
-			printf("%s (0x%.6x)\n", notify_strfeature(fl), fl);
-			features &= ~fl;
+	while (-1 != (optc = getopt(argc, argv, "fh"))) {
+		switch (optc) {
+		case 'f':
+			printfeat();
+			return 0;
+		case 'h':
+			fputs(USAGE, stdout);
+			return 0;
+		default:
+			fputs(USAGE, stderr);
+			return EXIT_FAILURE;
 		}
-	}
+	} /* while() */
 
+	argc -= optind;
+	argv += optind;
+
+	path = (argc > 0)? argv[0] : "/tmp";
 
 	if (!(notify = notify_opendir(path, NOTIFY_ALL, &error)))
 		errx(1, "%s: %s", path, strerror(error));
 
-	if (argc > 2) {
-		for (i = 2; i < argc; i++) {
+	if (argc > 1) {
+		for (i = 1; i < argc; i++) {
 			if ((error = notify_add(notify, argv[i], NOTIFY_ALL)))
 				errx(1, "%s: %s", argv[i], strerror(error));
 		}
