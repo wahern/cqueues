@@ -326,6 +326,7 @@ static DIR *nfy_opendir(const char *path, int *error) {
 #endif
 
 
+#if HAVE_FEN
 static void fenfo_init(struct file_obj *fo, char *path) {
 	struct stat st;
 
@@ -337,6 +338,7 @@ static void fenfo_init(struct file_obj *fo, char *path) {
 
 	fo->fo_name = path;
 } /* fenfo_init() */
+#endif
 
 
 /*
