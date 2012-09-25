@@ -262,8 +262,7 @@ static int (nfy_openfd)(int *_fd, const struct nfy_open *opts) {
 			if (0 != fchdir(opts->dirfd))
 				goto syerr;
 
-			if (-1 == (fd = open(opts->path, flags, opts->mode)))
-				error = errno;
+			error = (-1 == (fd = open(opts->path, flags, opts->mode)))? errno : 0;
 
 			if (0 != fchdir(wd))
 				goto syerr;
@@ -605,6 +604,19 @@ void notify_close(struct notify *nfy) {
 
 	free(nfy);
 } /* notify_close() */
+
+
+int notify_pollfd(struct notify *nfy) {
+	return nfy->fd;
+} /* notify_pollfd() */
+
+
+int notify_timeout(struct notify *nfy) {
+	if (nfy->dirty || !LIST_EMPTY(&nfy->pending) || !LIST_EMPTY(&nfy->changed))
+		return 0;
+	else
+		return -1;
+} /* notify_timeout() */
 
 
 static int decode(int flags) {

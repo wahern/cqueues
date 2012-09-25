@@ -24,6 +24,7 @@ local loader = function(loader, ...)
 		"cqueues.socket",
 		"cqueues.signal",
 		"cqueues.thread",
+		"cqueues.notify",
 	}
 
 	local start = thread.start; thread.start = function(enter, ...)

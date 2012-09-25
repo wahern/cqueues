@@ -68,13 +68,8 @@ SOFLAGS = -shared
 endif
 
 
-ifeq ($(VENDOR.OS), SunOS)
-cqueues.so: cqueues.o socket.o errno.o signal.o thread.o lib/socket.o lib/dns.o
+cqueues.so: cqueues.o socket.o errno.o signal.o thread.o notify.o lib/socket.o lib/dns.o lib/notify.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
-else
-cqueues.so: cqueues.o socket.o errno.o signal.o thread.o lib/socket.o lib/dns.o
-	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
-endif
 
 cqueues.o: cqueues.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
@@ -94,16 +89,23 @@ signal.o: signal.c
 thread.o: thread.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
+notify.o: notify.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
 lib/socket.o: lib/socket.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 lib/dns.o: lib/dns.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
+lib/notify.o: lib/notify.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
 
 install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
          $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua \
-         $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua
+         $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua \
+         $(lua52path)/cqueues/notify.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -130,6 +132,11 @@ $(lua52path)/cqueues/signal.lua: signal.lua
 	cp -p $< $@
  
 $(lua52path)/cqueues/thread.lua: thread.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+ 
+$(lua52path)/cqueues/notify.lua: notify.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@

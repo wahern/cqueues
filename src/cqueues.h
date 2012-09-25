@@ -73,6 +73,7 @@
 #define CQS_SOCKET "CQS Socket"
 #define CQS_SIGNAL "CQS Signal"
 #define CQS_THREAD "CQS Thread"
+#define CQS_NOTIFY "CQS Notify"
 
 
 cqs_nargs_t luaopen__cqueues(lua_State *);
@@ -82,6 +83,8 @@ cqs_nargs_t luaopen__cqueues_socket(lua_State *);
 cqs_nargs_t luaopen__cqueues_signal(lua_State *);
 
 cqs_nargs_t luaopen__cqueues_thread(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_notify(lua_State *);
 
 
 void cqs_cancelfd(lua_State *, int);
@@ -267,6 +270,8 @@ static inline void cqs_getref(lua_State *L, cqs_ref_t ref) {
 #define HAI SAY("hai")
 #endif
 
+
+#include <string.h>
 
 #include <sys/stat.h>
 #include <sys/ioctl.h>

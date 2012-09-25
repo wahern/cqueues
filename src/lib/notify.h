@@ -50,6 +50,8 @@ void notify_close(struct notify *);
 
 int notify_pollfd(struct notify *);
 
+nfy_timeout_t notify_timeout(struct notify *);
+
 nfy_error_t notify_step(struct notify *, nfy_timeout_t);
 
 nfy_error_t notify_add(struct notify *, const char *, nfy_flags_t);
