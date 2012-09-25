@@ -67,9 +67,10 @@ static int ln_get(lua_State *L) {
 static int ln_add(lua_State *L) {
 	struct luanotify *N = luaL_checkudata(L, 1, CQS_NOTIFY);
 	const char *name = luaL_checkstring(L, 2);
+	int flags = luaL_optinteger(L, 3, NOTIFY_ALL);
 	int error;
 
-	if ((error = notify_add(N->notify, name, NOTIFY_ALL))) {
+	if ((error = notify_add(N->notify, name, flags))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 

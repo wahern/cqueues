@@ -986,7 +986,12 @@ static int kq_post(struct notify *nfy) {
 				return error;
 		}
 
-		LIST_MOVE(&nfy->changed, file, le);
+		file->changes &= file->flags;
+
+		if (file->changes)
+			LIST_MOVE(&nfy->changed, file, le);
+		else
+			LIST_MOVE(&nfy->dormant, file, le);
 	}
 
 	if (nfy->dirty) {

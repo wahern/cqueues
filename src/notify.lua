@@ -48,7 +48,7 @@ local loader = function(loader, ...)
 	-- notify:add
 	--
 	local add; add = notify.interpose("add", function(self, name, flags)
-		local okay, why = add(name, flags or ALL)
+		local okay, why = add(self, name, flags or ALL)
 
 		if not okay then
 			oops(self, "add", why)
