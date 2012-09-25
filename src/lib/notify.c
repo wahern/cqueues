@@ -347,17 +347,17 @@ static void fenfo_init(struct file_obj *fo, char *path) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 struct file {
-	int fd;
-
 #if HAVE_FEN
 	struct file_obj fo;
+#elif HAVE_KQUEUE
+	int fd;
 #endif
 
-	int flags, events, error;
+	int flags, changes, error;
 
 	enum status {
 		S_DEFUNCT = 0,
-		S_REGULAR = 1,
+		S_POLLING = 1,
 		S_REVOKED = 2,
 		S_DELETED = 3,
 	} status;
@@ -385,15 +385,23 @@ struct notify {
 	int fd;
 
 	LLRB_HEAD(files, file) files;
+
 	LIST_HEAD(, file) dormant;
 	LIST_HEAD(, file) pending;
+	LIST_HEAD(, file) changed;
 
 	LIST_HEAD(, file) defunct;
-	LIST_HEAD(, file) regular;
+	LIST_HEAD(, file) polling;
 	LIST_HEAD(, file) revoked;
 	LIST_HEAD(, file) deleted;
 
-	int flags, events;
+	int flags, changes;
+
+	_Bool dirty;
+
+#if HAVE_INOTIFY
+	_Bool critical;
+#endif
 
 #if HAVE_FEN
 	struct file_obj dirfo;
@@ -427,104 +435,52 @@ static struct file *lookup(struct notify *nfy, const char *name, size_t namelen)
 } /* lookup() */
 
 
+static void change(struct notify *nfy, struct file *file, int changes) {
+	if (changes & file->flags) {
+		file->changes |= (file->flags & changes);
+		LIST_MOVE(&nfy->changed, file, le);
+	}
+} /* change() */
+
+
 static void status(struct notify *nfy, struct file *file, enum status status) {
-	switch (file->status = status) {
+	switch (status) {
 	case S_DEFUNCT:
 		LIST_MOVE(&nfy->defunct, file, sle);
 		break;
-	case S_REGULAR:
-		LIST_MOVE(&nfy->regular, file, sle);
+	case S_POLLING:
+		LIST_MOVE(&nfy->polling, file, sle);
+
+		if (file->status != status)
+			change(nfy, file, (file->status == S_REVOKED)? NOTIFY_ATTRIB : NOTIFY_CREATE);
+
 		break;
 	case S_REVOKED:
 		LIST_MOVE(&nfy->revoked, file, sle);
+
+		if (file->status != status)
+			change(nfy, file, NOTIFY_REVOKE);
+
 		break;
 	case S_DELETED:
 		LIST_MOVE(&nfy->deleted, file, sle);
+
+		if (file->status != status)
+			change(nfy, file, NOTIFY_DELETE);
+
 		break;
 	} /* switch() */
+
+	file->status = status;
 } /* status() */
-
-
-static int reopen(struct notify *nfy, struct file *file) {
-	int error;
-
-	closefd(&file->fd);
-
-	status(nfy, file, S_DEFUNCT);
-
-	nfy->dirpath[nfy->dirlen] = '/';
-	memcpy(&nfy->dirpath[nfy->dirlen + 1], file->name, file->namelen);
-	nfy->dirpath[nfy->dirlen + 1 + file->namelen] = '\0';
-
-	error = nfy_openfd(&file->fd, .dirfd = nfy->dirfd, .path = file->name, .abspath = nfy->dirpath, .rdonly = 1, .cloexec = 1, .nofollow = 1);
-
-	nfy->dirpath[nfy->dirlen] = '\0';
-
-	switch (error) {
-	case 0:
-		status(nfy, file, S_REGULAR);
-
-		break;
-	case ENOENT:
-		status(nfy, file, S_DELETED);
-
-		break;
-	case EPERM:
-		status(nfy, file, S_REVOKED);
-
-		break;
-	default:
-		goto error;
-	}
-
-	return 0;
-error:
-	return file->error = error;
-} /* reopen() */
-
-
-static int process(struct notify *nfy, struct file *file) {
-	int error;
-
-#if HAVE_KQUEUE
-	if ((file->events & (NOTIFY_DELETE|NOTIFY_REVOKE)) || file->fd == -1) {
-		if ((error = reopen(nfy, file)))
-			goto error;
-	}
-#endif
-
-#if HAVE_KQUEUE
-	if (file->fd != -1) {
-		struct kevent event;
-
-		NFY_SET(&event, file->fd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_RENAME|NOTE_REVOKE, 0, file);
-
-		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
-			goto syerr;
-	}
-#endif
-
-#if HAVE_FEN
-	fenfo_init(&file->fo, file->path);
-
-	if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, file))
-		goto syerr;
-#endif	
-
-	return 0;
-syerr:
-	error = errno;
-error:
-	file->error = error;
-
-	status(nfy, file, S_DEFUNCT);
-
-	return error;
-} /* process() */
 
 
 static void discard(struct notify *nfy, struct file *file) {
 	closefd(&file->fd);
+
+#if HAVE_FEN
+	port_disassociate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo);
+#endif
 
 	LLRB_REMOVE(files, &nfy->files, file);
 	LIST_REMOVE(file, le);
@@ -637,12 +593,7 @@ void notify_close(struct notify *nfy) {
 	for (file = LLRB_MIN(files, &nfy->files); file != NULL; file = next) {
 		next = LLRB_NEXT(files, &nfy->files, file);
 
-		LLRB_REMOVE(files, &nfy->files, file);
-		LIST_REMOVE(file, le);
-		LIST_REMOVE(file, sle);
-
-		closefd(&file->fd);
-		free(file);
+		discard(nfy, file);
 	}
 
 	closefd(&nfy->fd);
@@ -702,6 +653,7 @@ static int decode(int flags) {
 
 #if HAVE_INOTIFY
 #define NFY_STEP in_step
+#define NFY_POST in_post
 
 #define IN_BUFSIZ 2048
 #define in_msgbuf(bufsiz) (&((union { char pad[bufsiz]; struct inotify_event event; }){ { 0 } }).event)
@@ -723,9 +675,15 @@ static int in_step1(struct notify *nfy) {
 				struct file *file;
 
 				if ((file = lookup(nfy, msg->name, namelen))) {
-					file->events |= decode(msg->mask);
+					file->changes |= decode(msg->mask);
 					LIST_MOVE(&nfy->pending, file, le);
 				}
+			} else {
+				nfy->changes |= decode(msg->mask);
+				nfy->dirty = 1;
+
+				if (msg->mask & (IN_Q_OVERFLOW|IN_IGNORED|IN_UNMOUNT)
+					msg->critical = 1;
 			}
 
 			++count;
@@ -774,6 +732,12 @@ error:
 	}
 } /* in_step() */
 
+
+static int in_post(struct notify *nfy) {
+	return 0;
+} /* in_post() */
+
+
 #elif HAVE_FEN
 #define NFY_STEP fen_step
 #define NFY_POST fen_post
@@ -787,15 +751,15 @@ static int fen_step(struct notify *nfy, int timeout) {
 		goto syerr;
 
 	for (i = 0; i < count; i++) {
-		struct file *file;
-
 		if (event[i].portev_source != PORT_SOURCE_FILE)
 			continue;
 
 		if (event[i].portev_user == nfy) {
-			nfy->events |= decode(event[i].portev_events);
-		} else if ((file = event[i].portev_user)) {
-			file->events |= decode(event[i].portev_events);
+			nfy->changes |= decode(event[i].portev_events);
+			nfy->dirty = 1;
+		} else {
+			struct file *file = event[i].portev_user;
+			file->changes |= decode(event[i].portev_events);
 			LIST_MOVE(&nfy->pending, file, le);
 		}
 	}
@@ -814,26 +778,86 @@ syerr:
 	}
 } /* fen_step() */
 
+
+static int fen_readd(struct notify *nfy, struct file *file) {
+	int events, error;
+
+	fenfo_init(&file->fo, file->path);
+
+	events = FILE_ATTRIB|FILE_NOFOLLOW;
+
+	if (file->flags & NOTIFY_MODIFY)
+		events |= FILE_MODIFIED;
+
+	error = port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo, events, file)? errno : 0;
+
+	switch (error) {
+	case 0:
+		status(nfy, file, S_POLLING);
+
+		return 0;
+	case ENOENT:
+		status(nfy, file, S_DELETED);
+
+		return 0;
+	case EACCES:
+		status(nfy, file, S_REVOKED);
+
+		return 0;
+	default:
+		status(nfy, file, S_DEFUNCT);
+
+		return file->error = error;
+	}
+} /* fen_readd() */
+
+
 static int fen_post(struct notify *nfy) {
-	struct file *file;
+	struct file *file, *next;
 	int error;
 
-	fenfo_init(&nfy->dirfo, nfy->dirpath);
+	for (file = LIST_FIRST(&nfy->pending); file; file = next) {
+		next = LIST_NEXT(file, le);
 
-	if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&nfy->dirfo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, nfy))
-		goto syerr;
+		if ((error = fen_readd(nfy, file)))
+			goto error;
 
-	LIST_FOREACH(file, &nfy->pending, le) {
-		fenfo_init(&file->fo, file->path);
+		file->changes &= file->flags;
 
-		if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, file))
+		if (file->changes)
+			LIST_MOVE(&nfy->changed, file, le);
+		else
+			LIST_MOVE(&nfy->dormant, file, le);
+	}
+
+	if (nfy->dirty) {
+		for (file = LIST_FIRST(&nfy->revoked); file; file = next) {
+			next = LIST_NEXT(file, sle);
+
+			if ((error = fen_readd(nfy, file)))
+				return error;
+		}
+
+		for (file = LIST_FIRST(&nfy->deleted); file; file = next) {
+			next = LIST_NEXT(file, sle);
+
+			if ((error = fen_readd(nfy, file)))
+				return error;
+		}
+
+		fenfo_init(&nfy->dirfo, nfy->dirpath);
+
+		if (0 != port_associate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&nfy->dirfo, FILE_MODIFIED|FILE_ATTRIB|FILE_NOFOLLOW, nfy))
 			goto syerr;
+
+		nfy->changes &= nfy->flags;
+		nfy->dirty = 0;
 	}
 
 	return 0;
 syerr:
 	error = errno;
-
+error:
 	return error;
 } /* fen_post() */
 
@@ -851,56 +875,105 @@ static int kq_step(struct notify *nfy, int timeout) {
 
 	for (i = 0; i < count; i++) {
 		if ((void *)event[i].udata == nfy) {
-			nfy->events |= decode(event[i].fflags);
+			nfy->changes |= decode(event[i].fflags);
+			nfy->dirty = 1;
 		} else {
 			file = (void *)event[i].udata;
-
+			file->changes |= decode(event[i].fflags);
 			LIST_MOVE(&nfy->pending, file, le);
-
-			file->events |= decode(event[i].fflags);
 		}
 	}
 
 	return 0;
 } /* kq_step() */
 
+
+static int kq_readd(struct notify *nfy, struct file *file) {
+	struct kevent event;
+	int notes, error;
+
+	closefd(&file->fd);
+
+	nfy->dirpath[nfy->dirlen] = '/';
+	memcpy(&nfy->dirpath[nfy->dirlen + 1], file->name, file->namelen);
+	nfy->dirpath[nfy->dirlen + 1 + file->namelen] = '\0';
+
+	error = nfy_openfd(&file->fd, .dirfd = nfy->dirfd, .path = file->name, .abspath = nfy->dirpath, .rdonly = 1, .cloexec = 1, .nofollow = 1);
+
+	nfy->dirpath[nfy->dirlen] = '\0';
+
+	switch (error) {
+	case 0:
+		notes = NOTE_DELETE|NOTE_ATTRIB|NOTE_RENAME|NOTE_REVOKE;
+
+		if (file->flags & NOTIFY_MODIFY)
+			notes |= NOTE_WRITE|NOTE_EXTEND;
+
+		NFY_SET(&event, file->fd, EVFILT_VNODE, EV_ADD|EV_CLEAR, notes, 0, file);
+
+		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 })) {
+			error = errno;
+			goto error;
+		}
+
+		status(nfy, file, S_POLLING);
+
+		return 0;
+	case ENOENT:
+		status(nfy, file, S_DELETED);
+
+		return 0;
+	case EACCES:
+		status(nfy, file, S_REVOKED);
+
+		return 0;
+	default:
+error:
+		status(nfy, file, S_DEFUNCT);
+
+		return file->error = error;
+	}
+} /* kq_readd() */
+
+
 static int kq_post(struct notify *nfy) {
 	struct file *file, *next;
+	struct kevent event;
 	int error;
 
-	if (nfy->events) {
-		struct kevent event;
+	for (file = LIST_FIRST(&nfy->pending); file; file = next) {
+		next = LIST_NEXT(file, le);
 
-		NFY_SET(&event, nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
+		if (file->changes & (NOTIFY_DELETE|NOTIFY_REVOKE)) {
+			if ((error = kq_readd(nfy, file)))
+				return error;
+		}
 
-		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, ms2ts(0)))
-			return errno;
+		LIST_MOVE(&nfy->changed, file, le);
 	}
 
-	if (nfy->events & (NOTIFY_MODIFY|NOTIFY_ATTRIB)) {
+	if (nfy->dirty) {
 		for (file = LIST_FIRST(&nfy->revoked); file; file = next) {
 			next = LIST_NEXT(file, sle);
 
-			if ((error = process(nfy, file)))
+			if ((error = kq_readd(nfy, file)))
 				return error;
-
-			if (file->status != S_REVOKED) {
-				LIST_MOVE(&nfy->pending, file, le);
-				file->events |= NOTIFY_ATTRIB;
-			}
 		}
 
 		for (file = LIST_FIRST(&nfy->deleted); file; file = next) {
 			next = LIST_NEXT(file, sle);
 
-			if ((error = process(nfy, file)))
+			if ((error = kq_readd(nfy, file)))
 				return error;
-
-			if (file->status != S_DELETED) {
-				LIST_MOVE(&nfy->pending, file, le);
-				file->events |= NOTIFY_CREATE;
-			}
 		}
+
+		NFY_SET(&event, nfy->dirfd, EVFILT_VNODE, EV_ADD|EV_CLEAR, NOTE_DELETE|NOTE_WRITE|NOTE_EXTEND|NOTE_ATTRIB|NOTE_REVOKE, 0, nfy);
+
+		if (0 != kevent(nfy->fd, &event, 1, NULL, 0, ms2ts(0)))
+			return errno;
+
+		nfy->changes &= nfy->flags;
+		nfy->dirty = 0;
 	}
 
 	return 0;
@@ -908,31 +981,21 @@ static int kq_post(struct notify *nfy) {
 #endif
 
 
-static _Bool notify_pending(struct notify *nfy) {
-	return nfy->events || !LIST_EMPTY(&nfy->pending);
-} /* notify_pending() */
-
-
 int notify_step(struct notify *nfy, int timeout) {
-	struct file *file, *next;
 	int error;
 
-	if (notify_pending(nfy))
+	if (nfy->dirty || !LIST_EMPTY(&nfy->pending))
+		goto post;
+
+	if (nfy->changes || !LIST_EMPTY(&nfy->changed))
 		return 0;
 
 	if ((error = NFY_STEP(nfy, timeout)))
 		return error;
 
-	for (file = LIST_FIRST(&nfy->pending); file; file = next) {
-		next = LIST_NEXT(file, le);
-
-		process(nfy, file);
-	}
-
-#if defined NFY_POST
+post:
 	if ((error = NFY_POST(nfy)))
 		return error;
-#endif
 
 	return 0;
 } /* notify_step() */
@@ -977,8 +1040,19 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	LIST_INSERT_HEAD(&nfy->defunct, file, sle);
 	LLRB_INSERT(files, &nfy->files, file);
 
-	if ((error = process(nfy, file)))
+#if HAVE_KQUEUE
+	if ((error = kq_readd(nfy, file)))
 		goto error;
+
+	LIST_MOVE(&nfy->dormant, file, le);
+	nfy->changes = 0;
+#elif HAVE_FEN
+	if ((error = fen_readd(nfy, file)))
+		goto error;
+
+	LIST_MOVE(&nfy->dormant, file, le);
+	nfy->changes = 0;
+#endif
 
 	return 0;
 error:
@@ -1006,28 +1080,28 @@ static int notify_del(struct notify *dir, const char *name) {
 
 int notify_get(struct notify *nfy, const char **name) {
 	struct file *file;
-	int events;
+	int changes;
 
-	if ((file = LIST_FIRST(&nfy->pending))) {
+	if ((file = LIST_FIRST(&nfy->changed))) {
 		LIST_MOVE(&nfy->dormant, file, le);
 
 		if (name)
 			*name = file->name;
 
-		events = file->events;
-		file->events = 0;
+		changes = file->changes;
+		file->changes = 0;
 
-		return events;
+		return changes;
 	}
 
-	if (nfy->events) {
+	if (!nfy->dirty && nfy->changes) {
 		if (name)
 			*name = ".";
 
-		events = nfy->events;
-		nfy->events = 0;
+		changes = nfy->changes;
+		nfy->changes = 0;
 
-		return events;
+		return changes;
 	}
 
 	return 0;
