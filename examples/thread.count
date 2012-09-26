@@ -1,0 +1,45 @@
+#!/usr/local/lua52/bin/lua
+
+local cqueues = require"cqueues"
+local thread = require"cqueues.thread"
+
+local thr, con = thread.start(function(con, i, j)
+	local cqueues = require"cqueues"
+	local cq = cqueues.new()
+
+	cq:wrap(function()
+		for n = tonumber(i), tonumber(j) do
+			io.stderr:write("sent ", n, "\n")
+			con:write(n, "\n")
+			cqueues.sleep(0.1)
+		end
+	end)
+
+	while not cq:empty() do
+		local ok, why = cq:step()
+		if not ok then error(why) end
+	end
+end, 0, 9)
+
+
+local cq = cqueues.new()
+
+cq:wrap(function()
+	for ln in con:lines() do
+		io.stdout:write(ln, " rcvd", "\n")
+	end
+
+	local ok, why = thr:join()
+
+	if ok then
+		print(why or "OK")
+	else
+		error(require"cqueues.errno".strerror(why))
+	end
+end)
+
+while not cq:empty() do
+	local ok, err = cq:step()
+
+	if err then print(err) end
+end
