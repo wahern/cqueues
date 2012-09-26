@@ -31,14 +31,27 @@
 %
 % ENVIRONMENTS
 %
+\lstdefinelanguage{lua}{
+morekeywords={break,goto,do,end,while,repeat,until,if,then,elseif,else,for,in,function,local,nil,false,true,and,or,not},
+sensitive=true,
+morestring=[b]"
+}
+
 \lstnewenvironment{code}[1]{
 	\lstset{language=#1}
 }{
 }
 
-%\renewcommand*{\cftsubsubsectiondotsep}{\cftnodots}%
+\lstnewenvironment{example}[1]{
+	\lstset{language=#1,numbers=left,numberstyle=\tiny,stepnumber=2,tabsize=4}
+	\ttfamily\small
+}{
+}
 
-\newcounter{toccols}\setcounter{toccols}{2}\newenvironment{Module}[1]{	\subsection{\texttt{#1}}
+\newcounter{toccols}
+\setcounter{toccols}{2}
+\newenvironment{Module}[1]{
+	\subsection{\texttt{#1}}
 	\addtocontents{toc}{
 		\protect\begin{multicols}{\value{toccols}}
 		%\renewcommand*{\cftsubsubsectiondotsep}{\cftnodots}%
@@ -46,6 +59,9 @@
 }{
 	\addtocontents{toc}{\protect\end{multicols}}
 }
+
+
+\lstdefinelanguage{lua}{morekeywords={break,goto,do,end,while,repeat,until,if,then,elseif,else,for,in,function,local,nil,false,true,and,or,not},sensitive=true,morestring=[b]"}
 
 
 \begin{document}
@@ -127,21 +143,21 @@ In the future a \module{cqueues.ssl} module will be provided with OpenSSL bindin
 
 \subsection{pthreads}
 
-\cqueues provides an optional threading module, using POSIX threads.\footnote{Building without threading enabled is not well tested.} Internally, it also strives to use thread-safe routines when built with either the \_REENTRANT or \_THREAD\_SAFE macros defined. Thread support is enabled by default 
+\cqueues provides an optional threading module, using POSIX threads.\footnote{Building without threading enabled is not well tested.} Internally, it also strives to use thread-safe routines when built with either the \_REENTRANT or \_THREAD\_SAFE feature macros. Thread support is enabled by default.
 
 \paragraph{Linking}
-Note that on some systems, such as NetBSD and FreeBSD, the loading application must be linked against pthreads (using -lpthread or -pthread). It is not enough for the cqueues module to pull in the dependency at load time. In particular, if using the stock Lua interpreter, it must have been linked against pthreads at build time. Add the appropriate linker flag to MYLIBS in lua-5.2.x/src/Makefile.
+Note that on some systems, such as NetBSD and FreeBSD, the loading application must be linked against pthreads (using -lpthread or -pthread). It is not enough for the \cqueues module to pull in the dependency at load time. In particular, if using the stock Lua interpreter, it must have been linked against pthreads at build time. Add the appropriate linker flag to MYLIBS in lua-5.2.x/src/Makefile.
 
 \paragraph{OpenBSD}
-OpenBSD 5.1 threading is completely fubar, especially with regard to signals. If using OpenBSD, be sure to compile \emph{without} the thread-safe macros predefined.
+OpenBSD 5.1 threading is completely \emph{fubar}, especially with regard to signals, because of OpenBSD's transition to kernel threading. If using OpenBSD, be sure to compile \emph{without} the thread-safe macros predefined, especially if using \module{cqueues.signal}.
 
 \section{Compilers}
 
 The source code is mostly ISO C99 compliant, and even more so with regards to ISO C11. Regardless, it aims to build cleanly with the native compiler for each targeted platform. It currently builds with recent versions of GCC, clang, and SunPro.
 
-GCC and especially clang may emit copious warnings about initializers and unused parameters. These warnings are stupid, particularly the former. The Makefile uses -Wno-override-init (GCC), -Wno-initializer-overrides (clang), and -Wno-unused to quiet these.
+GCC and especially clang may emit copious warnings about initializers and unused parameters. These warnings, particularly the former, are stupid---for lack of a better term. The Makefile uses -Wno-override-init (GCC), -Wno-initializer-overrides (clang), and -Wno-unused to quiet these.
 
-SunPro has a broken diagnostic pass confused by macro-generated function calls.\footnote{\texttt{e.g.\ "lib/fifo.h", line 348:\ warning:\ argument mismatch}.} Likewise, the code flow analysis in older versions of GCC---especially on the BSDs---emit erroneous uninitialized use warnings. Newer versions also get this wrong, but usually the code is refactored to reduce noise so legitimate warnings are not suppressed.
+SunPro has a broken diagnostic pass confused by macro-generated function calls.\footnote{\texttt{e.g.\ "lib/fifo.h", line 348:\ warning:\ argument mismatch}.} Likewise, the code flow analyzer in older versions of GCC---especially on the BSDs---emits erroneous uninitialized use warnings. Newer versions also occasionally get this wrong, but not nearly as often, and so the code is refactored to reduce noise so that legitimate warnings are not suppressed.
 
 For other warnings or errors, patches are welcome.
 
@@ -591,6 +607,133 @@ Track the specified file name within the notification directory. `changes' defau
 Returns a bitwise change set and a filename on success.
 
 \end{Module}
+
+\chapter{Examples}
+
+\section{HTTP SSL Request}
+
+\begin{example}{lua}
+local cqueues = require"cqueues"
+local socket = require"cqueues.socket"
+
+local http = socket.connect("google.com", 443)
+
+http:starttls()
+
+local cq = cqueues.new()
+
+cq:wrap(function()
+	http:write("GET / HTTP/1.0\n")
+	http:write("Host: google.com:443\n\n")
+
+	local status = http:read()
+	print("!", status)
+
+	for ln in http:lines"*h" do
+		print("|", ln)
+	end
+
+	local empty = http:read"*L"
+	print"~"
+
+	for ln in http:lines"*L" do
+		io.stdout:write(ln)
+	end
+
+	http:close()
+end)
+
+while not cq:empty() do
+	local ok, why = cq:step()
+
+	if not ok then
+		error("cqueue: " .. why)
+	end
+end
+\end{example}
+
+
+\clearpage
+\section{Multiplexing Echo Server}
+
+\begin{example}{lua}
+local cqueues = require"cqueues"
+local socket = require"cqueues.socket"
+local bind, port, wait = ...
+
+local srv = socket.listen(bind or "127.0.0.1", tonumber(port or 8000))
+
+local cq = cqueues.new()
+
+cq:wrap(function()
+	for con in srv:clients(wait) do
+		cq:wrap(function()
+			for ln in con:lines("*L") do
+				cq:write(ln)
+			end
+
+			cq:shutdown("w")
+		end)
+	end
+end)
+
+while not cq:empty() do
+	local ok, err = cq:step()
+	if not ok then error("step: " .. err) end
+end
+\end{example}
+
+\clearpage
+\section{Thread Messaging}
+
+\begin{example}{lua}
+local cqueues = require"cqueues"
+local thread = require"cqueues.thread"
+
+-- we start a thread and pass two parameters--`0' and '9'
+local thr, con = thread.start(function(con, i, j)
+	-- the `cqueues' upvalue defined above is gone
+	local cqueues = require"cqueues"
+	local cq = cqueues.new()
+
+	cq:wrap(function()
+		for n = tonumber(i), tonumber(j) do
+			io.stdout:write("sent ", n, "\n")
+			con:write(n, "\n")
+			 -- sleep so our stdout writes don't mix
+			cqueues.sleep(0.1)
+		end
+	end)
+
+	while not cq:empty() do
+		local ok, why = cq:step()
+		if not ok then error(why) end
+	end
+end, 0, 9)
+
+
+local cq = cqueues.new()
+
+cq:wrap(function()
+	for ln in con:lines() do
+		io.stdout:write(ln, " rcvd", "\n")
+	end
+
+	local ok, why = thr:join()
+
+	if ok then
+		print(why or "OK")
+	else
+		error(require"cqueues.errno".strerror(why))
+	end
+end)
+
+while not cq:empty() do
+	local ok, err = cq:step()
+	if err then print(err) end
+end
+\end{example}
+
 
 
 \appendix
