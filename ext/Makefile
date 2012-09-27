@@ -13,8 +13,16 @@ VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
 
 CPPFLAGS = -I$(DESTDIR)$(lua52include)
+
+ifeq ($(VENDOR.CC), sunpro)
+DFLAGS = -g
+CFLAGS = -xcode=pic13 $(DFLAGS)
+CPPFLAGS += -DOPENSSL_NO_EC
+else
 DFLAGS = -g -Wall -Wextra -Wno-deprecated-declarations -Wno-unused
 CFLAGS = -fPIC $(DFLAGS)
+endif
+
 LDFLAGS = -lssl -lcrypto
 
 ifeq ($(VENDOR.OS), Darwin)

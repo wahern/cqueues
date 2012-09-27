@@ -789,6 +789,7 @@ creat:
 
 			break;
 		}
+#ifndef OPENSSL_NO_EC
 		case EVP_PKEY_EC: {
 			EC_GROUP *grp;
 			EC_KEY *key;
@@ -821,6 +822,7 @@ creat:
 
 			break;
 		}
+#endif
 		default:
 			return luaL_error(L, "%d: unknown EVP base type (%d)", EVP_PKEY_type(type), type);
 		} /* switch() */
@@ -998,6 +1000,7 @@ static int pk_toPEM(lua_State *L) {
 
 				break;
 			}
+#ifndef OPENSSL_NO_EC
 			case EVP_PKEY_EC: {
 				EC_KEY *ec = EVP_PKEY_get1_EC_KEY(key);
 				const EC_GROUP *grp = EC_KEY_get0_group(ec);
@@ -1011,6 +1014,7 @@ static int pk_toPEM(lua_State *L) {
 
 				break;
 			}
+#endif
 			default:
 				return luaL_error(L, "%d: unknown EVP base type", EVP_PKEY_type(key->type));
 			}
