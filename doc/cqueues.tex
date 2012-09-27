@@ -143,7 +143,7 @@ In the future a \module{cqueues.ssl} module will be provided with OpenSSL bindin
 
 \subsection{pthreads}
 
-\cqueues provides an optional threading module, using POSIX threads.\footnote{Building without threading enabled is not well tested.} Internally, it also strives to use thread-safe routines when built with either the \_REENTRANT or \_THREAD\_SAFE feature macros. Thread support is enabled by default.
+\cqueues provides an optional threading module, using POSIX threads.\footnote{Building without threading enabled is not well tested.} Internally it consistently uses thread-safe routines when built with either the \_REENTRANT or \_THREAD\_SAFE feature macros, such as \syscall{pthread\_sigmask} instead of \syscall{sigprocmask}. Thread support is enabled by default.
 
 \paragraph{Linking}
 Note that on some systems, such as NetBSD and FreeBSD, the loading application must be linked against pthreads (using -lpthread or -pthread). It is not enough for the \cqueues module to pull in the dependency at load time. In particular, if using the stock Lua interpreter, it must have been linked against pthreads at build time. Add the appropriate linker flag to MYLIBS in lua-5.2.x/src/Makefile.
@@ -228,7 +228,7 @@ The usual behavior is for errors to be returned directly. But see \routine{socke
 
 \subsubsection{\texttt{ETIMEDOUT}}
 
-This error value is usually seen when a timeout is specified by the caller of a blocking method. The method will normally poll if the operation cannot be completed immediately, but if the timeout expires then it will return a failure with \errno{ETIMEDOUT}.
+This error value is usually seen when a timeout is specified by the caller of a logically synchronous method. The method will normally yield and poll if the operation cannot be completed immediately, but if the timeout expires then it will return a failure with \errno{ETIMEDOUT}.
 
 \subsubsection{\texttt{EPIPE}}
 
@@ -279,9 +279,38 @@ Attach and manage the specified coroutine.
         Execute function inside a new coroutine managed by the controller.
 
 \subsubsection[\routine{cqueues:step}]{\routine{cqueue:step([timeout])}}
-Step once through the event queue. If no timeout is provided, it blocks indefinitely until a descriptor event or timeout fires.
+Step once through the event queue. If no timeout is provided, \emph{it suspends the process indefinitely} until a descriptor event or timeout fires.
 
-Returns true or false. If false, then a second return value holds the error message. :step() can be called again after errors, for example if a coroutine threw an error.
+Returns true or false. If false---i.e. a coroutine exited abnormally---then a second return value holds the error message. :step can be called again after errors.
+
+For a controller running from the main Lua thread and which may suspend the process, the convention is to loop like
+
+\begin{code}{lua}
+while not cq:empty() do
+	local okay, why = cq:step()
+
+	if not okay then
+		-- handle error described by `why'
+	end
+end
+\end{code}
+
+For a controller in a coroutine managed by another controller, something like this might be more appropriate
+
+\begin{code}{lua}
+while not cq:empty() do
+	cqueues.poll(cq)
+
+	local okay, why = cq:step(0.0)
+
+	if not okay then
+		--- handle error
+	end
+end
+\end{code}
+
+A controller is a pollable object, and the descriptor returned by the :pollfd method can be used with third-party event libraries, whether written in Lua, C, or some other language. Don't forget to also schedule a timeout using the value from :timeout.
+
 %[However, at the moment the controller cannot recover from synchronization errors with the kernel queue. In the future, internal, unrecoverable errors should be thrown and only coroutine errors returned directly.]
 
 \subsubsection[\routine{cqueues:empty}]{\routine{cqueue:empty()}}
@@ -294,7 +323,7 @@ Returns a count of managed coroutines.
 Cancel the specified descriptor for that controller. See cqueues.cancel.
 
 \subsubsection[\routine{cqueues:pause}]{\routine{cqueue:pause(signal [, signal $\ldots$ ])}}
-A wrapper around \syscall{pselect} which suspends execution until the controller polls ready or a signal is delivered. This interface is provided as a very basic least common denominator for simple slave process controller loops and similar scenarios, where immediate response to signal delivery is required on platforms like Solaris without a proper signal polling primitive. (\routine{signal.listen} on Solaris merely periodically queries the pending set.)
+A wrapper around \syscall{pselect} which \emph{suspends execution of the process} until the controller polls ready or a signal is delivered. This interface is provided as a very basic least common denominator for simple slave process controller loops and similar scenarios, where immediate response to signal delivery is required on platforms like Solaris without a proper signal polling primitive. (\routine{signal.listen} on Solaris merely periodically queries the pending set.)
 
 Much better alternatives are possible for Solaris, but require global process state or an LWP thread helper.
 
@@ -408,7 +437,7 @@ Returns the previous input and output modes as fixed-sized strings. At present t
 \subsubsection[\fn{socket:onerror}]{\fn{socket:onerror([function])}}
 Set the error handler. The error handler is passed the tuple socket-object, method-string, error-number, and is expected to either throw an error or return an error code---to be returned to the caller as part of the documented return interface.
 
-The default error handler returns \errno{EPIPE} and \errno{ETIMEDOUT} directly, and throws everything else. \errno{EAGAIN} is handled internally for blocking calls.
+The default error handler returns \errno{EPIPE} and \errno{ETIMEDOUT} directly, and throws everything else. \errno{EAGAIN} is handled internally for logically synchronous calls.
 
 Returns the previous error handler, if any.
 
@@ -554,7 +583,7 @@ Set the polling interval for implementations such as Solaris which lack a signal
 Returns the LWP thread object for the running Lua instances. Threads not started via thread.start return nil.
 
 \subsubsection[\fn{thread.start}]{\fn{thread.start(function [, string [, string $\ldots$ ]])}}
-Generates a socket pair, starts a POSIX LWP thread, initializes a new Lua VM instance, preloads the \cqueues library, and loads and executes the specified function from the new LWP thread and Lua instance. The function receives as the first parameter one end of the socket pair---instantiated as a cqueues.socket object---followed by the string parameters passed to thread.start.
+Generates a socket pair, starts a POSIX LWP thread, initializes a new Lua VM instance, preloads the \cqueues library, and loads and executes the specified function from the new LWP thread and Lua instance. The function receives as the first parameter one end of the socket pair---instantiated as a \module{cqueues.socket} object---followed by the string parameters passed to thread.start.
 
 The new LWP thread starts with all signals blocked.
 
@@ -565,24 +594,24 @@ On error returns two nils and an error code.
 \subsubsection[\fn{thread:join}]{\fn{thread.join([timeout])}}
 Wait for the thread to terminate. Calling the equivalent of thread.self():join() is disallowed.
 
-Returns a boolean and error value. If false, error value is an error code describing a local error, usually EAGAIN or ETIMEDOUT. If true, error value is 1) an error code describing a system error which the thread encountered, 2) an error message string returned by the new Lua instance, or 3) nil if completed successfully.
+Returns a boolean and error value. If false, error value is an error code describing a local error, usually \errno{EAGAIN} or \errno{ETIMEDOUT}. If true, error value is 1) an error code describing a system error which the thread encountered, 2) an error message string returned by the new Lua instance, or 3) nil if completed successfully.
 
 \end{Module}
 
 \begin{Module}{cqueues.notify}
 
 \subsubsection[\fn{notify[]}]{\fn{notify[]}}
-A table mapping bitwise flags to names.
+A table mapping bitwise flags to names, and vice-versa.
 
 \begin{tabular}{c | l}
 
 name & description \\\hline
 CREATE & file creation event \\
-DELETE & file deletion event \\
 ATTRIB & metadata change event \\
 MODIFY & modification to file contents or directory entries \\ 
 REVOKE & permission revoked \\
-ALL    & bitwise or of CREATE, DELETE, ATTRIB, MODIFY, and REVOKE
+DELETE & file deletion event \\
+ALL    & bitwise-or of CREATE, DELETE, ATTRIB, MODIFY, and REVOKE
 %\hline
 %INOTIFY   & foo \\
 %FEN       & foo \\
@@ -593,6 +622,10 @@ ALL    & bitwise or of CREATE, DELETE, ATTRIB, MODIFY, and REVOKE
 %O\_CLOEXEC & foo \\
 %IN\_CLOEXEC & foo \\
 \end{tabular}
+
+\subsubsection[\fn{notify.flags}]{\fn{notify.flags(bitset[, bitset $\ldots$ ])}}
+
+Returns an iterator over the flags in the specified bitwise change sets. Thus, \texttt{notify.flags(bit32.xor(notify.CREATE, notify.DELETE), notify.MODIFY)} returns an iterator returning all three flags.
 
 \subsubsection[\fn{notify.opendir}]{\fn{notify.opendir(path[, changes ])}}
 
@@ -605,6 +638,10 @@ Track the specified file name within the notification directory. `changes' defau
 \subsubsection[\fn{notify:get}]{\fn{notify:get([timeout])}}
 
 Returns a bitwise change set and a filename on success.
+
+\subsubsection[\fn{notify:changes}]{\fn{notify:changes([timeout])}}
+
+Returns an iterator over the \method{notify:get} method.
 
 \end{Module}
 
