@@ -168,9 +168,62 @@ static int ln_interpose(lua_State *L) {
 } /* ln_interpose() */
 
 
+static int ln_strflag(lua_State *L) {
+	int flags = luaL_checkint(L, 1);
+	int flag, count = 0;
+	const char *name;
+
+	while (ffs(flags)) {
+		flag = 1 << (ffs(flags) - 1);
+		flags &= ~flag;
+
+		if ((name = notify_strflag(flag))) {
+			lua_pushstring(L, name);
+			count++;
+		}
+	}
+
+	return count;
+} /* ln_strflag() */
+
+
+static int ln_nxtflag(lua_State *L) {
+	int flags = (int)lua_tointeger(L, lua_upvalueindex(1));
+	const char *name;
+	int flag;
+
+	if (ffs(flags)) {
+		flag = 1 << (ffs(flags) - 1);
+
+		lua_pushinteger(L, flags & ~flag);
+		lua_replace(L, lua_upvalueindex(1));
+
+		lua_pushinteger(L, flag);
+
+		return 1;
+	}
+
+	return 0;
+} /* ln_nxtflag() */
+
+static int ln_flags(lua_State *L) {
+	int i, flags = 0;
+
+	for (i = 1; i <= lua_gettop(L); i++)
+		flags |= luaL_checkint(L, i);
+
+	lua_pushinteger(L, flags);
+	lua_pushcclosure(L, &ln_nxtflag, 1);
+
+	return 1;
+} /* ln_flags() */
+
+
 static const luaL_Reg ln_globals[] = {
 	{ "opendir",   &ln_opendir },
 	{ "interpose", &ln_interpose },
+	{ "strflag",   &ln_strflag },
+	{ "flags",     &ln_flags },
 	{ NULL,        NULL }
 };
 
@@ -215,6 +268,9 @@ int luaopen__cqueues_notify(lua_State *L) {
 		lua_pushstring(L, flag[i].name);
 		lua_settable(L, -3);
 	}
+
+	lua_pushinteger(L, notify_features());
+	lua_setfield(L, -2, "FEATURES");
 
 	return 1;
 } /* luaopen__cqueues_notify() */

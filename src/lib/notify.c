@@ -106,14 +106,15 @@ int notify_features(void) {
 } /* notify_features() */
 
 
-const char *notify_strfeature(int flag) {
-	static const char *table[16] = {
-		"inotify", "FEN", "kqueue", "kqueue1", "openat", "fdopendir",
-		"O_CLOEXEC", "IN_CLOEXEC",
+const char *notify_strflag(int flag) {
+	static const char *table[32] = {
+		[0] = "CREATE", "ATTRIB", "MODIFY", "REVOKE", "DELETE",
+		[16] = "inotify", "FEN", "kqueue", "kqueue1", "openat",
+		       "fdopendir", "O_CLOEXEC", "IN_CLOEXEC",
 	};
 
-	return (ffs(0xFFFF0000 & flag))? table[ffs(0xFFFF0000 & flag) - 17] : NULL;
-} /* notify_strfeature() */
+	return (ffs(0xFFFFFFFF & flag))? table[ffs(0xFFFFFFFF & flag) - 1] : NULL;
+} /* notify_strflag() */
 
 
 /*
@@ -1169,7 +1170,7 @@ static void printfeat(void) {
 
 	while (features) {
 		flag = 1 << (ffs(features) - 1);
-		printf("%s\n", notify_strfeature(flag));
+		printf("%s\n", notify_strflag(flag));
 		features &= ~flag;
 	}
 } /* printfeat() */

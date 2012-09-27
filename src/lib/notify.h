@@ -26,17 +26,19 @@
 #ifndef NOTIFY_H
 #define NOTIFY_H
 
+#define NOTIFY_VERSION 0x20120926
+
+
 #define NOTIFY_CREATE 0x01
-#define NOTIFY_DELETE 0x02
-#define NOTIFY_ATTRIB 0x04
-#define NOTIFY_MODIFY 0x08
-#define NOTIFY_REVOKE 0x10
+#define NOTIFY_ATTRIB 0x02
+#define NOTIFY_MODIFY 0x04
+#define NOTIFY_REVOKE 0x08
+#define NOTIFY_DELETE 0x10
 
 #define NOTIFY_ALL (NOTIFY_CREATE|NOTIFY_DELETE|NOTIFY_ATTRIB|NOTIFY_MODIFY|NOTIFY_REVOKE)
 
 #define NOTIFY_GLOB 0x20
 #define NOTIFY_GREP 0x40
-
 
 
 #define nfy_error_t int
@@ -70,7 +72,7 @@ nfy_flags_t notify_get(struct notify *, const char **);
 
 nfy_flags_t notify_features(void);
 
-const char *notify_strfeature(nfy_flags_t);
+const char *notify_strflag(nfy_flags_t);
 
 
 #endif /* NOTIFY_H */

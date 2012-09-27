@@ -45,6 +45,15 @@ local loader = function(loader, ...)
 	end)
 
 	--
+	-- notify:changes
+	--
+	notify.interpose("changes", function(self, timeout)
+		return function()
+			return self:get(timeout)
+		end
+	end)
+
+	--
 	-- notify:add
 	--
 	local add; add = notify.interpose("add", function(self, name, flags)
