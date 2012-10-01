@@ -1304,7 +1304,7 @@ int luaopen__openssl_x509_name(lua_State *L) {
 static GENERAL_NAMES *gn_dup(lua_State *L, GENERAL_NAMES *gens) {
 	GENERAL_NAMES **ud = prepsimple(L, X509_GENS_CLASS);
 
-	if (!(*ud = sk_GENERAL_NAMES_dup(gens)))
+	if (!(*ud = sk_GENERAL_NAME_dup(gens)))
 		throwssl(L, "x509.altname.dup");
 
 	return *ud;
@@ -2931,16 +2931,19 @@ static int sx_new(lua_State *L) {
 		"SSLv2", "SSLv3", "SSLv23", "SSL", "TLSv1", "TLS", NULL
 	};
 	SSL_CTX **ud = prepsimple(L, SSL_CTX_CLASS);
-	SSL_METHOD *(*method)() = &TLSv1_client_method;
+	/* later versions of SSL declare a const qualifier on the return type */
+	__typeof__(&TLSv1_client_method) method = &TLSv1_client_method;
 	_Bool srv;
 
 	lua_settop(L, 2);
 	srv = lua_toboolean(L, 2);
 
 	switch (checkoption(L, 1, "TLS", opts)) {
+#ifndef OPENSSL_NO_SSL2
 	case 0: /* SSLv2 */
 		method = (srv)? &SSLv2_server_method : &SSLv2_client_method;
 		break;
+#endif
 	case 1: /* SSLv3 */
 		method = (srv)? &SSLv3_server_method : &SSLv3_client_method;
 		break;
