@@ -13,7 +13,7 @@ VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
 
 CPPFLAGS = -I$(DESTDIR)$(lua52include)
-DFLAGS = -Wall -Wextra -Wno-deprecated-declarations -Wno-unused
+DFLAGS = -g -Wall -Wextra -Wno-deprecated-declarations -Wno-unused
 CFLAGS = -fPIC $(DFLAGS)
 LDFLAGS = -lssl -lcrypto
 
