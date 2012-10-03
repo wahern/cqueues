@@ -28,12 +28,14 @@
 
 #include <limits.h>	/* INT_MAX INT_MIN */
 #include <string.h>	/* memset(3) */
-#include <math.h>	/* fabs(3) floor(3) round(3) isfinite(3) */
+#include <math.h>	/* INFINITY fabs(3) floor(3) frexp(3) fmod(3) round(3) isfinite(3) */
+#include <time.h>	/* struct tm time_t strptime(3) */
 
 #include <openssl/err.h>
 #include <openssl/bn.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#include <openssl/evp.h>
 
 #include <lua.h>
 #include <lualib.h>
@@ -47,6 +49,8 @@
 
 #define countof(a) (sizeof (a) / sizeof *(a))
 #define endof(a) (&(a)[countof(a)])
+
+#define CLAMP(i, min, max) (((i) < (min))? (min) : ((i) > (max))? (max) : (i))
 
 
 static void *prepudata(lua_State *L, const char *tname, size_t size) {
@@ -124,10 +128,24 @@ static BIGNUM *bn_push(lua_State *L) {
 } /* bn_push() */
 
 
-static int bn_new(lua_State *L) {
-	bn_push(L);
+#define checkbig_(a, b, c, ...) checkbig((a), (b), (c))
+#define checkbig(...) checkbig_(__VA_ARGS__, &(_Bool){ 0 })
 
-	return 1;
+static BIGNUM *(checkbig)(lua_State *, int, _Bool *);
+
+static int bn_new(lua_State *L) {
+	int i, n;
+
+	if ((n = lua_gettop(L)) > 0) {
+		for (i = 1; i <= n; i++)
+			checkbig(L, i);
+
+		return n;
+	} else {
+		bn_push(L);
+
+		return 1;
+	}
 } /* bn_new() */
 
 
@@ -204,7 +222,7 @@ static _Bool f2bn(BIGNUM **bn, double f) {
 } /* f2bn() */
 
 
-static BIGNUM *checkbig(lua_State *L, int index, _Bool *lvalue) {
+static BIGNUM *(checkbig)(lua_State *L, int index, _Bool *lvalue) {
 	BIGNUM **bn;
 	const char *dec;
 	size_t len;
@@ -385,6 +403,15 @@ static int bn__pow(lua_State *L) {
 } /* bn__pow() */
 
 
+static int bn__unm(lua_State *L) {
+	BIGNUM *a = checksimple(L, 1, BIGNUM_CLASS);
+
+	BN_set_negative(a, !BN_is_negative(a));
+
+	return 1;
+} /* bn__unm() */
+
+
 static int bn__eq(lua_State *L) {
 	BIGNUM *a = checksimple(L, 1, BIGNUM_CLASS);
 	BIGNUM *b = checksimple(L, 2, BIGNUM_CLASS);
@@ -451,6 +478,7 @@ static const luaL_Reg bn_metatable[] = {
 	{ "__div",      &bn__div },
 	{ "__mod",      &bn__mod },
 	{ "__pow",      &bn__pow },
+	{ "__unm",      &bn__unm },
 	{ "__eq",       &bn__eq },
 	{ "__lt",       &bn__lt },
 	{ "__le",       &bn__le },
@@ -622,12 +650,12 @@ static int xc_setVersion(lua_State *L) {
 
 static int xc_getSerialNumber(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
-	BIGNUM *srl = bn_push(L);
-	ASN1_INTEGER *num;
+	BIGNUM *serial = bn_push(L);
+	ASN1_INTEGER *i;
 
-	if ((num = X509_get_serialNumber(crt))) {
-		if (!ASN1_INTEGER_to_BN(num, srl))
-			return throwssl(L, "x509.cert.getSerialNumber");
+	if ((i = X509_get_serialNumber(crt))) {
+		if (!ASN1_INTEGER_to_BN(i, serial))
+			return throwssl(L, "x509.cert:getSerialNumber");
 	}
 
 	return 1;
@@ -636,69 +664,233 @@ static int xc_getSerialNumber(lua_State *L) {
 
 static int xc_setSerialNumber(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
-	ASN1_INTEGER *srl = NULL;
-	int ok;
+	ASN1_INTEGER *serial;
 
-	luaL_checkany(L, 2);
+	if (!(serial = BN_to_ASN1_INTEGER(checkbig(L, 2), NULL)))
+		goto error;
 
-	if (lua_isstring(L, 2)) {
-		BIGNUM *num = NULL;
+	if (!X509_set_serialNumber(crt, serial))
+		goto error;
 
-		if (!BN_dec2bn(&num, lua_tostring(L, 2)))
-			goto error;
-
-		if (!(srl = ASN1_INTEGER_new()) || !(BN_to_ASN1_INTEGER(num, srl)))
-			goto error;
-
-		ok = X509_set_serialNumber(crt, srl);
-		ASN1_INTEGER_free(srl);
-
-		if (!ok)
-			goto error;
-	} else {
-		BIGNUM *num = checksimple(L, 2, BIGNUM_CLASS);
-
-		if (!(srl = ASN1_INTEGER_new()) || !(BN_to_ASN1_INTEGER(num, srl)))
-			goto error;
-
-		ok = X509_set_serialNumber(crt, srl);
-		ASN1_INTEGER_free(srl);
-
-		if (!ok)
-			goto error;
-	}
+	ASN1_INTEGER_free(serial);
 
 	lua_pushboolean(L, 1);
 
 	return 1;
 error:
-	return throwssl(L, "x509.cert.setSerialNumber");
+	ASN1_INTEGER_free(serial);
+
+	return throwssl(L, "x509.cert:setSerialNumber");
 } /* xc_setSerialNumber() */
 
 
-#if 0
 static int xc_digest(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	const char *type = luaL_optstring(L, 2, "sha1");
-	const EVP_MD *dgst;
+	int format = luaL_checkoption(L, 3, "*s", (const char *[]){ "*s", "*x", "*n", NULL });
+	const EVP_MD *ctx;
 	unsigned char md[EVP_MAX_MD_SIZE];
-	unsigned int len;
+	unsigned len;
 
-	if (!(dgst = EVP_getdigestbyname(type)))
+	lua_settop(L, 3); /* self, type, hex */
+
+	if (!(ctx = EVP_get_digestbyname(type)))
 		return luaL_error(L, "x509.cert:digest: %s: invalid digest type", type);
 
-	X509_digest(crt, dgst, md, &len);
+	X509_digest(crt, ctx, md, &len);
 
-	lua_pushlstring(L, md, len);
+	switch (format) {
+	case 2: {
+		BIGNUM *bn = bn_push(L);
+
+		if (!BN_bin2bn(md, len, bn))
+			return throwssl(L, "x509.cert:digest");
+
+		break;
+	}
+	case 1: {
+		static const unsigned char x[16] = "0123456789abcdef";
+		luaL_Buffer B;
+
+		luaL_buffinitsize(L, &B, 2 * len);
+
+		for (unsigned i = 0; i < len; i++) {
+			luaL_addchar(&B, x[0x0f & (md[i] >> 4)]);
+			luaL_addchar(&B, x[0x0f & (md[i] >> 0)]);
+		}
+
+		luaL_pushresult(&B);
+
+		break;
+	}
+	default:
+		lua_pushlstring(L, (const char *)md, len);
+
+		break;
+	} /* switch() */
 
 	return 1;
 } /* xc_digest() */
-#endif
 
-static int xc_lifetime(lua_State *L) {
+
+static _Bool isleap(int year) {
+	if (year >= 0)
+		return !(year % 4) && ((year % 100) || !(year % 400));
+	else
+		return isleap(-(year + 1));
+} /* isleap() */
+
+
+static int yday(int year, int mon, int mday) {
+	static const int past[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+	int yday = past[CLAMP(mon, 0, 11)] + CLAMP(mday, 1, 31) - 1;
+
+	return yday + (isleap(year) && mon > 1);
+} /* yday() */
+
+
+static int leaps(int year) {
+	if (year >= 0)
+		return (year / 400) + (year / 4) - (year / 100);
+	else
+		return -(leaps(-(year + 1)) + 1);
+} /* leaps() */
+
+
+static _Bool scan(int *i, char **cp, int n, int signok) {
+	int sign = 1;
+
+	*i = 0;
+
+	if (signok) {
+		if (**cp == '-') {
+			sign = -1;
+			++*cp;
+		} else if (**cp == '+') {
+			++*cp;
+		}
+	}
+
+	while (n-- > 0) {
+		if (**cp < '0' || **cp > '9')
+			return 0;
+
+		*i *= 10;
+		*i += *(*cp)++ - '0';
+	}
+
+	*i *= sign;
+
+	return 1;
+} /* scan() */
+
+
+static double timeutc(ASN1_TIME *time) {
+	char buf[32] = "", *cp;
+	struct tm tm;
+	int gmtoff, year, i;
+	double ts;
+
+	if (!ASN1_TIME_check(time))
+		return 0;
+
+	cp = strncpy(buf, (const char *)ASN1_STRING_data((ASN1_STRING *)time), sizeof buf - 1);
+
+	if (ASN1_STRING_type(time) == V_ASN1_GENERALIZEDTIME) {
+		if (!scan(&year, &cp, 4, 1))
+			goto badfmt;
+	} else {
+		if (!scan(&year, &cp, 2, 0))
+			goto badfmt;
+		year += (year < 50)? 2000 : 1999;
+	}
+
+	tm.tm_year = year - 1900;
+
+	if (!scan(&i, &cp, 2, 0))
+		goto badfmt;
+
+	tm.tm_mon = CLAMP(i, 1, 12) - 1;
+
+	if (!scan(&i, &cp, 2, 0))
+		goto badfmt;
+
+	tm.tm_mday = CLAMP(i, 1, 31);
+
+	tm.tm_yday = yday(year, tm.tm_mon, tm.tm_mday);
+
+	if (!scan(&i, &cp, 2, 0))
+		goto badfmt;
+
+	tm.tm_hour = CLAMP(i, 0, 23);
+
+	if (!scan(&i, &cp, 2, 0))
+		goto badfmt;
+
+	tm.tm_min = CLAMP(i, 0, 59);
+
+	if (*cp >= '0' && *cp <= '9') {
+		if (!scan(&i, &cp, 2, 0))
+			goto badfmt;
+
+		tm.tm_sec = CLAMP(i, 0, 59);
+	}
+
+	if (*cp == '+' || *cp == '-') {
+		int sign = (*cp++ == '-')? -1 : 1;
+		int hh, mm;
+
+		if (!scan(&hh, &cp, 2, 0) || !scan(&mm, &cp, 2, 0))
+			goto badfmt;
+
+		gmtoff = (CLAMP(hh, 0, 23) * 3600)
+		       + (CLAMP(mm, 0, 59) * 60);
+
+		gmtoff *= sign;
+	}
+	
+	ts = 86400.0 * 365.0 * (year - 1970);
+	ts += 86400.0 * (leaps(year - 1) - leaps(1969));
+	ts += 86400 * tm.tm_yday;
+	ts += 3600 * tm.tm_hour;
+	ts += 60 * tm.tm_min;
+	ts += tm.tm_sec;
+	ts += (year < 1970)? gmtoff : -gmtoff;
+
+	return ts;
+badfmt:
+	return INFINITY;
+} /* timeutc() */
+
+
+static int xc_getLifetime(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
-	return 0;
-} /* xc_lifetime() */
+	double begin = INFINITY, end = INFINITY;
+	ASN1_TIME *time;
+
+	if ((time = X509_get_notBefore(crt)))
+		begin = timeutc(time);
+
+	if ((time = X509_get_notAfter(crt)))
+		end = timeutc(time);
+
+	if (isfinite(begin))
+		lua_pushnumber(L, begin);
+	else
+		lua_pushnil(L);
+
+	if (isfinite(end))
+		lua_pushnumber(L, end);
+	else
+		lua_pushnil(L);
+
+	if (isfinite(begin) && isfinite(end) && begin <= end)
+		lua_pushnumber(L, fabs(end - begin));
+	else
+		lua_pushnumber(L, 0.0);
+
+	return 3;
+} /* xc_getLifetime() */
 
 
 static int xc_issuer(lua_State *L) {
