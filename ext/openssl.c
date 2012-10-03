@@ -569,11 +569,11 @@ static int xn_all(lua_State *L) {
 	ASN1_OBJECT *obj;
 	const char *id;
 	char txt[256];
-	int nid, len;
+	int i, nid, len;
 
 	lua_newtable(L);
 
-	for (int i = 0; i < count; i++) {
+	for (i = 0; i < count; i++) {
 		if (!(entry = X509_NAME_get_entry(name, i)))
 			continue;
 
@@ -793,10 +793,11 @@ static int xc_digest(lua_State *L) {
 	case 1: {
 		static const unsigned char x[16] = "0123456789abcdef";
 		luaL_Buffer B;
+		unsigned i;
 
 		luaL_buffinitsize(L, &B, 2 * len);
 
-		for (unsigned i = 0; i < len; i++) {
+		for (i = 0; i < len; i++) {
 			luaL_addchar(&B, x[0x0f & (md[i] >> 4)]);
 			luaL_addchar(&B, x[0x0f & (md[i] >> 0)]);
 		}
@@ -870,7 +871,7 @@ static _Bool scan(int *i, char **cp, int n, int signok) {
 static double timeutc(ASN1_TIME *time) {
 	char buf[32] = "", *cp;
 	struct tm tm;
-	int gmtoff, year, i;
+	int gmtoff = 0, year, i;
 	double ts;
 
 	if (!ASN1_TIME_check(time))
