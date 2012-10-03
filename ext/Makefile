@@ -36,6 +36,13 @@ openssl.o: openssl.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
+install: $(lua52cpath)/_openssl.so
+
+$(lua52cpath)/_openssl.so: openssl.so
+	mkdir -p $(@D)
+	cp -p $< $@
+
+
 .PHONY: clean clean~
 
 clean:
