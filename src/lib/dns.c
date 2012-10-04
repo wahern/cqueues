@@ -6644,7 +6644,7 @@ exec:
 		}
 
 		if (!R->resconf->options.recurse)
-			goto(R->sp, DNS_R_SWITCH);
+			goto(R->sp, DNS_R_SEARCH);
 
 		dns_rr_foreach(&rr, F->answer, .section = DNS_S_NS, .type = DNS_T_NS) {
 			free(F->hints);
