@@ -828,8 +828,13 @@ static int yday(int year, int mon, int mday) {
 	static const int past[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
 	int yday = past[CLAMP(mon, 0, 11)] + CLAMP(mday, 1, 31) - 1;
 
-	return yday + (isleap(year) && mon > 1);
+	return yday + (mon > 1 && isleap(year));
 } /* yday() */
+
+
+static int tm_yday(const struct tm *tm) {
+	return (tm->tm_yday)? tm->tm_yday : yday(1900 + tm->tm_year, tm->tm_mon, tm->tm_mday);
+} /* tm_yday() */
 
 
 static int leaps(int year) {
@@ -838,6 +843,22 @@ static int leaps(int year) {
 	else
 		return -(leaps(-(year + 1)) + 1);
 } /* leaps() */
+
+
+static double tm2unix(const struct tm *tm, int gmtoff) {
+	int year = tm->tm_year + 1900;
+	double ts;
+
+	ts = 86400.0 * 365.0 * (year - 1970);
+	ts += 86400.0 * (leaps(year - 1) - leaps(1969));
+	ts += 86400 * tm_yday(tm);
+	ts += 3600 * tm->tm_hour;
+	ts += 60 * tm->tm_min;
+	ts += CLAMP(tm->tm_sec, 0, 59);
+	ts += (year < 1970)? gmtoff : -gmtoff;
+
+	return ts;
+} /* tm2unix() */
 
 
 static _Bool scan(int *i, char **cp, int n, int signok) {
@@ -932,15 +953,7 @@ static double timeutc(ASN1_TIME *time) {
 		gmtoff *= sign;
 	}
 	
-	ts = 86400.0 * 365.0 * (year - 1970);
-	ts += 86400.0 * (leaps(year - 1) - leaps(1969));
-	ts += 86400 * tm.tm_yday;
-	ts += 3600 * tm.tm_hour;
-	ts += 60 * tm.tm_min;
-	ts += tm.tm_sec;
-	ts += (year < 1970)? gmtoff : -gmtoff;
-
-	return ts;
+	return tm2unix(&tm, gmtoff);
 badfmt:
 	return INFINITY;
 } /* timeutc() */
