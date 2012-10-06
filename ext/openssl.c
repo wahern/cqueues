@@ -62,6 +62,13 @@
 #define stricmp(a, b) strcasecmp((a), (b))
 #define strieq(a, b) (!stricmp((a), (b)))
 
+#define SAY_(file, func, line, fmt, ...) \
+	fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
+
+#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
+
+#define HAI SAY("hai")
+
 
 static void *prepudata(lua_State *L, size_t size, const char *tname, int (*gc)(lua_State *)) {
 	void *p = memset(lua_newuserdata(L, size), 0, size);
@@ -1442,6 +1449,157 @@ static int xc_setSubjectAltCritical(lua_State *L) {
 } /* xc_setSubjectAltCritical() */
 
 
+static int xc_getBasicConstraint(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	BASIC_CONSTRAINTS *bs;
+	int CA, pathLen;
+
+	if (!(bs = X509_get_ext_d2i(crt, NID_basic_constraints, 0, 0))) {
+		/* FIXME: detect error or just non-existent */
+
+		if (lua_gettop(L) > 1)
+			return 0;
+
+		lua_newtable(L);
+
+		return 1;
+	}
+
+	CA = bs->ca;
+	pathLen = ASN1_INTEGER_get(bs->pathlen);
+
+	BASIC_CONSTRAINTS_free(bs);
+
+	if (lua_gettop(L) > 1) {
+		int n = 0, i, top;
+
+		for (i = 2, top = lua_gettop(L); i <= top; i++) {
+			switch (luaL_checkoption(L, i, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
+			case 0:
+				lua_pushboolean(L, CA);
+				n++;
+				break;
+			case 1:
+				/* FALL THROUGH */
+			case 2:
+				lua_pushinteger(L, pathLen);
+				n++;
+				break;
+			}
+		}
+
+		return n;
+	} else {
+		lua_newtable(L);
+
+		lua_pushboolean(L, CA);
+		lua_setfield(L, -2, "CA");
+
+		lua_pushinteger(L, pathLen);
+		lua_setfield(L, -2, "pathLen");
+
+		return 1;
+	}
+} /* xc_getBasicConstraint() */
+
+
+static int xc_setBasicConstraint(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	BASIC_CONSTRAINTS *bs = 0;
+	int CA = -1, pathLen = -1;
+	int critical = 0;
+
+	luaL_checkany(L, 2);
+
+	if (lua_istable(L, 2)) {
+		lua_getfield(L, 2, "CA");
+		if (!lua_isnil(L, -1))
+			CA = lua_toboolean(L, -1);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 2, "pathLen");
+		pathLen = luaL_optint(L, -1, pathLen);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 2, "pathLenConstraint");
+		pathLen = luaL_optint(L, -1, pathLen);
+		lua_pop(L, 1);
+
+		if (!(bs = BASIC_CONSTRAINTS_new()))
+			goto error;
+	} else {
+		lua_settop(L, 3);
+
+		switch (luaL_checkoption(L, 2, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
+		case 0:
+			luaL_checktype(L, 3, LUA_TBOOLEAN);
+			CA = lua_toboolean(L, 3);
+
+			break;
+		case 1:
+			/* FALL THROUGH */
+		case 2:
+			pathLen = luaL_checkint(L, 3);
+
+			break;
+		}
+
+		if (!(bs = X509_get_ext_d2i(crt, NID_basic_constraints, &critical, 0))) {
+			/* FIXME: detect whether error or just non-existent */
+			if (!(bs = BASIC_CONSTRAINTS_new()))
+				goto error;
+		}
+	}
+
+	if (CA != -1)
+		bs->ca = CA;
+
+	if (pathLen >= 0) {
+		ASN1_INTEGER_free(bs->pathlen);
+
+		if (!(bs->pathlen = M_ASN1_INTEGER_new()))
+			goto error;
+
+		if (!ASN1_INTEGER_set(bs->pathlen, pathLen))
+			goto error;
+	}
+
+	if (!X509_add1_ext_i2d(crt, NID_basic_constraints, bs, critical, X509V3_ADD_REPLACE))
+		goto error;
+
+	BASIC_CONSTRAINTS_free(bs);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+error:
+	BASIC_CONSTRAINTS_free(bs);
+
+	return throwssl(L, "x509.cert:setBasicConstraint");
+} /* xc_setBasicConstraint() */
+
+
+static int xc_getBasicConstraintsCritical(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+
+	lua_pushboolean(L, xc_getCritical(crt, NID_basic_constraints));
+
+	return 1;
+} /* xc_getBasicConstraintsCritical() */
+
+
+static int xc_setBasicConstraintsCritical(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+
+	luaL_checkany(L, 2);
+	xc_setCritical(crt, NID_basic_constraints, lua_toboolean(L, 2));
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_setBasicConstraintsCritical() */
+
+
 static int xc__tostring(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	int fmt = luaL_checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
@@ -1500,6 +1658,12 @@ static const luaL_Reg xc_methods[] = {
 	{ "setIssuerAltCritical",  &xc_setIssuerAltCritical },
 	{ "getSubjectAltCritical", &xc_getSubjectAltCritical },
 	{ "setSubjectAltCritical", &xc_setSubjectAltCritical },
+	{ "getBasicConstraints", &xc_getBasicConstraint },
+	{ "getBasicConstraint",  &xc_getBasicConstraint },
+	{ "setBasicConstraints", &xc_setBasicConstraint },
+	{ "setBasicConstraint",  &xc_setBasicConstraint },
+	{ "getBasicConstraintsCritical", &xc_getBasicConstraintsCritical },
+	{ "setBasicConstraintsCritical", &xc_setBasicConstraintsCritical },
 	{ NULL,            NULL },
 };
 
