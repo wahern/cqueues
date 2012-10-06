@@ -126,7 +126,11 @@ static int throwssl(lua_State *L, const char *fun) {
 
 static int interpose(lua_State *L, const char *mt) {
 	luaL_getmetatable(L, mt);
-	lua_getfield(L, -1, "__index");
+
+	if (!strncmp("__", luaL_checkstring(L, 1), 2))
+		lua_pushvalue(L, -1);
+	else
+		lua_getfield(L, -1, "__index");
 
 	lua_pushvalue(L, -4); /* push method name */
 	lua_gettable(L, -2);  /* push old method */
@@ -148,6 +152,19 @@ static void addclass(lua_State *L, const char *name, const luaL_Reg *methods, co
 		lua_pop(L, 1);
 	}
 } /* addclass() */
+
+
+static int checkoption(struct lua_State *L, int index, const char *def, const char *opts[]) {
+	const char *opt = (def)? luaL_optstring(L, index, def) : luaL_checkstring(L, index);
+	int i; 
+
+	for (i = 0; opts[i]; i++) {
+		if (strieq(opts[i], opt))
+			return i;
+	}
+
+	return luaL_argerror(L, index, lua_pushfstring(L, "invalid option %s", opt));
+} /* checkoption() */
 
 
 static void initall(lua_State *L);
@@ -821,7 +838,7 @@ static int gn__next(lua_State *L) {
 
 		switch (name->type) {
 		case GEN_EMAIL:
-			tag = "RFC822";
+			tag = "email";
 			txt = (char *)M_ASN1_STRING_data(name->d.rfc822Name);
 			len = M_ASN1_STRING_length(name->d.rfc822Name);
 
@@ -1474,7 +1491,7 @@ static int xc_getBasicConstraint(lua_State *L) {
 		int n = 0, i, top;
 
 		for (i = 2, top = lua_gettop(L); i <= top; i++) {
-			switch (luaL_checkoption(L, i, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
+			switch (checkoption(L, i, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
 			case 0:
 				lua_pushboolean(L, CA);
 				n++;
@@ -1530,7 +1547,7 @@ static int xc_setBasicConstraint(lua_State *L) {
 	} else {
 		lua_settop(L, 3);
 
-		switch (luaL_checkoption(L, 2, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
+		switch (checkoption(L, 2, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
 		case 0:
 			luaL_checktype(L, 3, LUA_TBOOLEAN);
 			CA = lua_toboolean(L, 3);
@@ -1602,7 +1619,7 @@ static int xc_setBasicConstraintsCritical(lua_State *L) {
 
 static int xc__tostring(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
-	int fmt = luaL_checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
+	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
 	BIO *tmp;
 	char *pem;
 	long len;
