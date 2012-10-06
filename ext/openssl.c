@@ -28,8 +28,12 @@
 
 #include <limits.h>	/* INT_MAX INT_MIN */
 #include <string.h>	/* memset(3) */
+#include <strings.h>	/* strcasecmp(3) */
 #include <math.h>	/* INFINITY fabs(3) floor(3) frexp(3) fmod(3) round(3) isfinite(3) */
 #include <time.h>	/* struct tm time_t strptime(3) */
+
+#include <netinet/in.h>	/* struct in_addr struct in6_addr */
+#include <arpa/inet.h>	/* AF_INET6 AF_INET inet_pton(3) */
 
 #include <openssl/err.h>
 #include <openssl/bn.h>
@@ -45,6 +49,7 @@
 
 
 #define X509_NAME_CLASS "OpenSSL X.509 Name"
+#define X509_GENS_CLASS "OpenSSL X.509 AltName"
 #define X509_CERT_CLASS "OpenSSL X.509 Cert"
 #define BIGNUM_CLASS    "OpenSSL BN"
 
@@ -54,22 +59,45 @@
 
 #define CLAMP(i, min, max) (((i) < (min))? (min) : ((i) > (max))? (max) : (i))
 
+#define stricmp(a, b) strcasecmp((a), (b))
+#define strieq(a, b) (!stricmp((a), (b)))
 
-static void *prepudata(lua_State *L, const char *tname, size_t size) {
+
+static void *prepudata(lua_State *L, size_t size, const char *tname, int (*gc)(lua_State *)) {
 	void *p = memset(lua_newuserdata(L, size), 0, size);
-	luaL_setmetatable(L, tname);
+
+	if (tname) {
+		luaL_setmetatable(L, tname);
+	} else {
+		lua_newtable(L);
+		lua_pushcfunction(L, gc);
+		lua_setfield(L, -2, "__gc");
+		lua_setmetatable(L, -2);
+	}
+
 	return p;
 } /* prepudata() */
 
 
-static void *prepsimple(lua_State *L, const char *tname) {
-	void **p = prepudata(L, tname, sizeof (void *));
+static void *prepsimple(lua_State *L, const char *tname, int (*gc)(lua_State *)) {
+	void **p = prepudata(L, sizeof (void *), tname, gc);
 	return p;
-} /* presimple() */
+} /* prepsimple() */
+
+#define prepsimple_(a, b, c, ...) prepsimple((a), (b), (c))
+#define prepsimple(...) prepsimple_(__VA_ARGS__, 0)
 
 
 static void *checksimple(lua_State *L, int index, const char *tname) {
-	void **p = luaL_checkudata(L, index, tname);
+	void **p;
+
+	if (tname) {
+		p = luaL_checkudata(L, index, tname);
+	} else {
+		luaL_checktype(L, index, LUA_TUSERDATA);
+		p = lua_touserdata(L, index);
+	}
+
 	return *p;
 } /* checksimple() */
 
@@ -309,13 +337,7 @@ static BN_CTX *getctx(lua_State *L) {
 	if (lua_isnil(L, -1)) {
 		lua_pop(L, 1);
 
-		ctx = lua_newuserdata(L, sizeof *ctx);
-		*ctx = NULL;
-
-		lua_newtable(L);
-		lua_pushcfunction(L, &ctx__gc);
-		lua_setfield(L, -2, "__gc");
-		lua_setmetatable(L, -2);
+		ctx = prepsimple(L, NULL, &ctx__gc);
 
 		if (!(*ctx = BN_CTX_new()))
 			throwssl(L, "bignum");
@@ -662,6 +684,239 @@ int luaopen__openssl_x509_name(lua_State *L) {
 
 	return 1;
 } /* luaopen__openssl_x509_name() */
+
+
+/*
+ * GENERAL_NAMES - openssl.x509.altname
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static GENERAL_NAMES *gn_dup(lua_State *L, GENERAL_NAMES *gens) {
+	GENERAL_NAMES **ud = prepsimple(L, X509_GENS_CLASS);
+
+	if (!(*ud = sk_GENERAL_NAMES_dup(gens)))
+		throwssl(L, "x509.altname.dup");
+
+	return *ud;
+} /* gn_dup() */
+
+
+static int gn_new(lua_State *L) {
+	GENERAL_NAMES **ud = prepsimple(L, X509_GENS_CLASS);
+
+	if (!(*ud = sk_GENERAL_NAME_new_null()))
+		return throwssl(L, "x509.altname.new");
+
+	return 1;
+} /* gn_new() */
+
+
+static int gn_interpose(lua_State *L) {
+	return interpose(L, X509_GENS_CLASS);
+} /* gn_interpose() */
+
+
+static int gn_setCritical(lua_State *L) {
+	GENERAL_NAMES *gens = checksimple(L, 1, X509_GENS_CLASS);
+
+	return 0;
+} /* gn_setCritical() */
+
+
+static int gn_checktype(lua_State *L, int index) {
+	static const struct { int type; const char *name; } table[] = {
+		{ GEN_EMAIL, "RFC822Name" },
+		{ GEN_EMAIL, "RFC822" },
+		{ GEN_EMAIL, "email" },
+		{ GEN_URI,   "UniformResourceIdentifier" },
+		{ GEN_URI,   "URI" },
+		{ GEN_DNS,   "DNSName" },
+		{ GEN_DNS,   "DNS" },
+		{ GEN_IPADD, "IPAddress" },
+		{ GEN_IPADD, "IP" },
+	};
+	const char *type = luaL_checkstring(L, index);
+	unsigned i;
+
+	for (i = 0; i < countof(table); i++) {
+		if (strieq(table[i].name, type))
+			return table[i].type;
+	}
+
+	return luaL_error(L, "%s: invalid type", type), 0;
+} /* gn_checktype() */
+
+
+static int gn_add(lua_State *L) {
+	GENERAL_NAMES *gens = checksimple(L, 1, X509_GENS_CLASS);
+	int type = gn_checktype(L, 2);
+	size_t len;
+	const char *txt = luaL_checklstring(L, 3, &len);
+	GENERAL_NAME *gen = NULL;
+	union { struct in6_addr in6; struct in_addr in; } ip;
+
+	if (type == GEN_IPADD) {
+		if (strchr(txt, ':')) {
+			if (1 != inet_pton(AF_INET6, txt, &ip.in6))
+				return luaL_error(L, "%s: invalid address", txt);
+
+			txt = (char *)ip.in6.s6_addr;
+			len = 16;
+		} else {
+			if (1 != inet_pton(AF_INET, txt, &ip.in))
+				return luaL_error(L, "%s: invalid address", txt);
+
+			txt = (char *)&ip.in.s_addr;
+			len = 4;
+		}
+	}
+
+	if (!(gen = GENERAL_NAME_new()))
+		goto error;
+
+	gen->type = type;
+
+	if (!(gen->d.ia5 = M_ASN1_IA5STRING_new()))
+		goto error;
+
+	if (!ASN1_STRING_set(gen->d.ia5, (unsigned char *)txt, len))
+		goto error;
+
+	sk_GENERAL_NAME_push(gens, gen);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+error:
+	GENERAL_NAME_free(gen);
+
+	return throwssl(L, "x509.altname:add");
+} /* gn_add() */
+
+
+static int gn__next(lua_State *L) {
+	GENERAL_NAMES *gens = checksimple(L, lua_upvalueindex(1), X509_GENS_CLASS);
+	int i = lua_tointeger(L, lua_upvalueindex(2));
+	int n = sk_GENERAL_NAME_num(gens);
+
+	lua_settop(L, 0);
+
+	while (i < n) {
+		GENERAL_NAME *name;
+		const char *tag, *txt;
+		size_t len;
+		union { struct in_addr in; struct in6_addr in6; } ip;
+		char buf[INET6_ADDRSTRLEN + 1];
+		int af;
+
+		if (!(name = sk_GENERAL_NAME_value(gens, i++)))
+			continue;
+
+		switch (name->type) {
+		case GEN_EMAIL:
+			tag = "RFC822";
+			txt = (char *)M_ASN1_STRING_data(name->d.rfc822Name);
+			len = M_ASN1_STRING_length(name->d.rfc822Name);
+
+			break;
+		case GEN_URI:
+			tag = "URI";
+			txt = (char *)M_ASN1_STRING_data(name->d.uniformResourceIdentifier);
+			len = M_ASN1_STRING_length(name->d.uniformResourceIdentifier);
+
+			break;
+		case GEN_DNS:
+			tag = "DNS";
+			txt = (char *)M_ASN1_STRING_data(name->d.dNSName);
+			len = M_ASN1_STRING_length(name->d.dNSName);
+
+			break;
+		case GEN_IPADD:
+			tag = "IP";
+			txt = (char *)M_ASN1_STRING_data(name->d.iPAddress);
+			len = M_ASN1_STRING_length(name->d.iPAddress);
+
+			switch (len) {
+			case 16:
+				memcpy(ip.in6.s6_addr, txt, 16);
+				af = AF_INET6;
+
+				break;
+			case 4:
+				memcpy(&ip.in.s_addr, txt, 4);
+				af = AF_INET;
+
+				break;
+			default:
+				continue;
+			}
+
+			if (!(txt = inet_ntop(af, &ip, buf, sizeof buf)))
+				continue;
+
+			len = strlen(txt);
+
+			break;
+		default:
+			continue;
+		}
+
+		lua_pushstring(L, tag);
+		lua_pushlstring(L, txt, len);
+
+		break;
+	}
+
+	lua_pushinteger(L, i);
+	lua_replace(L, lua_upvalueindex(2));
+
+	return lua_gettop(L);
+} /* gn__next() */
+
+static int gn__pairs(lua_State *L) {
+	lua_settop(L, 1);
+	lua_pushinteger(L, 0);
+	lua_pushcclosure(L, &gn__next, 2);
+
+	return 1;
+} /* gn__pairs() */
+
+
+static int gn__gc(lua_State *L) {
+	GENERAL_NAMES **ud = luaL_checkudata(L, 1, X509_GENS_CLASS);
+
+	sk_GENERAL_NAME_pop_free(*ud, GENERAL_NAME_free);
+	*ud = NULL;
+
+	return 0;
+} /* gn__gc() */
+
+
+static const luaL_Reg gn_methods[] = {
+	{ "add", &gn_add },
+	{ NULL,  NULL },
+};
+
+static const luaL_Reg gn_metatable[] = {
+	{ "__pairs", &gn__pairs },
+	{ "__gc",    &gn__gc },
+	{ NULL,      NULL },
+};
+
+
+static const luaL_Reg gn_globals[] = {
+	{ "new",       &gn_new },
+	{ "interpose", &gn_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_x509_altname(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, gn_globals);
+
+	return 1;
+} /* luaopen__openssl_x509_altname() */
 
 
 /*
@@ -1071,6 +1326,122 @@ static int xc_setSubject(lua_State *L) {
 } /* xc_setSubject() */
 
 
+static void xc_setCritical(X509 *crt, int nid, _Bool yes) {
+	X509_EXTENSION *ext;
+	int loc;
+
+	if ((loc = X509_get_ext_by_NID(crt, nid, -1)) >= 0
+	&&  (ext = X509_get_ext(crt, loc)))
+		X509_EXTENSION_set_critical(ext, yes);
+} /* xc_setCritical() */
+
+
+static _Bool xc_getCritical(X509 *crt, int nid) {
+	X509_EXTENSION *ext;
+	int loc;
+
+	if ((loc = X509_get_ext_by_NID(crt, nid, -1)) >= 0
+	&&  (ext = X509_get_ext(crt, loc)))
+		return X509_EXTENSION_get_critical(ext);
+	else
+		return 0;
+} /* xc_getCritical() */
+
+
+static int xc_getIssuerAlt(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	GENERAL_NAMES *gens;
+
+	if (!(gens = X509_get_ext_d2i(crt, NID_issuer_alt_name, 0, 0)))
+		return 0;
+
+	gn_dup(L, gens);
+
+	return 1;
+} /* xc_getIssuerAlt() */
+
+
+static int xc_setIssuerAlt(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	GENERAL_NAMES *gens = checksimple(L, 2, X509_GENS_CLASS);
+
+	if (!X509_add1_ext_i2d(crt, NID_issuer_alt_name, gens, 0, X509V3_ADD_REPLACE))
+		return throwssl(L, "x509.altname:setIssuerAlt");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_setIssuerAlt() */
+
+
+static int xc_getSubjectAlt(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	GENERAL_NAMES *gens;
+
+	if (!(gens = X509_get_ext_d2i(crt, NID_subject_alt_name, 0, 0)))
+		return 0;
+
+	gn_dup(L, gens);
+
+	return 1;
+} /* xc_getSubjectAlt() */
+
+
+static int xc_setSubjectAlt(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	GENERAL_NAMES *gens = checksimple(L, 2, X509_GENS_CLASS);
+
+	if (!X509_add1_ext_i2d(crt, NID_subject_alt_name, gens, 0, X509V3_ADD_REPLACE))
+		return throwssl(L, "x509.altname:setSubjectAlt");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_setSubjectAlt() */
+
+
+static int xc_getIssuerAltCritical(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+
+	lua_pushboolean(L, xc_getCritical(crt, NID_issuer_alt_name));
+
+	return 1;
+} /* xc_getIssuerAltCritical() */
+
+
+static int xc_setIssuerAltCritical(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+
+	luaL_checkany(L, 2);
+	xc_setCritical(crt, NID_issuer_alt_name, lua_toboolean(L, 2));
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_setIssuerAltCritical() */
+
+
+static int xc_getSubjectAltCritical(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+
+	lua_pushboolean(L, xc_getCritical(crt, NID_subject_alt_name));
+
+	return 1;
+} /* xc_getSubjectAltCritical() */
+
+
+static int xc_setSubjectAltCritical(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+
+	luaL_checkany(L, 2);
+	xc_setCritical(crt, NID_subject_alt_name, lua_toboolean(L, 2));
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_setSubjectAltCritical() */
+
+
 static int xc__tostring(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	int fmt = luaL_checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
@@ -1110,18 +1481,26 @@ static int xc__gc(lua_State *L) {
 
 
 static const luaL_Reg xc_methods[] = {
-	{ "getVersion",   &xc_getVersion },
-	{ "setVersion",   &xc_setVersion },
-	{ "getSerial",    &xc_getSerial },
-	{ "setSerial",    &xc_setSerial },
-	{ "digest",       &xc_digest },
-	{ "getLifetime",  &xc_getLifetime },
-	{ "setLifetime",  &xc_setLifetime },
-	{ "getIssuer",    &xc_getIssuer },
-	{ "setIssuer",    &xc_setIssuer },
-	{ "getSubject",   &xc_getSubject },
-	{ "setSubject",   &xc_setSubject },
-	{ NULL,           NULL },
+	{ "getVersion",    &xc_getVersion },
+	{ "setVersion",    &xc_setVersion },
+	{ "getSerial",     &xc_getSerial },
+	{ "setSerial",     &xc_setSerial },
+	{ "digest",        &xc_digest },
+	{ "getLifetime",   &xc_getLifetime },
+	{ "setLifetime",   &xc_setLifetime },
+	{ "getIssuer",     &xc_getIssuer },
+	{ "setIssuer",     &xc_setIssuer },
+	{ "getSubject",    &xc_getSubject },
+	{ "setSubject",    &xc_setSubject },
+	{ "getIssuerAlt",  &xc_getIssuerAlt },
+	{ "setIssuerAlt",  &xc_setIssuerAlt },
+	{ "getSubjectAlt", &xc_getSubjectAlt },
+	{ "setSubjectAlt", &xc_setSubjectAlt },
+	{ "getIssuerAltCritical",  &xc_getIssuerAltCritical },
+	{ "setIssuerAltCritical",  &xc_setIssuerAltCritical },
+	{ "getSubjectAltCritical", &xc_getSubjectAltCritical },
+	{ "setSubjectAltCritical", &xc_setSubjectAltCritical },
+	{ NULL,            NULL },
 };
 
 static const luaL_Reg xc_metatable[] = {
@@ -1152,6 +1531,7 @@ static void initall(lua_State *L) {
 
 	addclass(L, BIGNUM_CLASS, bn_methods, bn_metatable);
 	addclass(L, X509_NAME_CLASS, xn_methods, xn_metatable);
+	addclass(L, X509_GENS_CLASS, gn_methods, gn_metatable);
 	addclass(L, X509_CERT_CLASS, xc_methods, xc_metatable);
 } /* initall() */
 
