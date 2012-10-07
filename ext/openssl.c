@@ -659,6 +659,57 @@ static int xn_all(lua_State *L) {
 } /* xn_all() */
 
 
+static int xn__next(lua_State *L) {
+	X509_NAME *name = checksimple(L, lua_upvalueindex(1), X509_NAME_CLASS);
+	X509_NAME_ENTRY *entry;
+	ASN1_OBJECT *obj;
+	const char *id;
+	char txt[256];
+	int i, n, nid, len;
+
+	lua_settop(L, 0);
+
+	i = lua_tointeger(L, lua_upvalueindex(2));
+	n = X509_NAME_entry_count(name);
+
+	while (i < n) {
+		if (!(entry = X509_NAME_get_entry(name, i++)))
+			continue;
+
+		obj = X509_NAME_ENTRY_get_object(entry);
+		nid = OBJ_obj2nid(obj);
+
+		if (nid != NID_undef && ((id = OBJ_nid2sn(nid)) || (id = OBJ_nid2ln(nid)))) {
+			lua_pushstring(L, id);
+		} else {
+			if (0 > (len = OBJ_obj2txt(txt, sizeof txt, obj, 1)))
+				return throwssl(L, "x509.name:__pairs");
+
+			lua_pushlstring(L, txt, len);
+		}
+
+		len = ASN1_STRING_length(X509_NAME_ENTRY_get_data(entry));
+		lua_pushlstring(L, (char *)ASN1_STRING_data(X509_NAME_ENTRY_get_data(entry)), len);
+
+		break;
+	}
+
+	lua_pushinteger(L, i);
+	lua_replace(L, lua_upvalueindex(2));
+
+	return lua_gettop(L);
+} /* xn__next() */
+
+static int xn__pairs(lua_State *L) {
+	lua_settop(L, 1);
+	lua_pushinteger(L, 0);
+
+	lua_pushcclosure(L, &xn__next, 2);
+
+	return 1;
+} /* xn__pairs() */
+
+
 static int xn__gc(lua_State *L) {
 	X509_NAME **ud = luaL_checkudata(L, 1, X509_NAME_CLASS);
 
@@ -689,6 +740,7 @@ static const luaL_Reg xn_methods[] = {
 };
 
 static const luaL_Reg xn_metatable[] = {
+	{ "__pairs",    &xn__pairs },
 	{ "__gc",       &xn__gc },
 	{ "__tostring", &xn__tostring },
 	{ NULL,         NULL },
