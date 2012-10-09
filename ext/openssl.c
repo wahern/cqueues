@@ -1891,10 +1891,10 @@ static int xc_getIssuer(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	X509_NAME *name;
 
-	if ((name = X509_get_issuer_name(crt)))
-		xn_dup(L, name);
+	if (!(name = X509_get_issuer_name(crt)))
+		return 0;
 
-	lua_pushboolean(L, 1);
+	xn_dup(L, name);
 
 	return 1;
 } /* xc_getIssuer() */
@@ -1917,10 +1917,10 @@ static int xc_getSubject(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	X509_NAME *name;
 
-	if ((name = X509_get_subject_name(crt)))
-		xn_dup(L, name);
+	if (!(name = X509_get_subject_name(crt)))
+		return 0;
 
-	lua_pushboolean(L, 1);
+	xn_dup(L, name);
 
 	return 1;
 } /* xc_getSubject() */
@@ -2449,20 +2449,20 @@ static int xr_setVersion(lua_State *L) {
 } /* xr_setVersion() */
 
 
-static int xr_getSubjectName(lua_State *L) {
+static int xr_getSubject(lua_State *L) {
 	X509_REQ *crt = checksimple(L, 1, X509_CSR_CLASS);
 	X509_NAME *name;
 
-	if ((name = X509_REQ_get_subject_name(crt)))
-		xn_dup(L, name);
+	if (!(name = X509_REQ_get_subject_name(crt)))
+		return 0;
 
-	lua_pushboolean(L, 1);
+	xn_dup(L, name);
 
 	return 1;
-} /* xr_getSubjectName() */
+} /* xr_getSubject() */
 
 
-static int xr_setSubjectName(lua_State *L) {
+static int xr_setSubject(lua_State *L) {
 	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
 	X509_NAME *name = checksimple(L, 2, X509_NAME_CLASS);
 
@@ -2472,7 +2472,7 @@ static int xr_setSubjectName(lua_State *L) {
 	lua_pushboolean(L, 1);
 
 	return 1;
-} /* xr_setSubjectName() */
+} /* xr_setSubject() */
 
 
 static int xr_getPublicKey(lua_State *L) {
@@ -2540,14 +2540,14 @@ static int xr__gc(lua_State *L) {
 } /* xr__gc() */
 
 static const luaL_Reg xr_methods[] = {
-	{ "getVersion",     &xr_getVersion },
-	{ "setVersion",     &xr_setVersion },
-	{ "getSubjectName", &xr_getSubjectName },
-	{ "setSubjectName", &xr_setSubjectName },
-	{ "getPublicKey",   &xr_getPublicKey },
-	{ "setPublicKey",   &xr_setPublicKey },
-	{ "sign",           &xr_sign },
-	{ NULL,             NULL },
+	{ "getVersion",   &xr_getVersion },
+	{ "setVersion",   &xr_setVersion },
+	{ "getSubject",   &xr_getSubject },
+	{ "setSubject",   &xr_setSubject },
+	{ "getPublicKey", &xr_getPublicKey },
+	{ "setPublicKey", &xr_setPublicKey },
+	{ "sign",         &xr_sign },
+	{ NULL,           NULL },
 };
 
 static const luaL_Reg xr_metatable[] = {
@@ -2624,7 +2624,9 @@ static int xl__next(lua_State *L) {
 		if (!(crt = sk_X509_value(chain, i++)))
 			continue;
 
-		ret = prepsimple(L, X509_CHAIN_CLASS);
+		lua_pushinteger(L, i);
+
+		ret = prepsimple(L, X509_CERT_CLASS);
 
 		if (!(*ret = X509_dup(crt)))
 			return throwssl(L, "x509.chain:__next");
@@ -2722,6 +2724,71 @@ static int xs_add(lua_State *L) {
 } /* xs_add() */
 
 
+static int xs_verify(lua_State *L) {
+	X509_STORE *store = checksimple(L, 1, X509_STORE_CLASS);
+	X509 *crt = checksimple(L, 2, X509_CERT_CLASS);
+	STACK_OF(X509) *chain = NULL, **proof;
+	X509_STORE_CTX ctx;
+	int ok, why;
+
+	/* pre-allocate space for a successful return */
+	lua_settop(L, 3);
+	proof = prepsimple(L, X509_CHAIN_CLASS);
+
+	if (!lua_isnoneornil(L, 3)) {
+		X509 *elm;
+		int i, n;
+
+		chain = sk_X509_dup(checksimple(L, 3, X509_CHAIN_CLASS));
+
+		n = sk_X509_num(chain);
+
+		for (i = 0; i < n; i++) {
+			if (!(elm = sk_X509_value(chain, i)))
+				continue;
+			CRYPTO_add(&elm->references, 1, CRYPTO_LOCK_X509);
+		}
+	}
+
+	if (!X509_STORE_CTX_init(&ctx, store, crt, chain)) {
+		sk_X509_pop_free(chain, X509_free);
+		return throwssl(L, "x509.store:verify");
+	}
+
+	ERR_clear_error();
+
+	ok = X509_verify_cert(&ctx);
+
+	switch (ok) {
+	case 1: /* verified */
+		*proof = X509_STORE_CTX_get1_chain(&ctx);
+
+		X509_STORE_CTX_cleanup(&ctx);
+
+		if (!*proof)
+			return throwssl(L, "x509.store:verify");
+
+		lua_pushboolean(L, 1);
+		lua_pushvalue(L, -2);
+
+		return 2;
+	case 0: /* not verified */
+		why = X509_STORE_CTX_get_error(&ctx);
+
+		X509_STORE_CTX_cleanup(&ctx);
+
+		lua_pushboolean(L, 0);
+		lua_pushstring(L, X509_verify_cert_error_string(why));
+
+		return 2;
+	default:
+		X509_STORE_CTX_cleanup(&ctx);
+
+		return throwssl(L, "x509.store:verify");
+	}
+} /* xs_verify() */
+
+
 static int xs__gc(lua_State *L) {
 	X509_STORE **ud = luaL_checkudata(L, 1, X509_STORE_CLASS);
 
@@ -2733,8 +2800,9 @@ static int xs__gc(lua_State *L) {
 
 
 static const luaL_Reg xs_methods[] = {
-	{ "add", &xs_add },
-	{ NULL,  NULL },
+	{ "add",    &xs_add },
+	{ "verify", &xs_verify },
+	{ NULL,     NULL },
 };
 
 static const luaL_Reg xs_metatable[] = {
