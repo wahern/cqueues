@@ -1886,7 +1886,7 @@ static int xc_setLifetime(lua_State *L) {
 static int xc_getIssuer(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	X509_NAME *name;
-	
+
 	if ((name = X509_get_issuer_name(crt)))
 		xn_dup(L, name);
 
@@ -1912,7 +1912,7 @@ static int xc_setIssuer(lua_State *L) {
 static int xc_getSubject(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	X509_NAME *name;
-	
+
 	if ((name = X509_get_subject_name(crt)))
 		xn_dup(L, name);
 
@@ -2226,6 +2226,38 @@ static int xc_setPublicKey(lua_State *L) {
 } /* xc_setPublicKey() */
 
 
+static const EVP_MD *xc_signature(lua_State *L, int index, EVP_PKEY *key) {
+	const char *id;
+	const EVP_MD *md;
+
+	if ((id = luaL_optstring(L, index, NULL)))
+		return ((md = EVP_get_digestbyname(id)))? md : EVP_md_null();
+
+	switch (EVP_PKEY_type(key->type)) {
+	case EVP_PKEY_RSA:
+		return EVP_sha1();
+	case EVP_PKEY_DSA:
+		return EVP_dss1();
+	case EVP_PKEY_EC:
+		return EVP_ecdsa();
+	default:
+		return EVP_md_null();
+	}
+} /* xc_signature() */
+
+static int xc_sign(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	EVP_PKEY *key = checksimple(L, 2, PUBKEY_CLASS);
+
+	if (!X509_sign(crt, key, xc_signature(L, 3, key)))
+		return throwssl(L, "x509.cert:sign");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_sign() */
+
+
 static int xc__tostring(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
@@ -2280,8 +2312,9 @@ static const luaL_Reg xc_methods[] = {
 	{ "setBasicConstraint",  &xc_setBasicConstraint },
 	{ "getBasicConstraintsCritical", &xc_getBasicConstraintsCritical },
 	{ "setBasicConstraintsCritical", &xc_setBasicConstraintsCritical },
-	{ "getPublicKey", &xc_getPublicKey },
-	{ "setPublicKey", &xc_setPublicKey },
+	{ "getPublicKey",  &xc_getPublicKey },
+	{ "setPublicKey",  &xc_setPublicKey },
+	{ "sign",          &xc_sign },
 	{ NULL,            NULL },
 };
 
@@ -2374,6 +2407,19 @@ static int xr_setVersion(lua_State *L) {
 } /* xr_setVersion() */
 
 
+static int xr_getSubjectName(lua_State *L) {
+	X509_REQ *crt = checksimple(L, 1, X509_CSR_CLASS);
+	X509_NAME *name;
+
+	if ((name = X509_REQ_get_subject_name(crt)))
+		xn_dup(L, name);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xr_getSubjectName() */
+
+
 static int xr_setSubjectName(lua_State *L) {
 	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
 	X509_NAME *name = checksimple(L, 2, X509_NAME_CLASS);
@@ -2387,6 +2433,17 @@ static int xr_setSubjectName(lua_State *L) {
 } /* xr_setSubjectName() */
 
 
+static int xr_getPublicKey(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+	EVP_PKEY **key = prepsimple(L, PUBKEY_CLASS);
+
+	if (!(*key = X509_REQ_get_pubkey(csr)))
+		return throwssl(L, "x509.cert:getPublicKey");
+
+	return 1;
+} /* xr_getPublicKey() */
+
+
 static int xr_setPublicKey(lua_State *L) {
 	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
 	EVP_PKEY *key = checksimple(L, 2, PUBKEY_CLASS);
@@ -2398,6 +2455,19 @@ static int xr_setPublicKey(lua_State *L) {
 
 	return 1;
 } /* xr_setPublicKey() */
+
+
+static int xr_sign(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+	EVP_PKEY *key = checksimple(L, 2, PUBKEY_CLASS);
+
+	if (!X509_REQ_sign(csr, key, xc_signature(L, 3, key)))
+		return throwssl(L, "x509.csr:sign");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xr_sign() */
 
 
 static int xr__tostring(lua_State *L) {
@@ -2430,8 +2500,11 @@ static int xr__gc(lua_State *L) {
 static const luaL_Reg xr_methods[] = {
 	{ "getVersion",     &xr_getVersion },
 	{ "setVersion",     &xr_setVersion },
+	{ "getSubjectName", &xr_getSubjectName },
 	{ "setSubjectName", &xr_setSubjectName },
+	{ "getPublicKey",   &xr_getPublicKey },
 	{ "setPublicKey",   &xr_setPublicKey },
+	{ "sign",           &xr_sign },
 	{ NULL,             NULL },
 };
 
