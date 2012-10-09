@@ -48,12 +48,16 @@
 #include <lauxlib.h>
 
 
-#define BIGNUM_CLASS    "OpenSSL BN"
-#define PUBKEY_CLASS    "OpenSSL PK"
-#define X509_NAME_CLASS "OpenSSL X.509 Name"
-#define X509_GENS_CLASS "OpenSSL X.509 AltName"
-#define X509_CERT_CLASS "OpenSSL X.509 Cert"
-#define X509_CSR_CLASS  "OpenSSL X.509 Request"
+#define BIGNUM_CLASS     "OpenSSL Bignum"
+#define PUBKEY_CLASS     "OpenSSL Pubkey"
+#define X509_NAME_CLASS  "OpenSSL X.509 Name"
+#define X509_GENS_CLASS  "OpenSSL X.509 AltName"
+#define X509_CERT_CLASS  "OpenSSL X.509"
+#define X509_CHAIN_CLASS "OpenSSL X.509 Chain"
+#define X509_CSR_CLASS   "OpenSSL X.509 Request"
+#define X509_CHAIN_CLASS "OpenSSL X.509 Chain"
+#define X509_STORE_CLASS "OpenSSL X.509 Store"
+#define X509_STCTX_CLASS "OpenSSL X.509 Store Context"
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
@@ -2202,6 +2206,43 @@ static int xc_setBasicConstraintsCritical(lua_State *L) {
 } /* xc_setBasicConstraintsCritical() */
 
 
+static int xc_isIssuedBy(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	X509 *issuer = checksimple(L, 2, X509_CERT_CLASS);
+	EVP_PKEY *key;
+	int ok, why = 0;
+
+	ERR_clear_error();
+
+	if (X509_V_OK != (why = X509_check_issued(issuer, crt)))
+		goto done;
+
+	if (!(key = X509_get_pubkey(issuer))) {
+		why = X509_V_ERR_UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY;
+		goto done;
+	}
+
+	ok = (1 == X509_verify(crt, key));
+
+	EVP_PKEY_free(key);
+
+	if (!ok)
+		why = X509_V_ERR_CERT_SIGNATURE_FAILURE;
+
+done:
+	if (why != X509_V_OK) {
+		lua_pushboolean(L, 0);
+		lua_pushstring(L, X509_verify_cert_error_string(why));
+
+		return 2;
+	} else {
+		lua_pushboolean(L, 1);
+
+		return 1;
+	}
+} /* xc_isIssuedBy() */
+
+
 static int xc_getPublicKey(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	EVP_PKEY **key = prepsimple(L, PUBKEY_CLASS);
@@ -2312,6 +2353,7 @@ static const luaL_Reg xc_methods[] = {
 	{ "setBasicConstraint",  &xc_setBasicConstraint },
 	{ "getBasicConstraintsCritical", &xc_getBasicConstraintsCritical },
 	{ "setBasicConstraintsCritical", &xc_setBasicConstraintsCritical },
+	{ "isIssuedBy",    &xc_isIssuedBy },
 	{ "getPublicKey",  &xc_getPublicKey },
 	{ "setPublicKey",  &xc_setPublicKey },
 	{ "sign",          &xc_sign },
@@ -2530,6 +2572,261 @@ int luaopen__openssl_x509_csr(lua_State *L) {
 } /* luaopen__openssl_x509_csr() */
 
 
+/*
+ * STACK_OF(X509) - openssl.x509.chain
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int xl_new(lua_State *L) {
+	STACK_OF(X509) **chain = prepsimple(L, X509_CHAIN_CLASS);
+
+	if (!(*chain = sk_X509_new_null()))
+		return throwssl(L, "x509.chain.new");
+
+	return 1;
+} /* xl_new() */
+
+
+static int xl_interpose(lua_State *L) {
+	return interpose(L, X509_CHAIN_CLASS);
+} /* xl_interpose() */
+
+
+static int xl_add(lua_State *L) {
+	STACK_OF(X509) *chain = checksimple(L, 1, X509_CHAIN_CLASS);
+	X509 *crt = checksimple(L, 2, X509_CERT_CLASS);
+	X509 *dup;
+
+	if (!(dup = X509_dup(crt)))
+		return throwssl(L, "x509.chain:add");
+
+	if (!sk_X509_push(chain, dup)) {
+		X509_free(dup);
+		return throwssl(L, "x509.chain:add");
+	}
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xl_add() */
+
+
+static int xl__next(lua_State *L) {
+	STACK_OF(X509) *chain = checksimple(L, lua_upvalueindex(1), X509_CHAIN_CLASS);
+	int i = lua_tointeger(L, lua_upvalueindex(2));
+	int n = sk_X509_num(chain);
+
+	lua_settop(L, 0);
+
+	while (i < n) {
+		X509 *crt, **ret;
+
+		if (!(crt = sk_X509_value(chain, i++)))
+			continue;
+
+		ret = prepsimple(L, X509_CHAIN_CLASS);
+
+		if (!(*ret = X509_dup(crt)))
+			return throwssl(L, "x509.chain:__next");
+
+		break;
+	}
+
+	lua_pushinteger(L, i);
+	lua_replace(L, lua_upvalueindex(2));
+
+	return lua_gettop(L);
+} /* xl__next() */
+
+static int xl__pairs(lua_State *L) {
+	lua_settop(L, 1);
+	lua_pushinteger(L, 0);
+	lua_pushcclosure(L, &xl__next, 2);
+
+	return 1;
+} /* xl__pairs() */
+
+
+static int xl__gc(lua_State *L) {
+	STACK_OF(X509) **chain = luaL_checkudata(L, 1, X509_CHAIN_CLASS);
+
+	sk_X509_pop_free(*chain, X509_free);
+	*chain = NULL;
+
+	return 0;
+} /* xl__gc() */
+
+
+static const luaL_Reg xl_methods[] = {
+	{ "add", &xl_add },
+	{ NULL,  NULL },
+};
+
+static const luaL_Reg xl_metatable[] = {
+	{ "__pairs", &xl__pairs },
+	{ "__gc",    &xl__gc },
+	{ NULL,      NULL },
+};
+
+static const luaL_Reg xl_globals[] = {
+	{ "new",       &xl_new },
+	{ "interpose", &xl_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_x509_chain(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, xl_globals);
+
+	return 1;
+} /* luaopen__openssl_x509_chain() */
+
+
+/*
+ * X509_STORE - openssl.x509.store
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int xs_new(lua_State *L) {
+	X509_STORE **ud = prepsimple(L, X509_STORE_CLASS);
+
+	if (!(*ud = X509_STORE_new()))
+		return throwssl(L, "x509.store");
+
+	return 1;
+} /* xs_new() */
+
+
+static int xs_interpose(lua_State *L) {
+	return interpose(L, X509_STORE_CLASS);
+} /* xs_interpose() */
+
+
+static int xs_add(lua_State *L) {
+	X509_STORE *store = checksimple(L, 1, X509_STORE_CLASS);
+	X509 *crt = checksimple(L, 2, X509_CERT_CLASS);
+	X509 *dup;
+
+	if (!(dup = X509_dup(crt)))
+		return throwssl(L, "x509.store:add");
+
+	if (!X509_STORE_add_cert(store, dup)) {
+		X509_free(dup);
+		return throwssl(L, "x509.store:add");
+	}
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xs_add() */
+
+
+static int xs__gc(lua_State *L) {
+	X509_STORE **ud = luaL_checkudata(L, 1, X509_STORE_CLASS);
+
+	X509_STORE_free(*ud);
+	*ud = NULL;
+
+	return 0;
+} /* xs__gc() */
+
+
+static const luaL_Reg xs_methods[] = {
+	{ "add", &xs_add },
+	{ NULL,  NULL },
+};
+
+static const luaL_Reg xs_metatable[] = {
+	{ "__gc", &xs__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg xs_globals[] = {
+	{ "new",       &xs_new },
+	{ "interpose", &xs_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_x509_store(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, xs_globals);
+
+	return 1;
+} /* luaopen__openssl_x509_store() */
+
+
+/*
+ * X509_STORE_CTX - openssl.x509.store.context
+ *
+ * This object is intended to be a temporary container in OpenSSL, so the
+ * memory management is quite clumsy. In particular, it doesn't take
+ * ownership of the X509_STORE object, which means the reference must be
+ * held externally for the life of the X509_STORE_CTX object.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int sx_new(lua_State *L) {
+	X509_STORE_CTX **ud = prepsimple(L, X509_STCTX_CLASS);
+	STACK_OF(X509) *chain;
+
+	if (!(*ud = X509_STORE_CTX_new()))
+		return throwssl(L, "x509.store.context");
+
+	return 1;
+} /* sx_new() */
+
+
+static int sx_interpose(lua_State *L) {
+	return interpose(L, X509_STCTX_CLASS);
+} /* sx_interpose() */
+
+
+static int sx_add(lua_State *L) {
+	X509_STORE_CTX *ctx = checksimple(L, 1, X509_STCTX_CLASS);
+
+	
+
+	return 0;
+} /* sx_add() */
+
+
+static int sx__gc(lua_State *L) {
+	X509_STORE **ud = luaL_checkudata(L, 1, X509_STORE_CLASS);
+
+	X509_STORE_free(*ud);
+	*ud = NULL;
+
+	return 0;
+} /* sx__gc() */
+
+
+static const luaL_Reg sx_methods[] = {
+	{ "add", &sx_add },
+	{ NULL,  NULL },
+};
+
+static const luaL_Reg sx_metatable[] = {
+	{ "__gc", &sx__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg sx_globals[] = {
+	{ "new",       &sx_new },
+	{ "interpose", &sx_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_x509_store_context(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, sx_globals);
+
+	return 1;
+} /* luaopen__openssl_x509_store_context() */
+
+
 
 static void initall(lua_State *L) {
 	ERR_load_crypto_strings();
@@ -2540,7 +2837,9 @@ static void initall(lua_State *L) {
 	addclass(L, X509_NAME_CLASS, xn_methods, xn_metatable);
 	addclass(L, X509_GENS_CLASS, gn_methods, gn_metatable);
 	addclass(L, X509_CERT_CLASS, xc_methods, xc_metatable);
-	addclass(L, X509_CSR_CLASS,  xr_methods, xr_metatable);
+	addclass(L, X509_CSR_CLASS, xr_methods, xr_metatable);
+	addclass(L, X509_CHAIN_CLASS, xl_methods, xl_metatable);
+	addclass(L, X509_STORE_CLASS, xs_methods, xs_metatable);
 } /* initall() */
 
 
