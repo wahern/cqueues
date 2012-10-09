@@ -2665,9 +2665,10 @@ static const luaL_Reg xl_methods[] = {
 };
 
 static const luaL_Reg xl_metatable[] = {
-	{ "__pairs", &xl__pairs },
-	{ "__gc",    &xl__gc },
-	{ NULL,      NULL },
+	{ "__pairs",  &xl__pairs },
+	{ "__ipairs", &xl__pairs },
+	{ "__gc",     &xl__gc },
+	{ NULL,       NULL },
 };
 
 static const luaL_Reg xl_globals[] = {
