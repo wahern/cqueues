@@ -48,10 +48,12 @@
 #include <lauxlib.h>
 
 
+#define BIGNUM_CLASS    "OpenSSL BN"
+#define PUBKEY_CLASS    "OpenSSL PK"
 #define X509_NAME_CLASS "OpenSSL X.509 Name"
 #define X509_GENS_CLASS "OpenSSL X.509 AltName"
 #define X509_CERT_CLASS "OpenSSL X.509 Cert"
-#define BIGNUM_CLASS    "OpenSSL BN"
+#define X509_CSR_CLASS  "OpenSSL X.509 Request"
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
@@ -109,13 +111,32 @@ static void *checksimple(lua_State *L, int index, const char *tname) {
 } /* checksimple() */
 
 
+static void *testsimple(lua_State *L, int index, const char *tname) {
+	void **p;
+
+	if (tname) {
+		p = luaL_testudata(L, index, tname);
+	} else {
+		luaL_checktype(L, index, LUA_TUSERDATA);
+		p = lua_touserdata(L, index);
+	}
+
+	return *p;
+} /* testsimple() */
+
+
 static int throwssl(lua_State *L, const char *fun) {
 	unsigned long code;
-	const char *file;
+	const char *path, *file;
 	int line;
 	char txt[256];
 
-	code = ERR_get_error_line(&file, &line);
+	code = ERR_get_error_line(&path, &line);
+	if ((file = strrchr(path, '/')))
+		++file;
+	else
+		file = path;
+
 	ERR_clear_error();
 
 	ERR_error_string_n(code, txt, sizeof txt);
@@ -165,6 +186,63 @@ static int checkoption(struct lua_State *L, int index, const char *def, const ch
 
 	return luaL_argerror(L, index, lua_pushfstring(L, "invalid option %s", opt));
 } /* checkoption() */
+
+
+static _Bool getfield(lua_State *L, int index, const char *k) {
+	lua_getfield(L, index, k);
+
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+
+		return 0;
+	} else {
+		return 1;
+	}
+} /* getfield() */
+
+
+static _Bool loadfield(lua_State *L, int index, const char *k, int type, void *p) {
+	if (!getfield(L, index, k))
+		return 0;
+
+	switch (type) {
+	case LUA_TSTRING:
+		*(const char **)p = luaL_checkstring(L, -1);
+		break;
+	case LUA_TNUMBER:
+		*(lua_Number *)p = luaL_checknumber(L, -1);
+		break;
+	default:
+		luaL_error(L, "loadfield(type=%d): invalid type", type);
+		break;
+	} /* switch() */
+
+	lua_pop(L, 1); /* table keeps reference */
+
+	return 1;
+} /* loadfield() */
+
+
+const char *pushnid(lua_State *L, int nid) {
+	const char *txt;
+	ASN1_OBJECT *obj;
+	char buf[256];
+	int len;
+
+	if ((txt = OBJ_nid2sn(nid)) || (txt = OBJ_nid2ln(nid))) {
+		lua_pushstring(L, txt);
+	} else {
+		if (!(obj = OBJ_nid2obj(nid)))
+			luaL_error(L, "%d: unknown ASN.1 NID", nid);
+
+		if (-1 == (len = OBJ_obj2txt(buf, sizeof buf, obj, 1)))
+			luaL_error(L, "%d: invalid ASN.1 NID", nid);
+
+		lua_pushlstring(L, buf, len);
+	}
+
+	return lua_tostring(L, -1);
+} /* pushnid() */
 
 
 static void initall(lua_State *L);
@@ -369,7 +447,6 @@ static BN_CTX *getctx(lua_State *L) {
 		lua_pushcfunction(L, &ctx__gc);
 		lua_pushvalue(L, -2);
 		lua_settable(L, LUA_REGISTRYINDEX);
-		
 	}
 
 	ctx = lua_touserdata(L, -1);
@@ -552,6 +629,454 @@ int luaopen__openssl_bignum(lua_State *L) {
 
 	return 1;
 } /* luaopen__openssl_bignum() */
+
+
+/*
+ * EVP_PKEY - openssl.pubkey
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int bio__gc(lua_State *L) {
+	BIO **bio = lua_touserdata(L, 1);
+
+	BIO_free(*bio);
+	*bio = NULL;
+
+	return 0;
+} /* bio__gc() */
+
+static BIO *getbio(lua_State *L) {
+	BIO **bio;
+
+	lua_pushcfunction(L, &bio__gc);
+	lua_gettable(L, LUA_REGISTRYINDEX);
+
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+
+		bio = prepsimple(L, NULL, &bio__gc);
+
+		if (!(*bio = BIO_new(BIO_s_mem())))
+			throwssl(L, "BIO_new");
+
+		lua_pushcfunction(L, &bio__gc);
+		lua_pushvalue(L, -2);
+		lua_settable(L, LUA_REGISTRYINDEX);
+	}
+
+	bio = lua_touserdata(L, -1);
+	lua_pop(L, 1);
+
+	BIO_reset(*bio);
+
+	return *bio;
+} /* getbio() */
+
+
+static int pk_new(lua_State *L) {
+	EVP_PKEY **ud;
+
+	lua_settop(L, 1);
+
+	ud = prepsimple(L, PUBKEY_CLASS);
+
+	if (lua_istable(L, 1)) {
+		int type = EVP_PKEY_RSA;
+		unsigned bits = 1024;
+		unsigned exp = 65537;
+		int curve = NID_X9_62_prime192v1;
+		const char *id;
+		lua_Number n;
+
+		if (!lua_istable(L, 1))
+			goto creat;
+
+		if (loadfield(L, 1, "type", LUA_TSTRING, &id)) {
+			static const struct { int nid; const char *sn; } types[] = {
+				{ EVP_PKEY_RSA, "RSA" },
+				{ EVP_PKEY_DSA, "DSA" },
+				{ EVP_PKEY_DH,  "DH" },
+				{ EVP_PKEY_EC,  "EC" },
+			};
+			unsigned i;
+
+			type = OBJ_sn2nid(id);
+
+			if (NID_undef == (type = EVP_PKEY_type(OBJ_sn2nid(id)))) {
+				for (i = 0; i < countof(types); i++) {
+					if (strieq(id, types[i].sn)) {
+						type = types[i].nid;
+						break;
+					}
+				}
+			}
+
+			luaL_argcheck(L, type != NID_undef, 1, lua_pushfstring(L, "%s: invalid key type", id));
+		}
+
+		if (loadfield(L, 1, "bits", LUA_TNUMBER, &n)) {
+			luaL_argcheck(L, n > 0 && n < UINT_MAX, 1, lua_pushfstring(L, "%f: `bits' invalid", n));
+			bits = (unsigned)n;
+		}
+
+		if (loadfield(L, 1, "exp", LUA_TNUMBER, &n)) {
+			luaL_argcheck(L, n > 0 && n < UINT_MAX, 1, lua_pushfstring(L, "%f: `exp' invalid", n));
+			exp = (unsigned)n;
+		}
+
+		if (loadfield(L, 1, "curve", LUA_TSTRING, &id)) {
+			curve = OBJ_sn2nid(id);
+			luaL_argcheck(L, curve != NID_undef, 1, lua_pushfstring(L, "%s: invalid curve", id));
+		}
+
+creat:
+		if (!(*ud = EVP_PKEY_new()))
+			return throwssl(L, "pubkey.new");
+
+		switch (EVP_PKEY_type(type)) {
+		case EVP_PKEY_RSA: {
+			RSA *rsa;
+
+			if (!(rsa = RSA_generate_key(bits, exp, 0, 0)))
+				return throwssl(L, "pubkey.new");
+
+			EVP_PKEY_set1_RSA(*ud, rsa);
+
+			RSA_free(rsa);
+
+			break;
+		}
+		case EVP_PKEY_DSA: {
+			DSA *dsa;
+
+			if (!(dsa = DSA_generate_parameters(bits, 0, 0, 0, 0, 0, 0)))
+				return throwssl(L, "pubkey.new");
+
+			if (!DSA_generate_key(dsa)) {
+				DSA_free(dsa);
+				return throwssl(L, "pubkey.new");
+			}
+
+			EVP_PKEY_set1_DSA(*ud, dsa);
+
+			DSA_free(dsa);
+
+			break;
+		}
+		case EVP_PKEY_DH: {
+			DH *dh;
+
+			if (!(dh = DH_generate_parameters(bits, exp, 0, 0)))
+				return throwssl(L, "pubkey.new");
+
+			if (!DH_generate_key(dh)) {
+				DH_free(dh);
+				return throwssl(L, "pubkey.new");
+			}
+
+			EVP_PKEY_set1_DH(*ud, dh);
+
+			DH_free(dh);
+
+			break;
+		}
+		case EVP_PKEY_EC: {
+			EC_GROUP *grp;
+			EC_KEY *key;
+
+			if (!(grp = EC_GROUP_new_by_curve_name(curve)))
+				return throwssl(L, "pubkey.new");
+
+			EC_GROUP_set_asn1_flag(grp, OPENSSL_EC_NAMED_CURVE);
+
+			/* compressed points patented */
+			EC_GROUP_set_point_conversion_form(grp, POINT_CONVERSION_UNCOMPRESSED);
+
+			if (!(key = EC_KEY_new())) {
+				EC_GROUP_free(grp);
+				return throwssl(L, "pubkey.new");
+			}
+
+			EC_KEY_set_group(key, grp);
+
+			EC_GROUP_free(grp);
+
+			if (!EC_KEY_generate_key(key)) {
+				EC_KEY_free(key);
+				return throwssl(L, "pubkey.new");
+			}
+
+			EVP_PKEY_set1_EC_KEY(*ud, key);
+
+			EC_KEY_free(key);
+
+			break;
+		}
+		default:
+			return luaL_error(L, "%d: unknown EVP base type (%d)", EVP_PKEY_type(type), type);
+		} /* switch() */
+	} else {
+		const char *pem;
+		size_t len;
+		BIO *bio;
+		int ok;
+
+		if (!(*ud = EVP_PKEY_new()))
+			return throwssl(L, "pubkey.new");
+
+		switch (lua_type(L, 1)) {
+		case LUA_TSTRING:
+			pem = luaL_checklstring(L, 1, &len);
+
+			if (!(bio = BIO_new_mem_buf((void *)pem, len)))
+				return throwssl(L, "pubkey.new");
+
+			if (strstr(pem, "PUBLIC KEY")) {
+				ok = !!PEM_read_bio_PUBKEY(bio, ud, 0, 0);
+			} else {
+				ok = !!PEM_read_bio_PrivateKey(bio, ud, 0, 0);
+			}
+
+			BIO_free(bio);
+
+			if (!ok)
+				return throwssl(L, "pubkey.new");
+
+			break;
+		default:
+			return luaL_error(L, "%s: unknown key initializer", lua_typename(L, lua_type(L, 1)));
+		} /* switch() */
+	}
+
+	return 1;
+} /* pk_new() */
+
+
+static int pk_interpose(lua_State *L) {
+	return interpose(L, X509_NAME_CLASS);
+} /* pk_interpose() */
+
+
+static int pk_type(lua_State *L) {
+	EVP_PKEY *key = checksimple(L, 1, PUBKEY_CLASS);
+	int nid = key->type;
+
+	pushnid(L, nid);
+
+	return 1;
+} /* pk_type() */
+
+
+static int pk_setPublicKey(lua_State *L) {
+	EVP_PKEY **key = luaL_checkudata(L, 1, PUBKEY_CLASS);
+	const char *pem;
+	size_t len;
+	BIO *bio;
+	int ok;
+
+	lua_settop(L, 2);
+
+	pem = luaL_checklstring(L, 2, &len);
+
+	if (!(bio = BIO_new_mem_buf((void *)pem, len)))
+		return throwssl(L, "pubkey.new");
+
+	ok = !!PEM_read_bio_PUBKEY(bio, key, 0, 0);
+
+	BIO_free(bio);
+
+	if (!ok)
+		return throwssl(L, "pubkey.new");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* pk_setPublicKey() */
+
+
+static int pk_setPrivateKey(lua_State *L) {
+	EVP_PKEY **key = luaL_checkudata(L, 1, PUBKEY_CLASS);
+	const char *pem;
+	size_t len;
+	BIO *bio;
+	int ok;
+
+	lua_settop(L, 2);
+
+	pem = luaL_checklstring(L, 2, &len);
+
+	if (!(bio = BIO_new_mem_buf((void *)pem, len)))
+		return throwssl(L, "pubkey.new");
+
+	ok = !!PEM_read_bio_PrivateKey(bio, key, 0, 0);
+
+	BIO_free(bio);
+
+	if (!ok)
+		return throwssl(L, "pubkey.new");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* pk_setPrivateKEY() */
+
+
+static int pk_toPEM(lua_State *L) {
+	EVP_PKEY *key = checksimple(L, 1, PUBKEY_CLASS);
+	int top, i, ok;
+	BIO *bio;
+	char *pem;
+	long len;
+
+	if (1 == (top = lua_gettop(L))) {
+		lua_pushstring(L, "publickey");
+		++top;
+	}
+
+	bio = getbio(L);
+
+	for (i = 2; i <= top; i++) {
+		static const char *opts[] = {
+			"public", "PublicKey",
+			"private", "PrivateKey",
+//			"params", "Parameters",
+		};
+
+		switch (checkoption(L, i, NULL, opts)) {
+		case 0: case 1:
+			if (!PEM_write_bio_PUBKEY(bio, key))
+				return throwssl(L, "pubkey:__tostring");
+
+			len = BIO_get_mem_data(bio, &pem);
+			lua_pushlstring(L, pem, len);
+
+			BIO_reset(bio);
+			break;
+		case 2: case 3:
+			if (!PEM_write_bio_PrivateKey(bio, key, 0, 0, 0, 0, 0))
+				throwssl(L, "pubkey:__tostring");
+
+			len = BIO_get_mem_data(bio, &pem);
+			lua_pushlstring(L, pem, len);
+
+			break;
+		case 4: case 5:
+			/* EVP_PKEY_base_id not in OS X */
+			switch (EVP_PKEY_type(key->type)) {
+			case EVP_PKEY_RSA:
+				break;
+			case EVP_PKEY_DSA: {
+				DSA *dsa = EVP_PKEY_get1_DSA(key);
+
+				ok = !!PEM_write_bio_DSAparams(bio, dsa);
+
+				DSA_free(dsa);
+
+				if (!ok)
+					return throwssl(L, "pubkey:__tostring");
+
+				break;
+			}
+			case EVP_PKEY_DH: {
+				DH *dh = EVP_PKEY_get1_DH(key);
+
+				ok = !!PEM_write_bio_DHparams(bio, dh);
+
+				DH_free(dh);
+
+				if (!ok)
+					return throwssl(L, "pubkey:__tostring");
+
+				break;
+			}
+			case EVP_PKEY_EC: {
+				EC_KEY *ec = EVP_PKEY_get1_EC_KEY(key);
+				const EC_GROUP *grp = EC_KEY_get0_group(ec);
+
+				ok = !!PEM_write_bio_ECPKParameters(bio, grp);
+
+				EC_KEY_free(ec);
+
+				if (!ok)
+					return throwssl(L, "pubkey:__tostring");
+
+				break;
+			}
+			default:
+				return luaL_error(L, "%d: unknown EVP base type", EVP_PKEY_type(key->type));
+			}
+
+			lua_pushlstring(L, pem, len);
+
+			BIO_reset(bio);
+
+			break;
+		default:
+			lua_pushnil(L);
+
+			break;
+		} /* switch() */
+	} /* for() */
+
+	return lua_gettop(L) - top;
+} /* pk_toPEM() */
+
+
+static int pk__tostring(lua_State *L) {
+	EVP_PKEY *key = checksimple(L, 1, PUBKEY_CLASS);
+	BIO *bio = getbio(L);
+	char *pem;
+	long len;
+	int ok;
+
+	if (!PEM_write_bio_PUBKEY(bio, key))
+		return throwssl(L, "pubkey:__tostring");
+
+	len = BIO_get_mem_data(bio, &pem);
+	lua_pushlstring(L, pem, len);
+
+	return 1;
+} /* pk__tostring() */
+
+
+static int pk__gc(lua_State *L) {
+	EVP_PKEY **ud = luaL_checkudata(L, 1, PUBKEY_CLASS);
+
+	EVP_PKEY_free(*ud);
+	*ud = NULL;
+
+	return 0;
+} /* pk__gc() */
+
+
+static const luaL_Reg pk_methods[] = {
+	{ "type",          &pk_type },
+	{ "setPublicKey",  &pk_setPublicKey },
+	{ "setPrivateKey", &pk_setPrivateKey },
+	{ "toPEM",         &pk_toPEM },
+	{ NULL,            NULL },
+};
+
+static const luaL_Reg pk_metatable[] = {
+	{ "__tostring", &pk__tostring },
+	{ "__gc",       &pk__gc },
+	{ NULL,         NULL },
+};
+
+
+static const luaL_Reg pk_globals[] = {
+	{ "new",       &pk_new },
+	{ "interpose", &pk_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_pubkey(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, pk_globals);
+
+	return 1;
+} /* luaopen__openssl_pubkey() */
 
 
 /*
@@ -1365,7 +1890,9 @@ static int xc_getIssuer(lua_State *L) {
 	if ((name = X509_get_issuer_name(crt)))
 		xn_dup(L, name);
 
-	return !!name;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* xc_getIssuer() */
 
 
@@ -1376,7 +1903,9 @@ static int xc_setIssuer(lua_State *L) {
 	if (!X509_set_issuer_name(crt, name))
 		return throwssl(L, "x509.cert:setIssuer");
 
-	return !!name;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* xc_setIssuer() */
 
 
@@ -1387,7 +1916,9 @@ static int xc_getSubject(lua_State *L) {
 	if ((name = X509_get_subject_name(crt)))
 		xn_dup(L, name);
 
-	return !!name;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* xc_getSubject() */
 
 
@@ -1398,7 +1929,9 @@ static int xc_setSubject(lua_State *L) {
 	if (!X509_set_subject_name(crt, name))
 		return throwssl(L, "x509.cert:setSubject");
 
-	return !!name;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* xc_setSubject() */
 
 
@@ -1669,29 +2202,43 @@ static int xc_setBasicConstraintsCritical(lua_State *L) {
 } /* xc_setBasicConstraintsCritical() */
 
 
+static int xc_getPublicKey(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	EVP_PKEY **key = prepsimple(L, PUBKEY_CLASS);
+
+	if (!(*key = X509_get_pubkey(crt)))
+		return throwssl(L, "x509.cert:getPublicKey");
+
+	return 1;
+} /* xc_getPublicKey() */
+
+
+static int xc_setPublicKey(lua_State *L) {
+	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
+	EVP_PKEY *key = checksimple(L, 2, PUBKEY_CLASS);
+
+	if (!X509_set_pubkey(crt, key))
+		return throwssl(L, "x509.cert:setPublicKey");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xc_setPublicKey() */
+
+
 static int xc__tostring(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
-	BIO *tmp;
+	BIO *bio = getbio(L);
 	char *pem;
 	long len;
 
-	if (!(tmp = BIO_new(BIO_s_mem())))
+	if (!PEM_write_bio_X509(bio, crt))
 		return throwssl(L, "x509.cert:__tostring");
 
-	if (!PEM_write_bio_X509(tmp, crt)) {
-		BIO_free(tmp);
-
-		return throwssl(L, "x509.cert:__tostring");
-	}
-
-	len = BIO_get_mem_data(tmp, &pem);
-
-	/* FIXME: leaks on panic */
+	len = BIO_get_mem_data(bio, &pem);
 
 	lua_pushlstring(L, pem, len);
-
-	BIO_free(tmp);
 
 	return 1;
 } /* xc__tostring() */
@@ -1733,6 +2280,8 @@ static const luaL_Reg xc_methods[] = {
 	{ "setBasicConstraint",  &xc_setBasicConstraint },
 	{ "getBasicConstraintsCritical", &xc_getBasicConstraintsCritical },
 	{ "setBasicConstraintsCritical", &xc_setBasicConstraintsCritical },
+	{ "getPublicKey", &xc_getPublicKey },
+	{ "setPublicKey", &xc_setPublicKey },
 	{ NULL,            NULL },
 };
 
@@ -1758,14 +2307,167 @@ int luaopen__openssl_x509_cert(lua_State *L) {
 } /* luaopen__openssl_x509_cert() */
 
 
+/*
+ * X509_REQ - openssl.x509.csr
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int xr_new(lua_State *L) {
+	const char *pem;
+	size_t len;
+	X509_REQ **ud;
+	X509 *crt;
+
+	lua_settop(L, 1);
+
+	ud = prepsimple(L, X509_CSR_CLASS);
+
+	if ((crt = testsimple(L, 1, X509_CERT_CLASS))) {
+		if (!(*ud = X509_to_X509_REQ(crt, 0, 0)))
+			return throwssl(L, "x509.csr.new");
+	} else if ((pem = luaL_optlstring(L, 1, NULL, &len))) {
+		BIO *tmp;
+		int ok;
+
+		if (!(tmp = BIO_new_mem_buf((char *)pem, len)))
+			return throwssl(L, "x509.csr.new");
+
+		ok = !!PEM_read_bio_X509_REQ(tmp, ud, 0, ""); /* no password */
+
+		BIO_free(tmp);
+
+		if (!ok)
+			return throwssl(L, "x509.csr.new");
+	} else {
+		if (!(*ud = X509_REQ_new()))
+			return throwssl(L, "x509.csr.new");
+	}
+
+	return 1;
+} /* xr_new() */
+
+
+static int xr_interpose(lua_State *L) {
+	return interpose(L, X509_CSR_CLASS);
+} /* xr_interpose() */
+
+
+static int xr_getVersion(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+
+	lua_pushinteger(L, X509_REQ_get_version(csr) + 1);
+
+	return 1;
+} /* xr_getVersion() */
+
+
+static int xr_setVersion(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+	int version = luaL_checkint(L, 2);
+
+	if (!X509_REQ_set_version(csr, version - 1))
+		return luaL_error(L, "x509.csr:setVersion: %d: invalid version", version);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xr_setVersion() */
+
+
+static int xr_setSubjectName(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+	X509_NAME *name = checksimple(L, 2, X509_NAME_CLASS);
+
+	if (!X509_REQ_set_subject_name(csr, name))
+		return throwssl(L, "x509.csr:setSubject");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xr_setSubjectName() */
+
+
+static int xr_setPublicKey(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+	EVP_PKEY *key = checksimple(L, 2, PUBKEY_CLASS);
+
+	if (!X509_REQ_set_pubkey(csr, key))
+		return throwssl(L, "x509.csr:setPublicKey");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* xr_setPublicKey() */
+
+
+static int xr__tostring(lua_State *L) {
+	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
+	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
+	BIO *bio = getbio(L);
+	char *pem;
+	long len;
+
+	if (!PEM_write_bio_X509_REQ(bio, csr))
+		return throwssl(L, "x509.csr:__tostring");
+
+	len = BIO_get_mem_data(bio, &pem);
+
+	lua_pushlstring(L, pem, len);
+
+	return 1;
+} /* xr__tostring() */
+
+
+static int xr__gc(lua_State *L) {
+	X509_REQ **ud = luaL_checkudata(L, 1, X509_CSR_CLASS);
+
+	X509_REQ_free(*ud);
+	*ud = NULL;
+
+	return 0;
+} /* xr__gc() */
+
+static const luaL_Reg xr_methods[] = {
+	{ "getVersion",     &xr_getVersion },
+	{ "setVersion",     &xr_setVersion },
+	{ "setSubjectName", &xr_setSubjectName },
+	{ "setPublicKey",   &xr_setPublicKey },
+	{ NULL,             NULL },
+};
+
+static const luaL_Reg xr_metatable[] = {
+	{ "__tostring", &xr__tostring },
+	{ "__gc",       &xr__gc },
+	{ NULL,         NULL },
+};
+
+
+static const luaL_Reg xr_globals[] = {
+	{ "new",       &xr_new },
+	{ "interpose", &xr_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_x509_csr(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, xr_globals);
+
+	return 1;
+} /* luaopen__openssl_x509_csr() */
+
+
+
 static void initall(lua_State *L) {
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
 
 	addclass(L, BIGNUM_CLASS, bn_methods, bn_metatable);
+	addclass(L, PUBKEY_CLASS, pk_methods, pk_metatable);
 	addclass(L, X509_NAME_CLASS, xn_methods, xn_metatable);
 	addclass(L, X509_GENS_CLASS, gn_methods, gn_metatable);
 	addclass(L, X509_CERT_CLASS, xc_methods, xc_metatable);
+	addclass(L, X509_CSR_CLASS,  xr_methods, xr_metatable);
 } /* initall() */
 
 
