@@ -32,6 +32,9 @@
 #include <math.h>	/* INFINITY fabs(3) floor(3) frexp(3) fmod(3) round(3) isfinite(3) */
 #include <time.h>	/* struct tm time_t strptime(3) */
 
+#include <sys/types.h>
+#include <sys/stat.h>	/* struct stat stat(2) */
+
 #include <netinet/in.h>	/* struct in_addr struct in6_addr */
 #include <arpa/inet.h>	/* AF_INET6 AF_INET inet_pton(3) */
 
@@ -42,6 +45,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 
 #include <lua.h>
 #include <lualib.h>
@@ -58,6 +62,7 @@
 #define X509_CHAIN_CLASS "OpenSSL X.509 Chain"
 #define X509_STORE_CLASS "OpenSSL X.509 Store"
 #define X509_STCTX_CLASS "OpenSSL X.509 Store Context"
+#define SSL_CTX_CLASS    "OpenSSL SSL Context"
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
@@ -2708,15 +2713,36 @@ static int xs_interpose(lua_State *L) {
 
 static int xs_add(lua_State *L) {
 	X509_STORE *store = checksimple(L, 1, X509_STORE_CLASS);
-	X509 *crt = checksimple(L, 2, X509_CERT_CLASS);
-	X509 *dup;
+	int i, top = lua_gettop(L);
 
-	if (!(dup = X509_dup(crt)))
-		return throwssl(L, "x509.store:add");
+	for (i = 2; i <= top; i++) {
+		if (lua_isuserdata(L, i)) {
+			X509 *crt = checksimple(L, i, X509_CERT_CLASS);
+			X509 *dup;
 
-	if (!X509_STORE_add_cert(store, dup)) {
-		X509_free(dup);
-		return throwssl(L, "x509.store:add");
+			if (!(dup = X509_dup(crt)))
+				return throwssl(L, "x509.store:add");
+
+			if (!X509_STORE_add_cert(store, dup)) {
+				X509_free(dup);
+				return throwssl(L, "x509.store:add");
+			}
+		} else {
+			const char *path = luaL_checkstring(L, i);
+			struct stat st;
+			int ok;
+
+			if (0 != stat(path, &st))
+				return luaL_error(L, "%s: %s", path, strerror(errno));
+
+			if (S_ISDIR(st.st_mode))
+				ok = X509_STORE_load_locations(store, NULL, path);
+			else
+				ok = X509_STORE_load_locations(store, path, NULL);
+
+			if (!ok)
+				return throwssl(L, "x509.store:add");
+		}
 	}
 
 	lua_pushboolean(L, 1);
@@ -2835,8 +2861,8 @@ int luaopen__openssl_x509_store(lua_State *L) {
  * held externally for the life of the X509_STORE_CTX object.
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-static int sx_new(lua_State *L) {
+#if 0
+static int stx_new(lua_State *L) {
 	X509_STORE_CTX **ud = prepsimple(L, X509_STCTX_CLASS);
 	STACK_OF(X509) *chain;
 
@@ -2844,27 +2870,148 @@ static int sx_new(lua_State *L) {
 		return throwssl(L, "x509.store.context");
 
 	return 1;
+} /* stx_new() */
+
+
+static int stx_interpose(lua_State *L) {
+	return interpose(L, X509_STCTX_CLASS);
+} /* stx_interpose() */
+
+
+static int stx_add(lua_State *L) {
+	X509_STORE_CTX *ctx = checksimple(L, 1, X509_STCTX_CLASS);
+
+	return 0;
+} /* stx_add() */
+
+
+static int stx__gc(lua_State *L) {
+	X509_STORE **ud = luaL_checkudata(L, 1, X509_STORE_CLASS);
+
+	X509_STORE_free(*ud);
+	*ud = NULL;
+
+	return 0;
+} /* stx__gc() */
+
+
+static const luaL_Reg stx_methods[] = {
+	{ "add", &stx_add },
+	{ NULL,  NULL },
+};
+
+static const luaL_Reg stx_metatable[] = {
+	{ "__gc", &stx__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg stx_globals[] = {
+	{ "new",       &stx_new },
+	{ "interpose", &stx_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_x509_store_context(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, stx_globals);
+
+	return 1;
+} /* luaopen__openssl_x509_store_context() */
+#endif
+
+
+/*
+ * SSL_CTX - openssl.ssl.context
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int sx_new(lua_State *L) {
+	static const char *opts[] = {
+		"SSLv2", "SSLv3", "SSLv23", "SSL", "TLSv1", "TLS", NULL
+	};
+	SSL_CTX **ud = prepsimple(L, SSL_CTX_CLASS);
+	SSL_METHOD *(*method)() = &TLSv1_client_method;
+	_Bool srv;
+
+	lua_settop(L, 2);
+	srv = lua_toboolean(L, 2);
+
+	switch (checkoption(L, 1, "TLS", opts)) {
+	case 0: /* SSLv2 */
+		method = (srv)? &SSLv2_server_method : &SSLv2_client_method;
+		break;
+	case 1: /* SSLv3 */
+		method = (srv)? &SSLv3_server_method : &SSLv3_client_method;
+		break;
+	case 2: /* SSLv23 */
+		/* FALL THROUGH */
+	case 3: /* SSL */
+		method = (srv)? &SSLv23_server_method : &SSLv23_client_method;
+		break;
+	case 4: /* TLSv1 */
+		/* FALL THROUGH */
+	case 5: /* TLS */
+		method = (srv)? &TLSv1_server_method : &TLSv1_client_method;
+		break;
+	}
+
+	if (!(*ud = SSL_CTX_new(method())))
+		return throwssl(L, "ssl.context.new");
+
+	return 1;
 } /* sx_new() */
 
 
 static int sx_interpose(lua_State *L) {
-	return interpose(L, X509_STCTX_CLASS);
+	return interpose(L, SSL_CTX_CLASS);
 } /* sx_interpose() */
 
 
-static int sx_add(lua_State *L) {
-	X509_STORE_CTX *ctx = checksimple(L, 1, X509_STCTX_CLASS);
+static int sx_setStore(lua_State *L) {
+	SSL_CTX *ctx = checksimple(L, 1, SSL_CTX_CLASS);
+	X509_STORE *store = checksimple(L, 2, X509_STORE_CLASS);
 
-	
+	SSL_CTX_set_cert_store(ctx, store);
+	CRYPTO_add(&store->references, 1, CRYPTO_LOCK_X509_STORE);
 
-	return 0;
-} /* sx_add() */
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* sx_setStore() */
+
+
+static int sx_setVerify(lua_State *L) {
+	SSL_CTX *ctx = checksimple(L, 1, SSL_CTX_CLASS);
+	int mode = luaL_optint(L, 2, -1);
+	int depth = luaL_optint(L, 3, -1);
+
+	if (mode != -1)
+		SSL_CTX_set_verify(ctx, mode, 0);
+
+	if (depth != -1)
+		SSL_CTX_set_verify_depth(ctx, depth);
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* sx_setVerify() */
+
+
+static int sx_getVerify(lua_State *L) {
+	SSL_CTX *ctx = checksimple(L, 1, SSL_CTX_CLASS);
+
+	lua_pushinteger(L, SSL_CTX_get_verify_mode(ctx));
+	lua_pushinteger(L, SSL_CTX_get_verify_depth(ctx));
+
+	return 2;
+} /* sx_getVerify() */
 
 
 static int sx__gc(lua_State *L) {
-	X509_STORE **ud = luaL_checkudata(L, 1, X509_STORE_CLASS);
+	SSL_CTX **ud = luaL_checkudata(L, 1, SSL_CTX_CLASS);
 
-	X509_STORE_free(*ud);
+	SSL_CTX_free(*ud);
 	*ud = NULL;
 
 	return 0;
@@ -2872,8 +3019,10 @@ static int sx__gc(lua_State *L) {
 
 
 static const luaL_Reg sx_methods[] = {
-	{ "add", &sx_add },
-	{ NULL,  NULL },
+	{ "setStore",  &sx_setStore },
+	{ "setVerify", &sx_setVerify },
+	{ "getVerify", &sx_getVerify },
+	{ NULL,        NULL },
 };
 
 static const luaL_Reg sx_metatable[] = {
@@ -2887,13 +3036,25 @@ static const luaL_Reg sx_globals[] = {
 	{ NULL,        NULL },
 };
 
-int luaopen__openssl_x509_store_context(lua_State *L) {
+int luaopen__openssl_ssl_context(lua_State *L) {
 	initall(L);
 
 	luaL_newlib(L, sx_globals);
 
+	lua_pushinteger(L, SSL_VERIFY_NONE);
+	lua_setfield(L, -2, "VERIFY_NONE");
+
+	lua_pushinteger(L, SSL_VERIFY_PEER);
+	lua_setfield(L, -2, "VERIFY_PEER");
+
+	lua_pushinteger(L, SSL_VERIFY_FAIL_IF_NO_PEER_CERT);
+	lua_setfield(L, -2, "VERIFY_FAIL_IF_NO_PEER_CERT");
+
+	lua_pushinteger(L, SSL_VERIFY_CLIENT_ONCE);
+	lua_setfield(L, -2, "VERIFY_CLIENT_ONCE");
+
 	return 1;
-} /* luaopen__openssl_x509_store_context() */
+} /* luaopen__openssl_ssl_context() */
 
 
 
@@ -2909,6 +3070,7 @@ static void initall(lua_State *L) {
 	addclass(L, X509_CSR_CLASS, xr_methods, xr_metatable);
 	addclass(L, X509_CHAIN_CLASS, xl_methods, xl_metatable);
 	addclass(L, X509_STORE_CLASS, xs_methods, xs_metatable);
+	addclass(L, SSL_CTX_CLASS, sx_methods, sx_metatable);
 } /* initall() */
 
 
