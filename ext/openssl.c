@@ -34,9 +34,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>	/* struct stat stat(2) */
+#include <sys/socket.h>	/* AF_INET AF_INET6 */
 
 #include <netinet/in.h>	/* struct in_addr struct in6_addr */
-#include <arpa/inet.h>	/* AF_INET6 AF_INET inet_pton(3) */
+#include <arpa/inet.h>	/* inet_pton(3) */
 
 #include <openssl/err.h>
 #include <openssl/bn.h>
