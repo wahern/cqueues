@@ -618,11 +618,12 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
+	SSL_CTX **ctx = luaL_testudata(L, 2, "OpenSSL SSL Context");
 	int error;
 
 	so_clear(S->socket);
 
-	if (!(error = so_starttls(S->socket, NULL))) {
+	if (!(error = so_starttls(S->socket, (ctx)? *ctx : 0))) {
 		lua_pushboolean(L, 1);
 
 		return 1;
