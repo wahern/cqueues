@@ -36,9 +36,45 @@ openssl.o: openssl.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
-install: $(lua52cpath)/_openssl.so
+install: $(lua52cpath)/_openssl.so $(lua52path)/openssl/bignum.lua \
+         $(lua52path)/openssl/pubkey.lua $(lua52path)/openssl/x509.lua \
+         $(lua52path)/openssl/x509/name.lua $(lua52path)/openssl/x509/altname.lua \
+         $(lua52path)/openssl/x509/chain.lua $(lua52path)/openssl/x509/store.lua \
+         $(lua52path)/openssl/ssl/context.lua
 
 $(lua52cpath)/_openssl.so: openssl.so
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/bignum.lua: openssl.bignum.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/pubkey.lua: openssl.pubkey.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/x509.lua: openssl.x509.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/x509/name.lua: openssl.x509.name.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/x509/altname.lua: openssl.x509.altname.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/x509/chain.lua: openssl.x509.chain.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/x509/store.lua: openssl.x509.store.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/ssl/context.lua: openssl.ssl.context.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
