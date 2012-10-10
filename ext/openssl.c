@@ -3008,6 +3008,40 @@ static int sx_getVerify(lua_State *L) {
 } /* sx_getVerify() */
 
 
+static int sx_setCertificate(lua_State *L) {
+	SSL_CTX *ctx = checksimple(L, 1, SSL_CTX_CLASS);
+	X509 *crt = X509_dup(checksimple(L, 2, X509_CERT_CLASS));
+	int ok;
+
+	ok = SSL_CTX_use_certificate(ctx, crt);
+	X509_free(crt);
+
+	if (!ok)
+		return throwssl(L, "ssl.context:setCertificate");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* sx_setCertificate() */
+
+
+static int sx_setPrivateKey(lua_State *L) {
+	SSL_CTX *ctx = checksimple(L, 1, SSL_CTX_CLASS);
+	EVP_PKEY *key = checksimple(L, 2, PUBKEY_CLASS);
+
+	/*
+	 * NOTE: No easy way to dup the key, but a shared reference should
+	 * be okay as keys are less mutable than certificates.
+	 */
+	if (!SSL_CTX_use_PrivateKey(ctx, key))
+		return throwssl(L, "ssl.context:setPrivateKey");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* sx_setPrivateKey() */
+
+
 static int sx__gc(lua_State *L) {
 	SSL_CTX **ud = luaL_checkudata(L, 1, SSL_CTX_CLASS);
 
@@ -3022,7 +3056,9 @@ static const luaL_Reg sx_methods[] = {
 	{ "setStore",  &sx_setStore },
 	{ "setVerify", &sx_setVerify },
 	{ "getVerify", &sx_getVerify },
-	{ NULL,        NULL },
+	{ "setCertificate", &sx_setCertificate },
+	{ "setPrivateKey", &sx_setPrivateKey },
+	{ NULL, NULL },
 };
 
 static const luaL_Reg sx_metatable[] = {
