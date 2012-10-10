@@ -1,0 +1,52 @@
+#!/usr/local/lua52/bin/lua
+--
+-- Example self-signed X.509 certificate generation.
+--
+-- Skips intermediate CSR object, which is just an antiquated way for
+-- specifying subject DN and public key to CAs. See API documentation for
+-- CSR generation.
+--
+
+local pubkey = require"openssl.pubkey"
+local x509 = require"openssl.x509"
+local name = require"openssl.x509.name"
+local altname = require"openssl.x509.altname"
+
+-- generate an elliptic curve key (could also specify RSA or DSA)
+local key = pubkey.new{ type = "EC", bits = 512 }
+
+-- our Subject and Issuer DN (self-signed, so same)
+local dn = name.new()
+dn:add("C", "US")
+dn:add("ST", "California")
+dn:add("L", "San Francisco")
+dn:add("O", "Acme, Inc")
+dn:add("CN", "acme.inc")
+
+-- our Alternative Names
+local alt = altname.new()
+alt:add("DNS", "acme.inc")
+alt:add("DNS", "*.acme.inc")
+
+-- build our certificate
+local crt = x509.new()
+
+crt:setVersion(3)
+crt:setSerial(47)
+
+crt:setSubject(dn)
+crt:setIssuer(crt:getSubject())
+crt:setSubjectAlt(alt)
+
+local issued, expires = crt:getLifetime()
+crt:setLifetime(issued, expires + 60) -- good for 60 seconds
+
+crt:setBasicConstraints{ CA = true, pathLen = 2 }
+crt:setBasicConstraintsCritical(true)
+
+crt:setPublicKey(key)
+crt:sign(key)
+
+-- pretty-print using openssl command-line utility.
+io.popen("openssl x509 -text -noout", "w"):write(tostring(crt))
+
