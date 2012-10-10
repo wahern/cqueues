@@ -40,7 +40,7 @@ all: openssl.so
 openssl.so: openssl.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 
-openssl.o: openssl.c
+openssl.o: openssl.c compat52.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 

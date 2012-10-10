@@ -52,6 +52,9 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
+#if LUA_VERSION_NUM < 502
+#include "compat52.h"
+#endif
 
 #define BIGNUM_CLASS     "OpenSSL Bignum"
 #define PUBKEY_CLASS     "OpenSSL Pubkey"
@@ -1665,7 +1668,11 @@ static int xc_digest(lua_State *L) {
 		luaL_Buffer B;
 		unsigned i;
 
+#if LUA_VERSION_NUM < 502
+		luaL_buffinit(L, &B);
+#else
 		luaL_buffinitsize(L, &B, 2 * len);
+#endif
 
 		for (i = 0; i < len; i++) {
 			luaL_addchar(&B, x[0x0f & (md[i] >> 4)]);
