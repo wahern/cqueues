@@ -1724,6 +1724,9 @@ int so_starttls(struct socket *so, SSL_CTX *ctx) {
 	if (!(so->ssl.ctx = SSL_new(ctx)))
 		goto error;
 
+	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
+
 	/*
 	 * NOTE: SSLv3_server_method()->ssl_connect should be a reference to
 	 * OpenSSL's internal ssl_undefined_function().
