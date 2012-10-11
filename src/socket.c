@@ -438,9 +438,11 @@ static struct luasocket *lso_newsocket(lua_State *L) {
 		cqs_ref(L, &S->onerror);
 	}
 
+#if defined LUA_RIDX_MAINTHREAD
 	lua_rawgeti(L, LUA_REGISTRYINDEX, LUA_RIDX_MAINTHREAD);
 	S->mainthread = lua_tothread(L, -1);
 	lua_pop(L, 1);
+#endif
 
 	luaL_getmetatable(L, LSO_CLASS);
 	lua_setmetatable(L, -2);
@@ -1573,7 +1575,15 @@ static void lso_destroy(lua_State *L, struct luasocket *S) {
 	fifo_reset(&S->ibuf.fifo);
 	fifo_reset(&S->obuf.fifo);
 
-	so_close(S->socket);
+	/* Hack for Lua 5.1 and LuaJIT */
+	if (!S->mainthread) {
+		S->mainthread = L;
+		so_close(S->socket);
+		S->mainthread = 0;
+	} else {
+		so_close(S->socket);
+	}
+
 	S->socket = 0;
 } /* lso_destroy() */
 

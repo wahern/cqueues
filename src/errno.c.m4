@@ -33,6 +33,8 @@
 #include "lib/dns.h"
 #include "lib/socket.h"
 
+#include "cqueues.h"
+
 
 static const struct {
 	const char *name;

@@ -38,6 +38,10 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
+#if LUA_VERSION_NUM < 502
+#include "../ext/compat52.h"
+#endif
+
 
 /*
  * F E A T U R E / E N V I R O N M E N T  M A C R O S

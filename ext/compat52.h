@@ -1,3 +1,6 @@
+#if LUA_VERSION_NUM < 502
+
+#define LUA_OK 0
 
 
 static void luaL_setmetatable(lua_State *L, const char *tname) {
@@ -47,4 +50,71 @@ static void luaL_setfuncs(lua_State *L, const luaL_Reg *l, int nup) {
 	(luaL_newlibtable((L), (l)), luaL_setfuncs((L), (l), 0))
 
 
+static void luaL_requiref(lua_State *L, const char *modname, lua_CFunction openf, int glb) {
+	lua_pushcfunction(L, openf);
+	lua_pushstring(L, modname);
+	lua_call(L, 1, 1);
 
+	lua_getglobal(L, "package");
+	lua_getfield(L, -1, "loaded");
+	lua_pushvalue(L, -3);
+	lua_setfield(L, -2, modname);
+
+	lua_pop(L, 2);
+	
+	if (glb) {
+		lua_pushvalue(L, -1);
+		lua_setglobal(L, modname);
+	}
+} /* luaL_requiref() */
+
+
+#define lua_resume(L, from, nargs) lua_resume((L), (nargs))
+
+
+static void lua_rawgetp(lua_State *L, int index, const void *p) {
+	index = lua_absindex(L, index);
+	lua_pushlightuserdata(L, (void *)p);
+	lua_rawget(L, index);
+} /* lua_rawgetp() */
+
+static void lua_rawsetp(lua_State *L, int index, const void *p) {
+	index = lua_absindex(L, index);
+	lua_pushlightuserdata(L, (void *)p);
+	lua_pushvalue(L, -2);
+	lua_rawset(L, index);
+	lua_pop(L, 1);
+} /* lua_rawsetp() */
+
+
+#ifndef LUA_UNSIGNED
+#define LUA_UNSIGNED unsigned
+#endif
+
+typedef LUA_UNSIGNED lua_Unsigned;
+
+
+static void lua_pushunsigned(lua_State *L, lua_Unsigned n) {
+	lua_pushnumber(L, (lua_Number)n);
+} /* lua_pushunsigned() */
+
+static lua_Unsigned luaL_checkunsigned(lua_State *L, int arg) {
+	return (lua_Unsigned)luaL_checknumber(L, arg);
+} /* luaL_checkunsigned() */
+
+
+static lua_Unsigned luaL_optunsigned(lua_State *L, int arg, lua_Unsigned def) {
+	return (lua_Unsigned)luaL_optnumber(L, arg, (lua_Number)def);
+} /* luaL_optunsigned() */
+
+
+/*
+ * Lua 5.1 userdata is a simple FILE *, while LuaJIT is a struct with the
+ * first membe a FILE *, similar to Lua 5.2.
+ */
+typedef struct luaL_Stream {
+	FILE *f;
+} luaL_Stream;
+
+
+#endif /* LUA_VERSION_NUM < 502 */
