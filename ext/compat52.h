@@ -110,7 +110,7 @@ static lua_Unsigned luaL_optunsigned(lua_State *L, int arg, lua_Unsigned def) {
 
 /*
  * Lua 5.1 userdata is a simple FILE *, while LuaJIT is a struct with the
- * first membe a FILE *, similar to Lua 5.2.
+ * first member a FILE *, similar to Lua 5.2.
  */
 typedef struct luaL_Stream {
 	FILE *f;
