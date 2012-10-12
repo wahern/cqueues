@@ -134,12 +134,11 @@ Microsoft Windows support is basically out of the question, for far too many rea
 
 \section{Libraries}
 
-\subsection{Lua 5.2}
-\cqueues requires Lua 5.2. It's not fully portable to Lua 5.1 because it relies on ephemeron tables to prevent coroutine/controller reference cycles. Nonetheless, Lua 5.1 and LuaJIT patches are welcome if not too intrusive, or if they provide a clean refactoring of code.
+\subsection{Lua 5.2, LuaJIT}
+\cqueues principally targets Lua 5.2. It's not fully portable to Lua 5.1 because \cqueues relies on ephemeron tables to prevent coroutine/controller reference cycles, and because Lua 5.1 does not support yielding from metamethods. LuaJIT removes the latter of these handicaps, and so \cqueues targets LuaJIT secondarily. In lieu of ephemeron tables, application code must be sure not to hold a reference to a parent controller in an upvalue of the coroutine. Instead, use \fn{cqueues.running}.
 
 \subsection{OpenSSL}
-The \cqueues sockets module provides seamless SSL/TLS support using OpenSSL.
-In the future a \module{cqueues.ssl} module will be provided with OpenSSL bindings for certificate and key management.
+The \cqueues \module{socket} module provides seamless SSL/TLS support using OpenSSL, and comprehensive bindings for certificate and key management are provided in the extension \module{openssl} module.
 
 \subsection{pthreads}
 
@@ -165,11 +164,19 @@ For other warnings or errors, patches are welcome.
 
 The Makefile requires GNU Make, usually installed as gmake on platforms other than Linux or OS X.
 
-The Makefile expects Lua 5.2 headers to exist in \$(includedir)/lua/5.2. This is unfortunately not the default install location for Lua headers, although it quite obviously ought to be. To source the usual location, try something like
+The Makefile expects Lua headers to exist in \$(includedir)/lua/5.2. This is unfortunately not the default install location for Lua headers, although it quite obviously ought to be. To source the usual location, try something like
 
 \begin{code}{sh}
-        make prefix=/opt/lua52 lua52include=/opt/lua52/include
+make prefix=/opt/lua52 lua52include=/opt/lua52/include
 \end{code}
+
+%\begin{code}{sh}
+%make prefix=/opt/luajit \
+%     lua52include=/opt/luajit/include/luajit-2.0 \
+%     lua52cpath=/opt/luajit/lib/lua/5.1 \
+%     lua52path=/opt/luajit/share/lua/5.1 \
+%     LUAC=/usr/bin/true
+%\end{code}
 
 \key{M4} and \key{awk} are required to generate errno.c, which also relies on mk/errno.ls and mk/macros.ls to enumerate the system error macro names.
 
@@ -268,6 +275,10 @@ Takes a series of objects obeying the polling protocol and yields control to the
 \subsubsection[\routine{cqueues.sleep}]{\routine{cqueues.sleep(number)}}
 
 Yields to the parent \cqueues controller and schedules a wakeup for `number' seconds in the future.
+
+\subsubsection[\routine{cqueues.running}]{\routine{cqueues.running()}}
+
+Returns two values: the immediate controller currently executing, if any, or nil; and a boolean---true if the caller's coroutine is the same coroutine resumed by the controller.
 
 \subsubsection[\routine{cqueues.new}]{\routine{cqueues.new()}}
 Create a new cqueues object.
@@ -422,8 +433,8 @@ Iterator over \method{socket:accept}: \texttt{for con in srv:clients() do ... en
 %	Associate a certificate for subsequent :starttls operation.
 %	[UNFINISHED]
 
-\subsubsection[\fn{socket:starttls}]{\fn{socket:starttls()}}
-Place socket into TLS mode. Returns immediately.
+\subsubsection[\fn{socket:starttls}]{\fn{socket:starttls([context])}}
+Place socket into TLS mode, optionally using the \module{openssl.ssl.context} object as the configuration prototype. Returns immediately.
 %[FUTURE: take parameter to return immediately or wait for channel establishment.]
 
 \subsubsection[\fn{socket:setvbuf}]{\fn{socket:setvbuf(mode [, size])}}
@@ -503,7 +514,7 @@ w & analagous to \syscall{shutdown(SHUT\_WR)} \\
 \end{tabular}
 
 \subsubsection[\fn{socket:eof}]{\fn{socket:eof()}}
-Returns to boolean values representing whether EOF has been received on the input channel, and whether the output channel has signaled closure (e.g. \errno{EPIPE}).
+Returns two boolean values representing whether EOF has been received on the input channel, and whether the output channel has signaled closure (e.g. \errno{EPIPE}).
 
 \subsubsection[\fn{socket:close}]{\fn{socket:close()}}
 Explicitly and immediately close all internal descriptors. This routine ensures all descriptors are properly cancelled.
@@ -644,6 +655,399 @@ Returns a bitwise change set and a filename on success.
 Returns an iterator over the \method{notify:get} method.
 
 \end{Module}
+
+
+\begin{Module}{openssl.bignum}
+
+\module{openssl.bignum} binds OpenSSL's libcrypto bignum library. It supports all the standard arithmetic operations. Regular number operands in a mixed arithmetic expression are upgraded as-if \method{bignum.new} was used explicitly. The \fn{to string} metamethod generates a decimal encoded represention.
+
+\subsubsection[\fn{bignum.new}]{\fn{bignum.new(number)}}
+
+Wraps the sign and integral part of `number' as a bignum object, discarding any fractional part.
+
+\subsubsection[\fn{bignum.interpose}]{\fn{bignum.interpose(name, function)}}
+
+Add or interpose a bignum class method. Returns the previous method, if any.
+
+\end{Module}
+
+
+\begin{Module}{openssl.pubkey}
+
+\module{openssl.pubkey} binds OpenSSL's libcrypto public-private key library. The \fn{tostring} metamethod generates a PEM encoded representation of the public key---excluding the private key.
+
+\subsubsection[\fn{pubkey.new}]{\fn{pubkey.new(string)}}
+
+Initializes a new pubkey object from the PEM-encoded key in `string'.
+
+\subsubsection[\fn{pubkey.new}]{\fn{pubkey.new\{ $\ldots$ \}}}
+
+Generates a new pubkey object according to the specified parameters.
+
+\begin{ctabular}{ c | c | p{5in}}
+field & type:default & description\\\hline
+.type & string:RSA & public key algorithm---``RSA'', ``DSA'', ``EC'', ``DH'', or an internal OpenSSL identifier of a subclass of one of those basic types \\
+
+.bits & number:1024 & private key size \\
+
+.exp & number:65537 & RSA or Diffie-Hellman exponent \\
+
+.curve & string:prime192v1 & for elliptic curve keys, the OpenSSL string identifier of the curve
+\end{ctabular}
+\subsubsection[\fn{pubkey.interpose}]{\fn{pubkey.interpose(name, function)}}
+
+Add or interpose a pubkey class method. Returns the previous method, if any.
+
+\subsubsection[\fn{pubkey:type}]{\fn{pubkey:type()}}
+
+Returns the OpenSSL string identifier for the type of key.
+
+\subsubsection[\fn{pubkey:setPublicKey}]{\fn{pubkey:setPublicKey(string)}}
+
+Set the public key component to that described by the PEM encoded public key in `string'.
+
+\subsubsection[\fn{pubkey:setPrivateKey}]{\fn{pubkey:setPrivateKey(string)}}
+
+Set the private key component to that described by the PEM encoded private key in `string'.
+
+\subsubsection[\fn{pubkey:toPEM}]{\fn{pubkey:toPEM(which[, which])}}
+
+Returns the PEM encoded string representation(s) of the specified key component. `which' must be one of ``public'', ``PublicKey'', ``private'', or ``PrivateKey''. For the two argument form, returns two values.
+
+\end{Module}
+
+
+\begin{Module}{openssl.x509.name}
+
+Binds the X.509 distinguished name OpenSSL ASN.1 object, used for representing certificate subject and issuer names.
+
+\subsubsection[\fn{name.new}]{\fn{name.new()}}
+
+Returns an empty name object.
+
+\subsubsection[\fn{name.interpose}]{\fn{name.interpose(name, function)}}
+
+Add or interpose a name class method. Returns the previous method, if any.
+
+\subsubsection[\fn{name:add}]{\fn{name:add(type, value)}}
+
+Add a distinguished name component. `type' is the OpenSSL string identifier of the component type---short, long, or OID forms. `value' is the string value of the component. DN components are free-form, and are encoded raw.
+
+\subsubsection[\fn{name:all}]{\fn{name:all()}}
+
+Returns a table array of the distinguished name components. Each element is a table with four fields:
+
+\begin{tabular}{ l | l}
+field & description\\\hline
+.sn & short name identifier, if available\\
+.ln & long name identifier, if available\\
+.id & OID identifier\\
+.blob & raw string value of the component
+\end{tabular}
+
+\subsubsection[\fn{name:\_\_pairs}]{\fn{name:\_\_pairs()}}
+
+Returns a key-value iterator over the distinguished name components. The key is either the short, long, or OID identifier, with preference for the former.
+
+\end{Module}
+
+
+\begin{Module}{openssl.x509.altname}
+
+Binds the X.509 alternative names (a.k.a ``general names'') OpenSSL ASN.1 object, used for representing certificate subject and issuer alternative names.
+
+\subsubsection[\fn{altname.new}]{\fn{altname.new()}}
+
+Returns an empty altname object.
+
+\subsubsection[\fn{altname.interpose}]{\fn{altname.interpose(name, function)}}
+
+Add or interpose an altname class method. Returns the previous method, if any.
+
+\subsubsection[\fn{altname:add}]{\fn{altname:add(type, value)}}
+
+Add an alternative name. `type' must specify one of the four basic types identified by ``RFC822Name'', ``RFC822'', ``email'', ``UniformResourceIdentifier'', ``URI'', ``DNSName'', ``DNS'', ``IPAddress'', and ``IP''.
+
+`value' is a string acceptable to OpenSSL's sanity checks. For an IP address, `value' must be parseable by the system's \fn{inet\_pton} routine, as IP addresses are stored as raw 4- or 16-byte octets.
+
+\subsubsection[\fn{name:\_\_pairs}]{\fn{name:\_\_pairs()}}
+
+Returns a key-value iterator over the alternative names. The key is one of ``email'', ``URI'', ``DNS'', or ``IP''. The value is the string representation of the name.
+
+\end{Module}
+
+
+\begin{Module}{openssl.x509}
+
+Binds the X.509 certificate OpenSSL ASN.1 object.
+
+\subsubsection[\fn{x509.new}]{\fn{x509.new([string])}}
+
+Returns a new x509 object, optionally initialized to the PEM encoded certificate specified by `string'.
+
+\subsubsection[\fn{x509.interpose}]{\fn{x509.interpose(name, function)}}
+
+Add or interpose an x509 class method. Returns the previous method, if any.
+
+\subsubsection[\fn{x509:getVersion}]{\fn{x509:getVersion()}}
+
+Returns the X.509 version of the certificate.
+
+\subsubsection[\fn{x509:setVersion}]{\fn{x509:setVersion(number)}}
+
+Sets the X.509 version of the certificate.
+
+\subsubsection[\fn{x509:getSerial}]{\fn{x509:getSerial()}}
+
+Returns the serial of the certificate as an \module{openssl.bignum}.
+
+\subsubsection[\fn{x509:setSerial}]{\fn{x509:setSerial(number)}}
+
+Sets the serial of the certificate. `number' is a Lua or \module{openssl.bignum} number.
+
+\subsubsection[\fn{x509:digest}]{\fn{x509:digest([type[, format]])}}
+
+Returns the cryptographic one-way message digest of the certificate. `type' is the OpenSSL string identifier of the hash type---e.g. ``md5'', ``sha1'' (default), ``sha256'', etc. `format' specifies the representation of the digest---``s'' for an octet string, ``x'' for a hexadecimal string (default), and ``n'' for an \module{openssl.bignum} number.
+
+\subsubsection[\fn{x509:getLifetime}]{\fn{x509:getLifetime()}}
+
+Returns the certificate validity ``Not Before'' and ``Not After'' dates as two Unix timestamp numbers.
+
+\subsubsection[\fn{x509:setLifetime}]{\fn{x509:setLifetime([notbefore][, notafter])}}
+
+Sets the certificate validity dates. A nil value leaves the particular date unchanged.
+
+\subsubsection[\fn{x509:getIssuer}]{\fn{x509:getIssuer()}}
+
+Returns the issuer distinguished name as an \module{x509.name} object.
+
+\subsubsection[\fn{x509:setIssuer}]{\fn{x509:setIssuer(name)}}
+
+Sets the issuer distinguished name.
+
+\subsubsection[\fn{x509:getSubject}]{\fn{x509:getSubject()}}
+
+Returns the subject distinguished name as an \module{x509.name} object.
+
+\subsubsection[\fn{x509:setSubject}]{\fn{x509:setSubject(name)}}
+
+Sets the subject distinguished name.
+
+\subsubsection[\fn{x509:getIssuerAlt}]{\fn{x509:getIssuerAlt()}}
+
+Returns the issuer alternative names as an \module{x509.altname} object.
+
+\subsubsection[\fn{x509:setIssuerAlt}]{\fn{x509:setIssuer(altname)}}
+
+Sets the issuer alternative names.
+
+\subsubsection[\fn{x509:getSubjectAlt}]{\fn{x509:getSubjectAlt()}}
+
+Returns the subject alternative names as an \module{x509.name} object.
+
+\subsubsection[\fn{x509:setSubjectAlt}]{\fn{x509:setSubjectAlt(name)}}
+
+Sets the subject alternative names.
+
+\subsubsection[\fn{x509:getIssuerAltCritical}]{\fn{x509:getIssuerAltCritical()}}
+
+Returns the issuer alternative names critical flag as a boolean.
+
+\subsubsection[\fn{x509:setIssuerAltCritical}]{\fn{x509:setIssuerAltCritical(boolean)}}
+
+Sets the issuer alternative names critical flag.
+
+\subsubsection[\fn{x509:getSubjectAltCritical}]{\fn{x509:getSubjectAltCritical()}}
+
+Returns the subject alternative names critical flag as a boolean.
+
+\subsubsection[\fn{x509:setSubjectAltCritical}]{\fn{x509:setSubjectAltCritical(boolean)}}
+
+Sets the subject alternative names critical flag.
+
+
+\subsubsection[\fn{x509:getBasicConstraints}]{\fn{x509:getBasicConstraints([which[, which $\ldots$ ]])}}
+
+Returns the X.509 ``basic constraint'' flags. If specified, `which' should be one of ``CA'' or ``pathLen'', which returns that flag as a boolean. If none are specified, returns a table with boolean fields ``CA'' and ``pathLen''.
+
+\subsubsection[\fn{x509:setBasicConstraints}]{\fn{x509:setBasicConstraints\{ $\ldots$ \}}}
+
+Sets the basic constraint flag according to the defined boolean field values for ``CA'' and ``pathLen''.
+
+\subsubsection[\fn{x509:getBasicConstraintsCritical}]{\fn{x509:getBasicConstraintsCritical()}}
+
+Returns the basic constraints critical flag as a boolean.
+
+\subsubsection[\fn{x509:setBasicConstraintsCritical}]{\fn{x509:setBasicConstraintsCritical(boolean)}}
+
+Sets the basic constraints critical flag.
+
+\subsubsection[\fn{x509:isIssuedBy}]{\fn{x509:isIssuedBy(issuer)}}
+
+Returns a boolean according to whether the specified issuer---an \module{openssl.x509} object---signed the instance certificate.
+
+\subsubsection[\fn{x509:getPublicKey}]{\fn{x509:getPublicKey()}}
+
+Returns the public key component as an \module{openssl.pubkey} object.
+
+\subsubsection[\fn{x509:setPublicKey}]{\fn{x509:setPublicKey(key)}}
+
+Sets the public key component referenced by the \module{openssl.pubkey} object `key'.
+
+\subsubsection[\fn{x509:sign}]{\fn{x509:sign(key)}}
+
+Signs the instance certificate using the \module{openssl.pubkey} `key'.
+
+\subsubsection[\fn{x509:\_\_tostring}]{\fn{x509:\_\_tostring}}
+
+Returns the PEM encoded representation of the instance certificate.
+
+\end{Module}
+
+
+\begin{Module}{openssl.x509.csr}
+
+Binds the X.509 certificate signing request OpenSSL ASN.1 object.
+
+\subsubsection[\fn{csr.new}]{\fn{csr.new([x509|string])}}
+
+Returns a new request object, optionally initialized to the specified \module{openssl.x509} certificate `x509' or the the PEM encoded certificate signing request `string'.
+
+\subsubsection[\fn{csr.interpose}]{\fn{csr.interpose(name, function)}}
+
+Add or interpose a request class method. Returns the previous method, if any.
+
+\subsubsection[\fn{csr:getVersion}]{\fn{csr:getVersion()}}
+
+Returns the X.509 version of the request.
+
+\subsubsection[\fn{car:setVersion}]{\fn{csr:setVersion(number)}}
+
+Sets the X.509 version of the request.
+
+\subsubsection[\fn{csr:getSubject}]{\fn{csr:getSubject()}}
+
+Returns the subject distinguished name as an \module{x509.name} object.
+
+\subsubsection[\fn{csr:setSubject}]{\fn{csr:setSubject(name)}}
+
+Sets the subject distinguished name.
+
+\subsubsection[\fn{csr:getPublicKey}]{\fn{csr:getPublicKey()}}
+
+Returns the public key component as an \module{openssl.pubkey} object.
+
+\subsubsection[\fn{csr:setPublicKey}]{\fn{csr:setPublicKey(key)}}
+
+Sets the public key component referenced by the \module{openssl.pubkey} object `key'.
+
+\subsubsection[\fn{car:sign}]{\fn{csr:sign(key)}}
+
+Signs the instance request using the \module{openssl.pubkey} `key'.
+
+\subsubsection[\fn{csr:\_\_tostring}]{\fn{csr:\_\_tostring}}
+
+Returns the PEM encoded representation of the instance request.
+
+\end{Module}
+
+
+\begin{Module}{openssl.x509.chain}
+
+Binds the ``STACK\_OF(X509)'' OpenSSL object, principally used in the OpenSSL library for representing a validation chain.
+
+\subsubsection[\fn{chain.new}]{\fn{chain.new()}}
+
+Returns a new chain object.
+
+\subsubsection[\fn{chain.interpose}]{\fn{chain.interpose(name, function)}}
+
+Add or interpose a chain class method. Returns the previous method, if any.
+
+\subsubsection[\fn{chain:add}]{\fn{chain:add(x509)}}
+
+Append the X.509 certificate `x509'.
+
+\subsubsection[\fn{chain:\_\_ipairs}]{\fn{chain:\_\_ipairs()}}
+
+Returns an iterator over the stored certificates.
+
+\end{Module}
+
+
+\begin{Module}{openssl.x509.store}
+
+Binds the X.509 certificate ``X509\_STORE'' OpenSSL object, principally used for loading and storing trusted certificates, paths to trusted certificates, and verification policy.
+
+\subsubsection[\fn{store.new}]{\fn{store.new()}}
+
+Returns a new store object.
+
+\subsubsection[\fn{store.interpose}]{\fn{store.interpose(name, function)}}
+
+Add or interpose a store class method. Returns the previous method, if any.
+
+\subsubsection[\fn{store:add}]{\fn{store:add(x509|filepath|dirpath)}}
+
+Add the X.509 certificate `x509' to the store, load the certificates from the file `filepath', or set the OpenSSL ``hash dir'' certificate path `dirpath'.
+
+\subsubsection[\fn{store:verify}]{\fn{store:verify(x509[, chain])}}
+
+Returns two values. The first is a boolean value for whether the specified certificate `x509' was verified. If true, the second value is a  \module{openssl.x509.chain} object validation chain. If false, the second value is a string describing why verification failed. The optional parameter `chain' is an \module{openssl.x509.chain} object of untrusted certificates linking the certificate `x509' to one of the trusted certificates in the instance store.
+
+\end{Module}
+
+
+\begin{Module}{openssl.ssl.context}
+
+Binds the ``SSL\_CTX'' OpenSSL object, used as a configuration prototype for SSL connection instances. See \method{socket.starttls}.
+
+\subsubsection[\fn{context[]}]{\fn{context[]}}
+
+A table mapping bitwise flags to names.
+
+\begin{tabular}{ c | l }
+name & description \\\hline
+VERIFY\_NONE & disable client peer certificate verification \\
+VERIFY\_PEER & enable client peer certificate verification \\
+VERIFY\_FAIL\_IF\_NO\_PEER\_CERT & require a peer certificate \\
+VERIFY\_CLIENT\_ONCE & do not request peer certificates after initial handshake
+\end{tabular}
+
+See the \href{http://www.openssl.org/docs/ssl/SSL_CTX_set_verify.html#NOTES}{NOTES section} in the OpenSSL documentation for \fn{SSL\_CTX\_set\_verify\_mode}.
+
+\subsubsection[\fn{context.new}]{\fn{context.new()}}
+
+Returns a new context object.
+
+\subsubsection[\fn{context.interpose}]{\fn{context.interpose(name, function)}}
+
+Add or interpose a context class method. Returns the previous method, if any.
+
+\subsubsection[\fn{context:setStore}]{\fn{context:setStore(store)}}
+
+Sets the \module{x509.store} of the context instance.
+
+\subsubsection[\fn{context:getVerify}]{\fn{context:getVerify()}}
+
+Returns two values: the bitwise verification mode flags, and the maximum validation depth.
+
+\subsubsection[\fn{context:setVerify}]{\fn{context:setVerify([mode][, depth])}}
+
+Sets the verification mode flags and maximum validation chain depth.
+
+\subsubsection[\fn{context:setCertificate}]{\fn{context:setCertificate(x509)}}
+
+Sets the X.509 certificate \module{openssl.x509} object `x509' to send during SSL connection instance handshakes.
+
+\subsubsection[\fn{context:setPrivateKey}]{\fn{context:setPrivateKey(key)}}
+
+Sets the private key \module{openssl.pubkey} object `key' for use during SSL connection instance handshakes.
+
+\end{Module}
+
+
+
 
 \chapter{Examples}
 

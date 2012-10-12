@@ -1642,7 +1642,7 @@ error:
 static int xc_digest(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
 	const char *type = luaL_optstring(L, 2, "sha1");
-	int format = luaL_checkoption(L, 3, "*s", (const char *[]){ "*s", "*x", "*n", NULL });
+	int format = luaL_checkoption(L, 3, "x", (const char *[]){ "s", "x", "n", NULL });
 	const EVP_MD *ctx;
 	unsigned char md[EVP_MAX_MD_SIZE];
 	unsigned len;
