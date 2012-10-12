@@ -865,14 +865,13 @@ Returns the subject alternative names critical flag as a boolean.
 
 Sets the subject alternative names critical flag.
 
-
 \subsubsection[\fn{x509:getBasicConstraints}]{\fn{x509:getBasicConstraints([which[, which $\ldots$ ]])}}
 
-Returns the X.509 ``basic constraint'' flags. If specified, `which' should be one of ``CA'' or ``pathLen'', which returns that flag as a boolean. If none are specified, returns a table with boolean fields ``CA'' and ``pathLen''.
+Returns the X.509 ``basic constraint'' flags. If specified, `which' should be one of ``CA'' or ``pathLen'', which returns the specified constraint---respectively, a boolean and a number.  If no parameters are specified, returns a table with fields ``CA'' and ``pathLen''.
 
 \subsubsection[\fn{x509:setBasicConstraints}]{\fn{x509:setBasicConstraints\{ $\ldots$ \}}}
 
-Sets the basic constraint flag according to the defined boolean field values for ``CA'' and ``pathLen''.
+Sets the basic constraint flag according to the defined field values for ``CA'' (boolean) and ``pathLen'' (number).
 
 \subsubsection[\fn{x509:getBasicConstraintsCritical}]{\fn{x509:getBasicConstraintsCritical()}}
 
