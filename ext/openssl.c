@@ -134,7 +134,7 @@ static void *testsimple(lua_State *L, int index, const char *tname) {
 		p = lua_touserdata(L, index);
 	}
 
-	return *p;
+	return (p)? *p : (void *)0;
 } /* testsimple() */
 
 
