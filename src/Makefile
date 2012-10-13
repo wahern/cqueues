@@ -68,7 +68,7 @@ SOFLAGS = -shared
 endif
 
 
-cqueues.so: cqueues.o socket.o errno.o signal.o thread.o notify.o lib/socket.o lib/dns.o lib/notify.o
+cqueues.so: cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o lib/socket.o lib/dns.o lib/notify.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 
 cqueues.o: cqueues.c
@@ -92,6 +92,9 @@ thread.o: thread.c
 notify.o: notify.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
+dns.o: dns.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
 lib/socket.o: lib/socket.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
@@ -105,7 +108,7 @@ lib/notify.o: lib/notify.c
 install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
          $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua \
          $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua \
-         $(lua52path)/cqueues/notify.lua
+         $(lua52path)/cqueues/notify.lua $(lua52path)/cqueues/dns/resolver.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -137,6 +140,11 @@ $(lua52path)/cqueues/thread.lua: thread.lua
 	cp -p $< $@
  
 $(lua52path)/cqueues/notify.lua: notify.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+ 
+$(lua52path)/cqueues/dns/resolver.lua: dns.resolver.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@

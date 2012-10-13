@@ -142,4 +142,7 @@ typedef struct luaL_Stream {
 } luaL_Stream;
 
 
+#define lua_rawlen(...) lua_objlen(__VA_ARGS__)
+
+
 #endif /* LUA_VERSION_NUM < 502 */
