@@ -264,10 +264,10 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 static int lso_closefd(int *fd, void *arg) {
 	struct luasocket *S = arg;
 
-	if (S->mainthread)
+	if (S->mainthread) {
 		cqs_cancelfd(S->mainthread, *fd);
-
-	cqs_closefd(fd);
+		cqs_closefd(fd);
+	}
 
 	return 0;
 } /* lso_closefd() */

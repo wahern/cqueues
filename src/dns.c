@@ -1804,15 +1804,49 @@ int luaopen__cqueues_dns_hints(lua_State *L) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+struct resolver {
+	struct dns_resolver *res;
+	lua_State *mainthread;
+}; /* struct resolver */
+
+
+static struct resolver *res_prep(lua_State *L) {
+	struct resolver *R = lua_newuserdata(L, sizeof *R);
+
+	R->res = 0;
+
+#if defined LUA_RIDX_MAINTHREAD
+	lua_rawgeti(L, LUA_REGISTRYINDEX, LUA_RIDX_MAINTHREAD);
+	R->mainthread = lua_tothread(L, -1);
+	lua_pop(L, 1);
+#else
+	R->mainthread = 0;
+#endif
+
+	luaL_setmetatable(L, RESOLVER_CLASS);
+
+	return R;
+} /* res_prep() */
+
+
+static int res_closefd(int *fd, void *arg) {
+	struct resolver *R = arg;
+
+	if (R->mainthread) {
+		cqs_cancelfd(R->mainthread, *fd);
+		cqs_closefd(fd);
+	}
+
+	return 0;
+} /* res_closefd() */
+
+
 static int res_new(lua_State *L) {
-	struct dns_resolver **R = lua_newuserdata(L, sizeof *R);
+	struct resolver *R = res_prep(L);
 	struct dns_resolv_conf *resconf = resconf_test(L, 1);
 	struct dns_hosts *hosts = hosts_test(L, 2);
 	struct dns_hints *hints = hints_test(L, 3);
 	int error;
-
-	*R = 0;
-	luaL_setmetatable(L, RESOLVER_CLASS);
 
 	if (resconf)
 		dns_resconf_acquire(resconf);
@@ -1844,7 +1878,7 @@ static int res_new(lua_State *L) {
 			goto error;
 	}
 
-	if (!(*R = dns_res_open(resconf, hosts, hints, NULL, dns_opts(), &error)))
+	if (!(R->res = dns_res_open(resconf, hosts, hints, NULL, dns_opts(.closefd = { R, &res_closefd }), &error)))
 		goto error;
 
 	dns_resconf_close(resconf);
@@ -1870,7 +1904,12 @@ static int res_interpose(lua_State *L) {
 
 
 static inline struct dns_resolver *res_check(lua_State *L, int index) {
-	return *(struct dns_resolver **)luaL_checkudata(L, index, RESOLVER_CLASS);
+	struct resolver *R = luaL_checkudata(L, index, RESOLVER_CLASS);
+
+	if (!R->res)
+		luaL_argerror(L, index, "resolver defunct");
+
+	return R->res;
 } /* res_check() */
 
 
@@ -1952,21 +1991,41 @@ static int res_events(lua_State *L) {
 } /* res_events() */
 
 
-static int res__gc(lua_State *L) {
-	struct dns_resolver **R = luaL_checkudata(L, 1, RESOLVER_CLASS);
+static int res_close(lua_State *L) {
+	struct resolver *R = luaL_checkudata(L, 1, RESOLVER_CLASS);
 
-	dns_res_close(*R);
-	*R = 0;
+	if (!R->mainthread) {
+		R->mainthread = L;
+		dns_res_close(R->res);
+		R->res = 0;
+		R->mainthread = 0;
+	} else {
+		dns_res_close(R->res);
+		R->res = 0;
+	}
+
+	return 0;
+} /* res_close() */
+
+
+static int res__gc(lua_State *L) {
+	struct resolver *R = luaL_checkudata(L, 1, RESOLVER_CLASS);
+
+	R->mainthread = 0;
+
+	dns_res_close(R->res);
+	R->res = 0;
 
 	return 0;
 } /* res__gc() */
 
 
 static const luaL_Reg res_methods[] = {
-	{ "submit",  &res_submit },
-	{ "fetch",   &res_fetch },
-	{ "pollfd",  &res_pollfd },
-	{ "events",  &res_events },
+	{ "submit", &res_submit },
+	{ "fetch",  &res_fetch },
+	{ "pollfd", &res_pollfd },
+	{ "events", &res_events },
+	{ "close",  &res_close },
 	{ NULL,     NULL },
 }; /* res_methods[] */
 
