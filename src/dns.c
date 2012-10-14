@@ -58,6 +58,7 @@
 #define PACKET_CLASS   "DNS Packet"
 #define RESCONF_CLASS  "DNS Config"
 #define HOSTS_CLASS    "DNS Hosts"
+#define HINTS_CLASS    "DNS Hints"
 #define RESOLVER_CLASS "DNS Resolver"
 
 
@@ -818,6 +819,33 @@ static int pkt_grep(lua_State *L) {
 } /* pkt_grep() */
 
 
+/* FIXME: Potential memory leak on Lua panic. */
+static int pkt__tostring(lua_State *L) {
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
+	char line[1024];
+	luaL_Buffer B;
+	FILE *fp;
+
+	if (!(fp = tmpfile()))
+		return luaL_error(L, "tmpfile: %s", strerror(errno));
+
+	dns_p_dump(P, fp);
+
+	luaL_buffinit(L, &B);
+
+	rewind(fp);
+
+	while (fgets(line, sizeof line, fp))
+		luaL_addstring(&B, line);
+
+	fclose(fp);
+
+	luaL_pushresult(&B);
+
+	return 1;
+} /* pkt__tostring() */
+
+
 static const luaL_Reg pkt_methods[] = {
 	{ "qid",    &pkt_qid },
 	{ "flags",  &pkt_flags },
@@ -827,7 +855,8 @@ static const luaL_Reg pkt_methods[] = {
 }; /* pkt_methods[] */
 
 static const luaL_Reg pkt_metatable[] = {
-	{ NULL, NULL }
+	{ "__tostring", &pkt__tostring },
+	{ NULL,         NULL }
 }; /* pkt_metatable[] */
 
 static const luaL_Reg pkt_globals[] = {
@@ -1376,6 +1405,32 @@ static int hosts_loadpath(lua_State *L) {
 } /* hosts_loadpath() */
 
 
+static int hosts_insert(lua_State *L) {
+	struct dns_hosts *hosts = hosts_check(L, 1);
+	const char *ip = luaL_checkstring(L, 2);
+	const char *dn = luaL_checkstring(L, 3);
+	_Bool alias = (!lua_isnoneornil(L, 4))? lua_toboolean(L, 4) : 0;
+	union { struct sockaddr_storage other; struct sockaddr_in in; struct sockaddr_in6 in6; } any;
+	int error;
+
+	if ((error = dns_resconf_pton(&any.other, ip)))
+		return luaL_error(L, "%s: %s", ip, dns_strerror(error));
+
+	switch (any.other.ss_family) {
+	case AF_INET:
+		error = dns_hosts_insert(hosts, AF_INET, &any.in.sin_addr, dn, alias);
+		break;
+	case AF_INET6:
+		error = dns_hosts_insert(hosts, AF_INET6, &any.in6.sin6_addr, dn, alias);
+		break;
+	default:
+		break;
+	}
+
+	return lua_pushboolean(L, 1), 1;
+} /* hosts_insert() */
+
+
 /* FIXME: Potential memory leak on Lua panic. */
 static int hosts__tostring(lua_State *L) {
 	struct dns_hosts *hosts = hosts_check(L, 1);
@@ -1414,7 +1469,10 @@ static int hosts__gc(lua_State *L) {
 
 
 static const luaL_Reg hosts_methods[] = {
-	{ NULL, NULL },
+	{ "loadfile", &hosts_loadfile },
+	{ "loadpath", &hosts_loadpath },
+	{ "insert",   &hosts_insert },
+	{ NULL,       NULL },
 }; /* hosts_methods[] */
 
 static const luaL_Reg hosts_metatable[] = {
@@ -1436,6 +1494,73 @@ int luaopen__cqueues_dns_hosts(lua_State *L) {
 
 	return 1;
 } /* luaopen__cqueues_dns_hosts() */
+
+
+/*
+ * H I N T S  B I N D I N G S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int hints_new(lua_State *L) {
+	struct dns_resolv_conf *resconf = (!lua_isnone(L, 1))? resconf_check(L, 1) : 0;
+	struct dns_hints **hints;
+	int error;
+
+	hints = lua_newuserdata(L, sizeof *hints);
+	*hints = 0;
+
+
+	if (!(*hints = dns_hints_open(resconf, &error)))
+		return lua_pushboolean(L, 0), lua_pushinteger(L, error), 2;
+
+	luaL_setmetatable(L, HINTS_CLASS);
+
+	return 1;
+} /* hints_new() */
+
+
+static int hints_interpose(lua_State *L) {
+	return cqs_interpose(L, HINTS_CLASS);
+} /* hints_interpose() */
+
+
+static struct dns_hints *hints_check(lua_State *L, int index) {
+	return *(struct dns_hints **)luaL_checkudata(L, index, HINTS_CLASS);
+} /* hints_check() */
+
+
+static int hints__gc(lua_State *L) {
+	struct dns_hints **hints = luaL_checkudata(L, 1, HINTS_CLASS);
+
+	dns_hints_close(*hints);
+	*hints = 0;
+
+	return 0;
+} /* hints__gc() */
+
+
+static const luaL_Reg hints_methods[] = {
+	{ NULL, NULL },
+}; /* hints_methods[] */
+
+static const luaL_Reg hints_metatable[] = {
+	{ "__gc",       &hints__gc },
+	{ NULL,         NULL }
+}; /* hints_metatable[] */
+
+static const luaL_Reg hints_globals[] = {
+	{ "new",       &hints_new },
+	{ "interpose", &hints_interpose },
+	{ NULL,        NULL }
+};
+
+int luaopen__cqueues_dns_hints(lua_State *L) {
+	dnsL_loadall(L);
+
+	luaL_newlib(L, hints_globals);
+
+	return 1;
+} /* luaopen__cqueues_dns_hints() */
 
 
 /*
@@ -1625,6 +1750,7 @@ static void dnsL_loadall(lua_State *L) {
 	cqs_addclass(L, PACKET_CLASS, pkt_methods, pkt_metatable);
 	cqs_addclass(L, RESCONF_CLASS, resconf_methods, resconf_metatable);
 	cqs_addclass(L, HOSTS_CLASS, hosts_methods, hosts_metatable);
+	cqs_addclass(L, HINTS_CLASS, hints_methods, hints_metatable);
 	cqs_addclass(L, RESOLVER_CLASS, res_methods, res_metatable);
 } /* dnsL_loadall() */
 

@@ -109,7 +109,8 @@ install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
          $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua \
          $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua \
          $(lua52path)/cqueues/notify.lua $(lua52path)/cqueues/dns/resolver.lua \
-         $(lua52path)/cqueues/dns/config.lua $(lua52path)/cqueues/dns/hosts.lua
+         $(lua52path)/cqueues/dns/config.lua $(lua52path)/cqueues/dns/hosts.lua \
+         $(lua52path)/cqueues/dns/hints.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -156,6 +157,11 @@ $(lua52path)/cqueues/dns/config.lua: dns.config.lua
 	cp -p $< $@
 
 $(lua52path)/cqueues/dns/hosts.lua: dns.hosts.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(lua52path)/cqueues/dns/hints.lua: dns.hints.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
