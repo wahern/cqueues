@@ -71,37 +71,37 @@ endif
 cqueues.so: cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o lib/socket.o lib/dns.o lib/notify.o
 	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
 
-cqueues.o: cqueues.c
+cqueues.o: cqueues.c cqueues.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-socket.o: socket.c
+socket.o: socket.c cqueues.h lib/socket.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-errno.o: errno.c
+errno.o: errno.c cqueues.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 errno.c: errno.c.m4
 	$(M4) $^ > $@
 
-signal.o: signal.c
+signal.o: signal.c cqueues.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-thread.o: thread.c
+thread.o: thread.c cqueues.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-notify.o: notify.c
+notify.o: notify.c cqueues.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-dns.o: dns.c
+dns.o: dns.c cqueues.h lib/dns.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-lib/socket.o: lib/socket.c
+lib/socket.o: lib/socket.c lib/socket.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-lib/dns.o: lib/dns.c
+lib/dns.o: lib/dns.c lib/dns.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-lib/notify.o: lib/notify.c
+lib/notify.o: lib/notify.c lib/notify.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
@@ -110,7 +110,8 @@ install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
          $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua \
          $(lua52path)/cqueues/notify.lua $(lua52path)/cqueues/dns/resolver.lua \
          $(lua52path)/cqueues/dns/config.lua $(lua52path)/cqueues/dns/hosts.lua \
-         $(lua52path)/cqueues/dns/hints.lua
+         $(lua52path)/cqueues/dns/hints.lua $(lua52path)/cqueues/dns/record.lua \
+         $(lua52path)/cqueues/dns/packet.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -162,6 +163,16 @@ $(lua52path)/cqueues/dns/hosts.lua: dns.hosts.lua
 	cp -p $< $@
 
 $(lua52path)/cqueues/dns/hints.lua: dns.hints.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(lua52path)/cqueues/dns/record.lua: dns.record.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(lua52path)/cqueues/dns/packet.lua: dns.packet.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@

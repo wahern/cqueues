@@ -1,5 +1,4 @@
 local loader = function(loader, ...)
-	local cqueues = require"cqueues"
 	local config = require"_cqueues.dns.config"
 
 	config.loadfile = function (file, syntax)
@@ -64,6 +63,12 @@ local loader = function(loader, ...)
 			options = self:getopts(),
 			interface = self:getiface(),
 		}
+	end)
+
+	config.interpose("tohints", function (self, zone)
+		local hints = require"cqueues.dns.hints".new(self)
+		hints:insert(zone or ".", self)
+		return hints
 	end)
 
 	return config

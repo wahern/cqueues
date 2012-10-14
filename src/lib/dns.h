@@ -926,6 +926,8 @@ struct dns_hints *dns_hints_local(struct dns_resolv_conf *, int *);
 
 struct dns_hints *dns_hints_root(struct dns_resolv_conf *, int *);
 
+int dns_hints_dump(struct dns_hints *, FILE *);
+
 
 struct dns_hints_i {
 	const char *zone;

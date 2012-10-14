@@ -1,7 +1,7 @@
 local loader = function(loader, ...)
-	local hints = require"_cqueues.dns.hints"
+	local packet = require"_cqueues.dns.packet"
 
-	return hints
+	return packet
 end
 
 return loader(loader, ...)

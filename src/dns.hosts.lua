@@ -1,5 +1,4 @@
 local loader = function(loader, ...)
-	local cqueues = require"cqueues"
 	local hosts = require"_cqueues.dns.hosts"
 
 	hosts.loadfile = function (file, syntax)

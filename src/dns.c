@@ -705,6 +705,50 @@ static void rr_loadall(lua_State *L) {
 } /* rr_loadall() */
 
 
+
+static const luaL_Reg rr_globals[] = {
+	{ NULL, NULL }
+};
+
+
+int luaopen__cqueues_dns_record(lua_State *L) {
+	static const struct cqs_macro classes[] = {
+		{ "IN", DNS_C_IN }, { "ANY", DNS_C_ANY },
+	};
+	static const struct cqs_macro types[] = {
+		{ "A",     DNS_T_A },     { "NS",   DNS_T_NS },
+		{ "CNAME", DNS_T_CNAME }, { "SOA",  DNS_T_SOA },
+		{ "PTR",   DNS_T_PTR },   { "MX",   DNS_T_MX },
+		{ "TXT",   DNS_T_TXT },   { "AAAA", DNS_T_AAAA },
+		{ "SRV",   DNS_T_SRV },   { "OPT",  DNS_T_OPT },
+		{ "SSHFP", DNS_T_SSHFP }, { "SPF",  DNS_T_SPF },
+		{ "ALL",   DNS_T_ALL },
+	};
+	static const struct cqs_macro sshfp[] = {
+		{ "RSA",  DNS_SSHFP_RSA }, { "DSA", DNS_SSHFP_DSA },
+		{ "SHA1", DNS_SSHFP_SHA1 },
+	};
+
+	dnsL_loadall(L);
+
+	luaL_newlib(L, rr_globals);
+
+	lua_newtable(L);
+	cqs_addmacros(L, -1, classes, countof(classes), 1);
+	lua_setfield(L, -2, "class");
+
+	lua_newtable(L);
+	cqs_addmacros(L, -1, types, countof(types), 1);
+	lua_setfield(L, -2, "type");
+
+	lua_newtable(L);
+	cqs_addmacros(L, -1, sshfp, countof(sshfp), 1);
+	lua_setfield(L, -2, "sshfp");
+
+	return 1;
+} /* luaopen__cqueues_dns_record() */
+
+
 /*
  * P A C K E T  B I N D I N G S
  *
@@ -777,7 +821,7 @@ static int pkt_count(lua_State *L) {
 } /* pkt_count() */
 
 
-static int pkt__next(lua_State *L) {
+static int pkt_next(lua_State *L) {
 	struct dns_packet *P = lua_touserdata(L, lua_upvalueindex(1));
 	struct dns_rr_i *rr_i = lua_touserdata(L, lua_upvalueindex(2));
 	struct dns_rr rr;
@@ -789,7 +833,7 @@ static int pkt__next(lua_State *L) {
 	rr_push(L, &rr, P);
 
 	return 1;
-} /* pkt__next() */
+} /* pkt_next() */
 
 static int pkt_grep(lua_State *L) {
 	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
@@ -813,7 +857,7 @@ static int pkt_grep(lua_State *L) {
 			lua_pop(L, 1);
 	}
 
-	lua_pushcclosure(L, &pkt__next, lua_gettop(L) - 2);
+	lua_pushcclosure(L, &pkt_next, lua_gettop(L) - 2);
 
 	return 1;
 } /* pkt_grep() */
@@ -865,14 +909,16 @@ static const luaL_Reg pkt_globals[] = {
 };
 
 int luaopen__cqueues_dns_packet(lua_State *L) {
-	static const struct { const char *name; int value; } macro[] = {
+	static const struct cqs_macro section[] = {
 		{ "QUESTION", DNS_S_QD }, { "ANSWER", DNS_S_AN },
 		{ "AUTHORITY", DNS_S_NS }, { "ADDITIONAL", DNS_S_AR },
-
+	};
+	static const struct cqs_macro opcode[] = {
 		{ "QUERY", DNS_OP_QUERY }, { "IQUERY", DNS_OP_IQUERY },
 		{ "STATUS", DNS_OP_STATUS }, { "NOTIFY", DNS_OP_NOTIFY },
 		{ "UPDATE", DNS_OP_UPDATE },
-
+	};
+	static const struct cqs_macro rcode[] = {
 		{ "NOERROR", DNS_RC_NOERROR }, { "FORMERR", DNS_RC_FORMERR },
 		{ "SERVFAIL", DNS_RC_SERVFAIL }, { "NXDOMAIN", DNS_RC_NXDOMAIN },
 		{ "NOTIMP", DNS_RC_NOTIMP }, { "REFUSED", DNS_RC_REFUSED },
@@ -880,17 +926,22 @@ int luaopen__cqueues_dns_packet(lua_State *L) {
 		{ "NXRRSET", DNS_RC_NXRRSET }, { "NOTAUTH", DNS_RC_NOTAUTH },
 		{ "NOTZONE", DNS_RC_NOTZONE },
 	};
-	unsigned i;
 
 	dnsL_loadall(L);
 
 	luaL_newlib(L, pkt_globals);
 
-	for (i = 0; i < countof(macro); i++) {
-		lua_pushinteger(L, macro[i].value);
-		lua_pushstring(L, macro[i].name);
-		lua_rawset(L, -2);
-	}
+	lua_newtable(L);
+	cqs_addmacros(L, -1, section, countof(section), 1);
+	lua_setfield(L, -2, "section");
+
+	lua_newtable(L);
+	cqs_addmacros(L, -1, opcode, countof(opcode), 1);
+	lua_setfield(L, -2, "opcode");
+
+	lua_newtable(L);
+	cqs_addmacros(L, -1, rcode, countof(rcode), 1);
+	lua_setfield(L, -2, "rcode");
 
 	return 1;
 } /* luaopen__cqueues_dns_packet() */
@@ -1603,6 +1654,80 @@ static int hints_insert(lua_State *L) {
 } /* hints_insert() */
 
 
+static int hints_next(lua_State *L) {
+	struct dns_hints *hints = hints_check(L, lua_upvalueindex(1));
+	struct dns_hints_i *i = lua_touserdata(L, lua_upvalueindex(3));
+	union { struct sockaddr *sa; struct sockaddr_in *in; struct sockaddr_in6 *in6; } any;
+	socklen_t salen;
+	char ip[INET6_ADDRSTRLEN + 1] = "";
+	int port;
+
+	while (dns_hints_grep(&any.sa, &salen, 1, i, hints)) {
+		switch (any.sa->sa_family) {
+		case AF_INET:
+			inet_ntop(AF_INET, &any.in->sin_addr, ip, sizeof ip);
+			port = ntohs(any.in->sin_port);
+			break;
+		case AF_INET6:
+			inet_ntop(AF_INET6, &any.in6->sin6_addr, ip, sizeof ip);
+			port = ntohs(any.in6->sin6_port);
+			break;
+		default:
+			continue;
+		}
+
+		if (port && port != 53)
+			lua_pushfstring(L, "[%s]:%d", ip, port);
+		else
+			lua_pushstring(L, ip);
+
+		return 1;
+	}
+
+	return 0;
+} /* hints_next() */
+
+static int hints_grep(lua_State *L) {
+	struct dns_hints *hints = hints_check(L, 1);
+	struct dns_hints_i *i;
+
+	lua_settop(L, 2);
+	i = memset(lua_newuserdata(L, sizeof *i), 0, sizeof *i);
+	i->zone = luaL_optstring(L, 2, ".");
+
+	lua_pushcclosure(L, &hints_next, 3);
+
+	return 1;
+} /* hints_grep() */
+
+
+/* FIXME: Potential memory leak on Lua panic. */
+static int hints__tostring(lua_State *L) {
+	struct dns_hints *hints = hints_check(L, 1);
+	char line[1024];
+	luaL_Buffer B;
+	FILE *fp;
+
+	if (!(fp = tmpfile()))
+		return luaL_error(L, "tmpfile: %s", strerror(errno));
+
+	dns_hints_dump(hints, fp);
+
+	luaL_buffinit(L, &B);
+
+	rewind(fp);
+
+	while (fgets(line, sizeof line, fp))
+		luaL_addstring(&B, line);
+
+	fclose(fp);
+
+	luaL_pushresult(&B);
+
+	return 1;
+} /* hints__tostring() */
+
+
 static int hints__gc(lua_State *L) {
 	struct dns_hints **hints = luaL_checkudata(L, 1, HINTS_CLASS);
 
@@ -1615,10 +1740,12 @@ static int hints__gc(lua_State *L) {
 
 static const luaL_Reg hints_methods[] = {
 	{ "insert", &hints_insert },
+	{ "grep",   &hints_grep },
 	{ NULL,     NULL },
 }; /* hints_methods[] */
 
 static const luaL_Reg hints_metatable[] = {
+	{ "__tostring", &hints__tostring },
 	{ "__gc",       &hints__gc },
 	{ NULL,         NULL }
 }; /* hints_metatable[] */

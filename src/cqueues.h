@@ -137,6 +137,28 @@ static inline void cqs_addclass(lua_State *L, const char *name, const luaL_Reg *
 } /* cqs_addclass() */
 
 
+struct cqs_macro { const char *name; int value; };
+
+static inline void cqs_addmacros(lua_State *L, int index, const struct cqs_macro *macro, size_t count, _Bool swap) {
+	index = lua_absindex(L, index);
+
+	for (unsigned i = 0; i < count; i++) {
+		lua_pushstring(L, macro[i].name);
+		lua_pushinteger(L, macro[i].value);
+		lua_rawset(L, index);
+	}
+
+	if (!swap)
+		return;
+
+	for (unsigned i = 0; i < count; i++) {
+		lua_pushinteger(L, macro[i].value);
+		lua_pushstring(L, macro[i].name);
+		lua_rawset(L, index);
+	}
+} /* cqs_addmacros() */
+
+
 static inline void cqs_closefd(int *fd) {
 	if (*fd != -1) {
 		while (0 != close(*fd) && errno == EINTR)
