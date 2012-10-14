@@ -65,9 +65,9 @@
 
 #define DNS_VENDOR "william@25thandClement.com"
 
-#define DNS_V_REL  0x20121003
+#define DNS_V_REL  0x20121013
 #define DNS_V_ABI  0x20120806
-#define DNS_V_API  0x20120806
+#define DNS_V_API  0x20121013
 
 
 const char *dns_vendor(void);
@@ -879,6 +879,8 @@ struct dns_resolv_conf *dns_resconf_mortal(struct dns_resolv_conf *);
 struct dns_resolv_conf *dns_resconf_local(int *);
 
 struct dns_resolv_conf *dns_resconf_root(int *);
+
+int dns_resconf_pton(struct sockaddr_storage *, const char *);
 
 int dns_resconf_loadfile(struct dns_resolv_conf *, FILE *);
 

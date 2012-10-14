@@ -3851,7 +3851,7 @@ static enum dns_resconf_keyword dns_resconf_keyword(const char *word) {
 
 
 /** OpenBSD-style "[1.2.3.4]:53" nameserver syntax */
-static int dns_resconf_pton(struct sockaddr_storage *ss, const char *src) {
+int dns_resconf_pton(struct sockaddr_storage *ss, const char *src) {
 	struct { char buf[128], *p; } addr = { "", addr.buf };
 	unsigned short port = 0;
 	int ch, af = AF_INET, error;

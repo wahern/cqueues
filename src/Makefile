@@ -108,7 +108,8 @@ lib/notify.o: lib/notify.c
 install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
          $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua \
          $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua \
-         $(lua52path)/cqueues/notify.lua $(lua52path)/cqueues/dns/resolver.lua
+         $(lua52path)/cqueues/notify.lua $(lua52path)/cqueues/dns/resolver.lua \
+         $(lua52path)/cqueues/dns/config.lua $(lua52path)/cqueues/dns/hosts.lua
 
 $(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
@@ -128,27 +129,37 @@ $(lua52path)/cqueues/errno.lua: errno.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
- 
+
 $(lua52path)/cqueues/signal.lua: signal.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
- 
+
 $(lua52path)/cqueues/thread.lua: thread.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
- 
+
 $(lua52path)/cqueues/notify.lua: notify.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
- 
+
 $(lua52path)/cqueues/dns/resolver.lua: dns.resolver.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
- 
+
+$(lua52path)/cqueues/dns/config.lua: dns.config.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(lua52path)/cqueues/dns/hosts.lua: dns.hosts.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
 .PHONY: clean clean~
 
 clean:

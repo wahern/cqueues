@@ -1,11 +1,14 @@
 local loader = function(loader, ...)
 	local cqueues = require"cqueues"
 	local resolver = require"_cqueues.dns.resolver"
-	local EAGAIN = require"cqueues.errno".EAGAIN
+	local errno = require"cqueues.errno"
+	local EAGAIN = errno.EAGAIN
+	local ETIMEDOUT = errno.ETIMEDOUT
+	local monotime = cqueues.monotime
 
-
-	resolver.interpose("query", function(self, name, type, class)
-		local ok, why, pkt
+	resolver.interpose("query", function (self, name, type, class, timeout)
+		local deadline = timeout and (monotime() + timeout)
+		local ok, why, answer
 
 		ok, why = self:submit(name, type, class)
 
@@ -14,18 +17,28 @@ local loader = function(loader, ...)
 		end
 
 		repeat
-			pkt, why = self:fetch()
+			answer, why = self:fetch()
 
-			if not pkt then
+			if not answer then
 				if why == EAGAIN then
-					cqueues.poll(self)
+					if deadline then
+						local curtime = monotime()
+
+						if deadline < curtime then
+							return nil, ETIMEDOUT
+						else
+							cqueues.poll(self, math.min(deadline - curtime, 1))
+						end
+					else
+						cqueues.poll(self, 1)
+					end
 				else
 					return nil, why
 				end
 			end
-		until pkt
+		until answer
 
-		return pkt
+		return answer
 	end)
 
 	return resolver
