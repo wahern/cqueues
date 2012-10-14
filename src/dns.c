@@ -971,6 +971,36 @@ static int resconf_new(lua_State *L) {
 } /* resconf_new() */
 
 
+static int resconf_stub(lua_State *L) {
+	struct dns_resolv_conf **resconf = lua_newuserdata(L, sizeof *resconf);
+	int error;
+
+	*resconf = 0;
+
+	if (!(*resconf = dns_resconf_local(&error)))
+		return lua_pushboolean(L, 0), lua_pushinteger(L, error), 2;
+
+	luaL_setmetatable(L, RESCONF_CLASS);
+
+	return 1;
+} /* resconf_stub() */
+
+
+static int resconf_root(lua_State *L) {
+	struct dns_resolv_conf **resconf = lua_newuserdata(L, sizeof *resconf);
+	int error;
+
+	*resconf = 0;
+
+	if (!(*resconf = dns_resconf_root(&error)))
+		return lua_pushboolean(L, 0), lua_pushinteger(L, error), 2;
+
+	luaL_setmetatable(L, RESCONF_CLASS);
+
+	return 1;
+} /* resconf_root() */
+
+
 static int resconf_interpose(lua_State *L) {
 	return cqs_interpose(L, RESCONF_CLASS);
 } /* resconf_interpose() */
@@ -1380,6 +1410,8 @@ static const luaL_Reg resconf_metatable[] = {
 
 static const luaL_Reg resconf_globals[] = {
 	{ "new",       &resconf_new },
+	{ "stub",      &resconf_stub },
+	{ "root",      &resconf_root },
 	{ "interpose", &resconf_interpose },
 	{ NULL,        NULL }
 };
@@ -1598,7 +1630,7 @@ static int hints_root(lua_State *L) {
 } /* hints_root() */
 
 
-static int hints_local(lua_State *L) {
+static int hints_stub(lua_State *L) {
 	struct dns_resolv_conf *resconf = resconf_test(L, 1);
 	struct dns_hints **hints;
 	int error;
@@ -1612,7 +1644,7 @@ static int hints_local(lua_State *L) {
 	luaL_setmetatable(L, HINTS_CLASS);
 
 	return 1;
-} /* hints_local() */
+} /* hints_stub() */
 
 
 static int hints_interpose(lua_State *L) {
@@ -1753,7 +1785,7 @@ static const luaL_Reg hints_metatable[] = {
 static const luaL_Reg hints_globals[] = {
 	{ "new",       &hints_new },
 	{ "root",      &hints_root },
-	{ "local",     &hints_local },
+	{ "stub",      &hints_stub },
 	{ "interpose", &hints_interpose },
 	{ NULL,        NULL }
 };
@@ -1835,23 +1867,6 @@ error:
 static int res_interpose(lua_State *L) {
 	return cqs_interpose(L, RESOLVER_CLASS);
 } /* res_interpose() */
-
-
-static int res_stub(lua_State *L) {
-	struct dns_resolver **R = lua_newuserdata(L, sizeof *R);
-	int error;
-
-	*R = 0;
-	luaL_setmetatable(L, RESOLVER_CLASS);
-
-	if ((*R = dns_res_stub(dns_opts(), &error)))
-		return 1;
-
-	lua_pushnil(L);
-	lua_pushinteger(L, error);
-
-	return 2;
-} /* res_stub() */
 
 
 static inline struct dns_resolver *res_check(lua_State *L, int index) {
@@ -1963,7 +1978,6 @@ static const luaL_Reg res_metatable[] = {
 static const luaL_Reg res_globals[] = {
 	{ "new",       &res_new },
 	{ "interpose", &res_interpose },
-	{ "stub",      &res_stub },
 	{ NULL,        NULL }
 };
 

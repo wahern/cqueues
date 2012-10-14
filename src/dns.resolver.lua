@@ -7,12 +7,20 @@ local loader = function(loader, ...)
 	local ETIMEDOUT = errno.ETIMEDOUT
 	local monotime = cqueues.monotime
 
-	local build = resolver.new; resolver.new = function (resconf, hosts, hints)
+	local new = resolver.new; resolver.new = function (resconf, hosts, hints)
 		if type(resconf) == "table" then
 			resconf = config.new(resconf)
 		end
 
-		return build(resconf, hosts, hints)
+		return new(resconf, hosts, hints)
+	end
+
+	resolver.stub = function (init)
+		return resolver.new(config.stub(init), nil, nil)
+	end
+
+	resolver.root = function (init)
+		return resolver.new(config.root(init), nil, nil)
 	end
 
 	resolver.interpose("query", function (self, name, type, class, timeout)

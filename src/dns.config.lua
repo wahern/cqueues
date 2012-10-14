@@ -17,45 +17,69 @@ local loader = function(loader, ...)
 		return cfg
 	end
 
-	local build = config.new; config.new = function(init)
-		local cfg = build()
+	local new = config.new; config.new = function(init)
+		local cfg = new()
 
 		if init then
-			if init.nameserver then
-				cfg:setns(init.nameserver)
-			end
-
-			if init.search then
-				cfg:setsearch(init.search)
-			end
-
-			if init.lookup then
-				cfg:setlookup(init.lookup)
-			end
-
-			local opts = init.options or init.opts or { }
-			local copy = {
-				"edns0", "ndots", "timeout", "attempts",
-				"rotate", "recurse", "smart", "tcp"
-			}
-
-			for i, k in ipairs(copy) do
-				if opts[k] == nil and init[k] ~= nil then
-					opts[k] = init[k];
-				end
-			end
-
-			cfg:setopts(opts)
-
-			if init.interface then
-				cfg:setiface(init.interface)
-			end
+			cfg:set(init)
 		end
 
 		return cfg
 	end
 
-	config.interpose("totable", function (self)
+	local stub = config.stub; config.stub = function(init)
+		local cfg = stub()
+
+		if init then
+			cfg:set(init)
+		end
+
+		return cfg
+	end
+
+	local root = config.root; config.root = function(init)
+		local cfg = root()
+
+		if init then
+			cfg:set(init)
+		end
+
+		return cfg
+	end
+
+	config.interpose("set", function (self, init)
+		if init.nameserver then
+			self:setns(init.nameserver)
+		end
+
+		if init.search then
+			self:setsearch(init.search)
+		end
+
+		if init.lookup then
+			self:setlookup(init.lookup)
+		end
+
+		local opts = init.options or init.opts or { }
+		local copy = {
+			"edns0", "ndots", "timeout", "attempts",
+			"rotate", "recurse", "smart", "tcp"
+		}
+
+		for i, k in ipairs(copy) do
+			if opts[k] == nil and init[k] ~= nil then
+				opts[k] = init[k];
+			end
+		end
+
+		self:setopts(opts)
+
+		if init.interface then
+			self:setiface(init.interface)
+		end
+	end)
+
+	config.interpose("get", function (self)
 		return {
 			nameserver = self:getns(),
 			search = self:getsearch(),
@@ -63,12 +87,6 @@ local loader = function(loader, ...)
 			options = self:getopts(),
 			interface = self:getiface(),
 		}
-	end)
-
-	config.interpose("tohints", function (self, zone)
-		local hints = require"cqueues.dns.hints".new(self)
-		hints:insert(zone or ".", self)
-		return hints
 	end)
 
 	return config
