@@ -657,7 +657,7 @@ int so_bind(int fd, sockaddr_arg_t arg, const struct so_options *opts) {
 
 
 void so_closesocket(int *fd, const struct so_options *opts) {
-	if (opts->fd_close.cb)
+	if (opts && opts->fd_close.cb)
 		opts->fd_close.cb(fd, opts->fd_close.arg);
 
 	if (*fd != -1) {
