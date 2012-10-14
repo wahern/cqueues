@@ -34,9 +34,19 @@ local loader = function(loader, ...)
 				cfg:setlookup(init.lookup)
 			end
 
-			if init.options then
-				cfg:setopts(init.options)
+			local opts = init.options or init.opts or { }
+			local copy = {
+				"edns0", "ndots", "timeout", "attempts",
+				"rotate", "recurse", "smart", "tcp"
+			}
+
+			for i, k in ipairs(copy) do
+				if opts[k] == nil and init[k] ~= nil then
+					opts[k] = init[k];
+				end
 			end
+
+			cfg:setopts(opts)
 
 			if init.interface then
 				cfg:setiface(init.interface)

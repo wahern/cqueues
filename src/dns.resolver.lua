@@ -1,10 +1,19 @@
 local loader = function(loader, ...)
 	local cqueues = require"cqueues"
 	local resolver = require"_cqueues.dns.resolver"
+	local config = require"cqueues.dns.config"
 	local errno = require"cqueues.errno"
 	local EAGAIN = errno.EAGAIN
 	local ETIMEDOUT = errno.ETIMEDOUT
 	local monotime = cqueues.monotime
+
+	local build = resolver.new; resolver.new = function (resconf, hosts, hints)
+		if type(resconf) == "table" then
+			resconf = config.new(resconf)
+		end
+
+		return build(resconf, hosts, hints)
+	end
 
 	resolver.interpose("query", function (self, name, type, class, timeout)
 		local deadline = timeout and (monotime() + timeout)

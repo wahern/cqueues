@@ -769,7 +769,7 @@ static int pkt_flags(lua_State *L) {
 
 static int pkt_count(lua_State *L) {
 	struct dns_packet *P = lua_touserdata(L, 1);
-	int flags = luaL_optinteger(L, 2, DNS_S_ALL);
+	int flags = luaL_optint(L, 2, DNS_S_ALL);
 
 	lua_pushinteger(L, dns_p_count(P, flags));
 
@@ -928,6 +928,12 @@ static int resconf_interpose(lua_State *L) {
 static struct dns_resolv_conf *resconf_check(lua_State *L, int index) {
 	return *(struct dns_resolv_conf **)luaL_checkudata(L, index, RESCONF_CLASS);
 } /* resconf_check() */
+
+
+static struct dns_resolv_conf *resconf_test(lua_State *L, int index) {
+	struct dns_resolv_conf **resconf = luaL_testudata(L, index, RESCONF_CLASS);
+	return (resconf)? *resconf : 0;
+} /* resconf_test() */
 
 
 static int resconf_getns(lua_State *L) {
@@ -1381,6 +1387,12 @@ static struct dns_hosts *hosts_check(lua_State *L, int index) {
 } /* hosts_check() */
 
 
+static struct dns_hosts *hosts_test(lua_State *L, int index) {
+	struct dns_hosts **hosts = luaL_testudata(L, index, HOSTS_CLASS);
+	return (hosts)? *hosts : 0;
+} /* hosts_test() */
+
+
 static int hosts_loadfile(lua_State *L) {
 	struct dns_hosts *hosts = hosts_check(L, 1);
 	luaL_Stream *file = luaL_checkudata(L, 2, LUA_FILEHANDLE);
@@ -1502,13 +1514,12 @@ int luaopen__cqueues_dns_hosts(lua_State *L) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 static int hints_new(lua_State *L) {
-	struct dns_resolv_conf *resconf = (!lua_isnone(L, 1))? resconf_check(L, 1) : 0;
+	struct dns_resolv_conf *resconf = resconf_test(L, 1);
 	struct dns_hints **hints;
 	int error;
 
 	hints = lua_newuserdata(L, sizeof *hints);
 	*hints = 0;
-
 
 	if (!(*hints = dns_hints_open(resconf, &error)))
 		return lua_pushboolean(L, 0), lua_pushinteger(L, error), 2;
@@ -1519,6 +1530,40 @@ static int hints_new(lua_State *L) {
 } /* hints_new() */
 
 
+static int hints_root(lua_State *L) {
+	struct dns_resolv_conf *resconf = resconf_test(L, 1);
+	struct dns_hints **hints;
+	int error;
+
+	hints = lua_newuserdata(L, sizeof *hints);
+	*hints = 0;
+
+	if (!(*hints = dns_hints_root(resconf, &error)))
+		return lua_pushboolean(L, 0), lua_pushinteger(L, error), 2;
+
+	luaL_setmetatable(L, HINTS_CLASS);
+
+	return 1;
+} /* hints_root() */
+
+
+static int hints_local(lua_State *L) {
+	struct dns_resolv_conf *resconf = resconf_test(L, 1);
+	struct dns_hints **hints;
+	int error;
+
+	hints = lua_newuserdata(L, sizeof *hints);
+	*hints = 0;
+
+	if (!(*hints = dns_hints_local(resconf, &error)))
+		return lua_pushboolean(L, 0), lua_pushinteger(L, error), 2;
+
+	luaL_setmetatable(L, HINTS_CLASS);
+
+	return 1;
+} /* hints_local() */
+
+
 static int hints_interpose(lua_State *L) {
 	return cqs_interpose(L, HINTS_CLASS);
 } /* hints_interpose() */
@@ -1527,6 +1572,35 @@ static int hints_interpose(lua_State *L) {
 static struct dns_hints *hints_check(lua_State *L, int index) {
 	return *(struct dns_hints **)luaL_checkudata(L, index, HINTS_CLASS);
 } /* hints_check() */
+
+
+static struct dns_hints *hints_test(lua_State *L, int index) {
+	struct dns_hints **hints = luaL_testudata(L, index, HINTS_CLASS);
+	return (hints)? *hints : 0;
+} /* hints_test() */
+
+
+static int hints_insert(lua_State *L) {
+	struct dns_hints *hints = hints_check(L, 1);
+	const char *zone = luaL_checkstring(L, 2), *ns;
+	int priority = luaL_optint(L, 4, 0);
+	int error = 0;
+
+	if (!lua_isnone(L, 3) && lua_isuserdata(L, 3)) {
+		dns_hints_insert_resconf(hints, zone, resconf_check(L, 3), &error);
+	} else {
+		const char *ns = luaL_checkstring(L, 3);
+		struct sockaddr_storage any;
+
+		if (!(error = dns_resconf_pton(&any, ns)))
+			error = dns_hints_insert(hints, zone, (struct sockaddr *)&any, priority);
+	}
+
+	if (error)
+		return luaL_error(L, "%s: %s", zone, dns_strerror(error));
+
+	return lua_pushboolean(L, 1), 1;
+} /* hints_insert() */
 
 
 static int hints__gc(lua_State *L) {
@@ -1540,7 +1614,8 @@ static int hints__gc(lua_State *L) {
 
 
 static const luaL_Reg hints_methods[] = {
-	{ NULL, NULL },
+	{ "insert", &hints_insert },
+	{ NULL,     NULL },
 }; /* hints_methods[] */
 
 static const luaL_Reg hints_metatable[] = {
@@ -1550,6 +1625,8 @@ static const luaL_Reg hints_metatable[] = {
 
 static const luaL_Reg hints_globals[] = {
 	{ "new",       &hints_new },
+	{ "root",      &hints_root },
+	{ "local",     &hints_local },
 	{ "interpose", &hints_interpose },
 	{ NULL,        NULL }
 };
@@ -1569,8 +1646,62 @@ int luaopen__cqueues_dns_hints(lua_State *L) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 static int res_new(lua_State *L) {
-	(void)L;
-	return 0;
+	struct dns_resolver **R = lua_newuserdata(L, sizeof *R);
+	struct dns_resolv_conf *resconf = resconf_test(L, 1);
+	struct dns_hosts *hosts = hosts_test(L, 2);
+	struct dns_hints *hints = hints_test(L, 3);
+	int error;
+
+	*R = 0;
+	luaL_setmetatable(L, RESOLVER_CLASS);
+
+	if (resconf)
+		dns_resconf_acquire(resconf);
+	if (hosts)
+		dns_hosts_acquire(hosts);
+	if (hints)
+		dns_hints_acquire(hints);
+
+	if (!resconf && !(resconf = dns_resconf_local(&error)))
+		goto error;
+
+	if (!hosts) {
+		if (resconf->options.recurse)
+			hosts = dns_hosts_open(&error);
+		else
+			hosts = dns_hosts_local(&error);
+
+		if (!hosts)
+			goto error;
+	}
+
+	if (!hints) {
+		if (resconf->options.recurse)
+			hints = dns_hints_root(resconf, &error);
+		else
+			hints = dns_hints_local(resconf, &error);
+
+		if (!hints)
+			goto error;
+	}
+
+	if (!(*R = dns_res_open(resconf, hosts, hints, NULL, dns_opts(), &error)))
+		goto error;
+
+	dns_resconf_close(resconf);
+	dns_hosts_close(hosts);
+	dns_hints_close(hints);
+
+	return 1;
+error:
+	dns_resconf_close(resconf);
+	dns_hosts_close(hosts);
+	dns_hints_close(hints);
+
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 2;
 } /* res_new() */
 
 
@@ -1753,5 +1884,4 @@ static void dnsL_loadall(lua_State *L) {
 	cqs_addclass(L, HINTS_CLASS, hints_methods, hints_metatable);
 	cqs_addclass(L, RESOLVER_CLASS, res_methods, res_metatable);
 } /* dnsL_loadall() */
-
 
