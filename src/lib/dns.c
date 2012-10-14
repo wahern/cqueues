@@ -5251,7 +5251,10 @@ void dns_cache_close(struct dns_cache *cache) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-static void dns_socketclose(int *fd) {
+static void dns_socketclose(int *fd, const struct dns_options *opts) {
+	if (opts && opts->closefd.cb)
+		opts->closefd.cb(fd, opts->closefd.arg);
+
 	if (*fd != -1) {
 #if _WIN32
 		closesocket(*fd);
@@ -5340,7 +5343,7 @@ syerr:
 error:
 	*error_	= error;
 
-	dns_socketclose(&fd);
+	dns_socketclose(&fd, NULL);
 
 	return -1;
 } /* dns_socket() */
@@ -5442,13 +5445,13 @@ static int dns_so_closefd(struct dns_socket *so, int *fd) {
 
 static void dns_so_closefds(struct dns_socket *so, int which) {
 	if (DNS_SO_CLOSE_UDP & which)
-		dns_socketclose(&so->udp);
+		dns_socketclose(&so->udp, &so->opts);
 	if (DNS_SO_CLOSE_TCP & which)
-		dns_socketclose(&so->tcp);
+		dns_socketclose(&so->tcp, &so->opts);
 	if (DNS_SO_CLOSE_OLD & which) {
 		unsigned i;
 		for (i = 0; i < so->onum; i++)
-			dns_socketclose(&so->old[i]);
+			dns_socketclose(&so->old[i], &so->opts);
 		so->onum = 0;
 		free(so->old);
 		so->old  = 0;
