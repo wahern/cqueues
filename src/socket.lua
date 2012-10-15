@@ -69,6 +69,28 @@ end)
 
 
 --
+-- socket:checktls
+--
+local havessl, whynossl
+
+local checktls; checktls = socket.interpose("checktls", function(self)
+	if not havessl then
+		if havessl == false then
+			return nil, whynossl
+		end
+
+		local havessl, whynossl = pcall(require, "openssl.ssl")
+
+		if not havessl then
+			return nil, whynossl
+		end
+	end
+
+	return checktls(self)
+end)
+
+
+--
 -- Yielding socket:flush
 --
 local oflush; oflush = socket.interpose("flush", function(self, mode)

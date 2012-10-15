@@ -36,6 +36,8 @@
 
 #include <unistd.h>	/* dup(2) close(2) */
 
+#include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
+
 #include <lua.h>
 #include <lauxlib.h>
 
@@ -636,6 +638,29 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 		return 2;
 	}
 } /* lso_starttls() */
+
+
+static lso_nargs_t lso_checktls(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	SSL **ssl;
+	int error;
+
+	ssl = lua_newuserdata(L, sizeof *ssl);
+
+	if (!(*ssl = so_checktls(S->socket)))
+		return 0;
+
+	luaL_getmetatable(L, "OpenSSL SSL");
+
+	if (lua_isnil(L, -1))
+		return 0;
+
+	lua_setmetatable(L, -2);
+
+	CRYPTO_add(&(*ssl)->references, 1, CRYPTO_LOCK_SSL);
+
+	return 1;
+} /* lso_checktls() */
 
 
 lso_error_t cqs_socket_fdopen(lua_State *L, int fd, const struct so_options *_opts) {
@@ -1626,6 +1651,7 @@ static luaL_Reg lso_methods[] = {
 	{ "connect",  &lso_connect1 },
 	{ "listen",   &lso_listen1 },
 	{ "starttls", &lso_starttls },
+	{ "checktls", &lso_checktls },
 	{ "setvbuf",  &lso_setvbuf3 },
 	{ "setmode",  &lso_setmode3 },
 	{ "onerror",  &lso_onerror2 },

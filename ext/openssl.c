@@ -67,6 +67,7 @@
 #define X509_STORE_CLASS "OpenSSL X.509 Store"
 #define X509_STCTX_CLASS "OpenSSL X.509 Store Context"
 #define SSL_CTX_CLASS    "OpenSSL SSL Context"
+#define SSL_CLASS        "OpenSSL SSL"
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
@@ -2594,6 +2595,48 @@ int luaopen__openssl_x509_csr(lua_State *L) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+static void xl_dup(lua_State *L, STACK_OF(X509) *src, _Bool copy) {
+	STACK_OF(X509) **dst = prepsimple(L, X509_CHAIN_CLASS);
+	X509 *crt;
+	int i, n;
+
+	if (copy) {
+		if (!(*dst = sk_X509_new_null()))
+			goto error;
+
+		n = sk_X509_num(src);
+
+		for (i = 0; i < n; i++) {
+			if (!(crt = sk_X509_value(src, i)))
+				continue;
+
+			if (!(crt = X509_dup(crt)))
+				goto error;
+
+			if (!sk_X509_push(*dst, crt)) {
+				X509_free(crt);
+				goto error;
+			}
+		}
+	} else {
+		if (!(*dst = sk_X509_dup(src)))
+			goto error;
+
+		n = sk_X509_num(*dst);
+
+		for (i = 0; i < n; i++) {
+			if (!(crt = sk_X509_value(*dst, i)))
+				continue;
+			CRYPTO_add(&crt->references, 1, CRYPTO_LOCK_X509);
+		}
+	}
+
+	return;
+error:
+	throwssl(L, "sk_X509_dup");
+} /* xl_dup() */
+
+
 static int xl_new(lua_State *L) {
 	STACK_OF(X509) **chain = prepsimple(L, X509_CHAIN_CLASS);
 
@@ -2778,7 +2821,8 @@ static int xs_verify(lua_State *L) {
 		X509 *elm;
 		int i, n;
 
-		chain = sk_X509_dup(checksimple(L, 3, X509_CHAIN_CLASS));
+		if (!(chain = sk_X509_dup(checksimple(L, 3, X509_CHAIN_CLASS))))
+			return throwssl(L, "x509.store:verify");
 
 		n = sk_X509_num(chain);
 
@@ -3108,6 +3152,82 @@ int luaopen__openssl_ssl_context(lua_State *L) {
 } /* luaopen__openssl_ssl_context() */
 
 
+/*
+ * SSL - openssl.ssl
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int ssl_new(lua_State *L) {
+	lua_pushnil(L);
+
+	return 1;
+} /* ssl_new() */
+
+
+static int ssl_interpose(lua_State *L) {
+	return interpose(L, SSL_CLASS);
+} /* ssl_interpose() */
+
+
+static int ssl_getPeerCertificate(lua_State *L) {
+	SSL *ssl = checksimple(L, 1, SSL_CLASS);
+	X509 **x509 = prepsimple(L, X509_CERT_CLASS);
+
+	if (!(*x509 = SSL_get_peer_certificate(ssl)))
+		return 0;
+
+	return 1;
+} /* ssl_getPeerCertificate() */
+
+
+static int ssl_getPeerChain(lua_State *L) {
+	SSL *ssl = checksimple(L, 1, SSL_CLASS);
+	STACK_OF(X509) *chain;
+
+	if (!(chain = SSL_get_peer_cert_chain(ssl)))
+		return 0;
+
+	xl_dup(L, chain, 0);
+
+	return 1;
+} /* ssl_getPeerChain() */
+
+
+static int ssl__gc(lua_State *L) {
+	SSL **ud = luaL_checkudata(L, 1, SSL_CLASS);
+
+	SSL_free(*ud);
+	*ud = NULL;
+
+	return 0;
+} /* ssl__gc() */
+
+
+static const luaL_Reg ssl_methods[] = {
+	{ "getPeerCertificate", &ssl_getPeerCertificate },
+	{ "getPeerChain",       &ssl_getPeerChain },
+	{ NULL,                 NULL },
+};
+
+static const luaL_Reg ssl_metatable[] = {
+	{ "__gc", &ssl__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg ssl_globals[] = {
+	{ "new",       &ssl_new },
+	{ "interpose", &ssl_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_ssl(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, ssl_globals);
+
+	return 1;
+} /* luaopen__openssl_ssl() */
+
 
 static void initall(lua_State *L) {
 	ERR_load_crypto_strings();
@@ -3122,6 +3242,7 @@ static void initall(lua_State *L) {
 	addclass(L, X509_CHAIN_CLASS, xl_methods, xl_metatable);
 	addclass(L, X509_STORE_CLASS, xs_methods, xs_metatable);
 	addclass(L, SSL_CTX_CLASS, sx_methods, sx_metatable);
+	addclass(L, SSL_CLASS, ssl_methods, ssl_metatable);
 } /* initall() */
 
 

@@ -48,7 +48,7 @@ install: $(lua52cpath)/_openssl.so $(lua52path)/openssl/bignum.lua \
          $(lua52path)/openssl/pubkey.lua $(lua52path)/openssl/x509.lua \
          $(lua52path)/openssl/x509/name.lua $(lua52path)/openssl/x509/altname.lua \
          $(lua52path)/openssl/x509/chain.lua $(lua52path)/openssl/x509/store.lua \
-         $(lua52path)/openssl/ssl/context.lua
+         $(lua52path)/openssl/ssl/context.lua $(lua52path)/openssl/ssl.lua
 
 $(lua52cpath)/_openssl.so: openssl.so
 	mkdir -p $(@D)
@@ -83,6 +83,10 @@ $(lua52path)/openssl/x509/store.lua: openssl.x509.store.lua
 	cp -p $< $@
 
 $(lua52path)/openssl/ssl/context.lua: openssl.ssl.context.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(lua52path)/openssl/ssl.lua: openssl.ssl.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
