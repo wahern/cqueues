@@ -848,11 +848,11 @@ static int pkt_grep(lua_State *L) {
 	if (!lua_isnil(L, 2)) {
 		luaL_checktype(L, 2, LUA_TTABLE);
 
-		rr_i->section = optfint(L, -1, "section", 0);
-		rr_i->type = optfint(L, -1, "type", 0);
-		rr_i->class = optfint(L, -1, "class", 0);
+		rr_i->section = optfint(L, 2, "section", 0);
+		rr_i->type = optfint(L, 2, "type", 0);
+		rr_i->class = optfint(L, 2, "class", 0);
 
-		lua_getfield(L, -1, "name");
+		lua_getfield(L, 2, "name");
 		if (!(rr_i->name = luaL_optstring(L, -1, NULL)))
 			lua_pop(L, 1);
 	}
