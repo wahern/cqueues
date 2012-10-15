@@ -438,7 +438,7 @@ Place socket into TLS mode, optionally using the \module{openssl.ssl.context} ob
 
 \subsubsection[\fn{socket:checktls}]{\fn{socket:checktls()}}
 
-If in TLS mode, returns a \module{openssl.ssl} object, otherwise nil. If the openssl module cannot be loaded, returns nil and an error string.
+If in TLS mode, returns an \module{openssl.ssl} object, otherwise nil. If the openssl module cannot be loaded, returns nil and an error string.
 
 \subsubsection[\fn{socket:setvbuf}]{\fn{socket:setvbuf(mode [, size])}}
 Same as Lua \fn{file:setvbuf}. Analogous to ``n'', ``l'', and ``f'' mode flags.
