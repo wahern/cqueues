@@ -36,6 +36,8 @@
 
 #include <unistd.h>	/* dup(2) close(2) */
 
+#include <arpa/inet.h>	/* ntohs(3) */
+
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
 
 #include <lua.h>
@@ -1594,6 +1596,61 @@ error:
 } /* lso_accept() */
 
 
+static lso_nargs_t lso_pushname(lua_State *L, struct sockaddr_storage *ss) {
+	switch (ss->ss_family) {
+	case AF_INET:
+		/* FALL THROUGH */
+	case AF_INET6:
+		lua_pushinteger(L, ss->ss_family);
+		lua_pushstring(L, sa_ntoa(ss));
+		lua_pushinteger(L, ntohs(*sa_port(ss)));
+
+		return 3;
+	case AF_UNIX:
+		lua_pushinteger(L, ss->ss_family);
+		lua_pushstring(L, sa_ntoa(ss));
+
+		return 2;
+	default:
+		lua_pushinteger(L, ss->ss_family);
+
+		return 1;
+	}
+} /* lso_pushname() */
+
+
+static lso_nargs_t lso_peername(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	struct sockaddr_storage ss;
+	int error;
+
+	if ((error = so_remoteaddr(S->socket, &ss, &(socklen_t){ sizeof ss }))) {
+		lua_pushnil(L);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+
+	return lso_pushname(L, &ss);
+} /* lso_peername() */
+
+
+static lso_nargs_t lso_localname(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	struct sockaddr_storage ss;
+	int error;
+
+	if ((error = so_localaddr(S->socket, &ss, &(socklen_t){ sizeof ss }))) {
+		lua_pushnil(L);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+
+	return lso_pushname(L, &ss);
+} /* lso_localname() */
+
+
 static void lso_destroy(lua_State *L, struct luasocket *S) {
 	cqs_unref(L, &S->onerror);
 
@@ -1648,30 +1705,32 @@ static int lso_interpose(lua_State *L) {
 
 
 static luaL_Reg lso_methods[] = {
-	{ "connect",  &lso_connect1 },
-	{ "listen",   &lso_listen1 },
-	{ "starttls", &lso_starttls },
-	{ "checktls", &lso_checktls },
-	{ "setvbuf",  &lso_setvbuf3 },
-	{ "setmode",  &lso_setmode3 },
-	{ "onerror",  &lso_onerror2 },
-	{ "recv",     &lso_recv3 },
-	{ "unget",    &lso_unget2 },
-	{ "send",     &lso_send5 },
-	{ "flush",    &lso_flush },
-	{ "uncork",   &lso_uncork },
-	{ "pending",  &lso_pending },
-	{ "sendfd",   &lso_sendfd3 },
-	{ "recvfd",   &lso_recvfd2 },
-	{ "pack",     &lso_pack4 },
-	{ "unpack",   &lso_unpack2 },
-	{ "clear",    &lso_clear },
-	{ "pollfd",   &lso_pollfd },
-	{ "events",   &lso_events },
-	{ "shutdown", &lso_shutdown },
-	{ "eof",      &lso_eof },
-	{ "accept",   &lso_accept },
-	{ "close",    &lso_close },
+	{ "connect",   &lso_connect1 },
+	{ "listen",    &lso_listen1 },
+	{ "starttls",  &lso_starttls },
+	{ "checktls",  &lso_checktls },
+	{ "setvbuf",   &lso_setvbuf3 },
+	{ "setmode",   &lso_setmode3 },
+	{ "onerror",   &lso_onerror2 },
+	{ "recv",      &lso_recv3 },
+	{ "unget",     &lso_unget2 },
+	{ "send",      &lso_send5 },
+	{ "flush",     &lso_flush },
+	{ "uncork",    &lso_uncork },
+	{ "pending",   &lso_pending },
+	{ "sendfd",    &lso_sendfd3 },
+	{ "recvfd",    &lso_recvfd2 },
+	{ "pack",      &lso_pack4 },
+	{ "unpack",    &lso_unpack2 },
+	{ "clear",     &lso_clear },
+	{ "pollfd",    &lso_pollfd },
+	{ "events",    &lso_events },
+	{ "shutdown",  &lso_shutdown },
+	{ "eof",       &lso_eof },
+	{ "accept",    &lso_accept },
+	{ "peername",  &lso_peername },
+	{ "localname", &lso_localname },
+	{ "close",     &lso_close },
 	{ 0, 0 }
 }; /* lso_methods[] */
 

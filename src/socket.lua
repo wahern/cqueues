@@ -7,10 +7,12 @@ local errno = require("cqueues.errno")
 local poll = cqueues.poll
 local monotime = cqueues.monotime
 
-local EAGAIN = errno.EAGAIN;
-local EPIPE = errno.EPIPE;
-local ETIMEDOUT = errno.ETIMEDOUT;
-local strerror = errno.strerror;
+local EAGAIN = errno.EAGAIN
+local EPIPE = errno.EPIPE
+local ETIMEDOUT = errno.ETIMEDOUT
+local ENOTCONN = errno.ENOTCONN
+local ENOTSOCK = errno.ENOTSOCK
+local strerror = errno.strerror
 
 
 local function oops(con, op, why)
@@ -326,6 +328,35 @@ local unpack; unpack = socket.interpose("unpack", function (self, nbits)
 
 	return num
 end)
+
+
+--
+-- socket:peername
+--
+local function getname(get, self)
+	local af, r1, r2 = get(self)
+
+	if af then
+		return af, r1, r2
+	elseif r1 == ENOTCONN or r1 == ENOTSOCK or r1 == EAGAIN then
+		return 0
+	else
+		return nil, r1
+	end
+end
+
+local peername; peername = socket.interpose("peername", function (self)
+	return getname(peername, self)
+end)
+
+
+--
+-- socket:localname
+--
+local localname; localname = socket.interpose("localname", function (self)
+	return getname(localname, self)
+end)
+
 
 socket.loader = loader
 
