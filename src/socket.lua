@@ -69,6 +69,42 @@ end)
 
 
 --
+-- socket:starttls
+--
+local starttls; starttls = socket.interpose("starttls", function(self, ...)
+	if select("#", ...) == 0 then
+		return starttls(self)
+	end
+
+	local timeout = select(1, ...)
+	local deadline = timeout and monotime() + timeout
+	local ok, why = starttls(self)
+
+	while not ok do
+		if why == EAGAIN then
+			if deadline then
+				local curtime = monotime()
+
+				if curtime >= deadline then
+					return false, oops(self, "starttls", ETIMEDOUT)
+				end
+
+				cqueues.poll(self, deadline - curtime)
+			else
+				cqueues.poll(self)
+			end
+		else
+			return false, oops(self, "starttls", why)
+		end
+
+		ok, why = starttls(self)
+	end
+
+	return true
+end)
+
+
+--
 -- socket:checktls
 --
 local havessl, whynossl
