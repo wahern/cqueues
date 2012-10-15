@@ -657,6 +657,281 @@ Returns an iterator over the \method{notify:get} method.
 \end{Module}
 
 
+\begin{Module}{cqueues.dns.record}
+
+DNS resource record objects are implemented within \module{cqueues.dns.record}. The global tables and shared methods are documented below. The type-specific accessory methods are quite numerous. Until documented please confer with cqueues/src/dns.c. Also, the accessory method names are usually equivalent to the structure member names in cqueues/src/lib/dns.h, which in return usually reflect the member names in the relevant RFC.
+
+The \fn{\_\_tostring} metamethod returns a representation of the record data only, excluding the name, type, ttl, etc. For an A record, it's equivalent to string.format(``\%s'', \fn{rr:addr()}). For MX---which has multiple members---it's string.format(``\%d \%s'', rr:preference(), rr:host()).
+
+\subsubsection[\fn{record.type[]}]{\fn{record.type[]}}
+
+A table mapping DNS record type string identifiers to number values, and vice-versa. So, \method{record.type.A} evaluates to 1, the IANA numeric record type. String identifiers are only provided for record types which are directly parseable and composable by the library. Currently supported types include A, NS, CNAME, SOA, PTR, MX, TXT, AAAA, SRV, OPT, SSHFP, and SPF. Other record types can be instantiated, but the numeric type must be used and the only methods available operate on the raw rdata.
+
+\subsubsection[\fn{record.class[]}]{\fn{record.class[]}}
+
+A table mapping DNS record class string identifiers to number values, and vice-versa. At present the only class included is IN.
+
+\subsubsection[\fn{record.sshfp[]}]{\fn{record.sshfp[]}}
+
+A table mapping DNS SSHFP record string identifiers to the number values---RSA, DSA, and SHA1.
+
+\subsubsection[\fn{record:section}]{\fn{record:section()}}
+
+Returns the section identifier from whence the record came, if derived from a packet. Specifically, QUESTION, ANSWER, AUTHORITY, or ADDITIONAL. See \module{cqueues.dns.packet.section[]}.
+
+\subsubsection[\fn{record:name}]{\fn{record:name()}}
+
+Returns the uncompressed record domain name as a string.
+
+\subsubsection[\fn{record:type}]{\fn{record:type()}}
+
+Returns the numeric record type. If `rr' holds an AAAA record, then the return value of rr:type() will compare equal to \module{record.type.AAAA}.
+
+\subsubsection[\fn{record:class}]{\fn{record:class()}}
+
+Returns the numeric record class. See \module{record.class[]}.
+
+\subsubsection[\fn{record:ttl}]{\fn{record:ttl()}}
+
+Returns the record TTL.
+
+\end{Module}
+
+
+\begin{Module}{cqueues.dns.packet}
+
+DNS packets are stored in a simple structure encapsulating the raw packet data. One consequence is that packets are append only. Because a packet is composed of four adjacent sections, when building a packet all the information necessary should be at-hand so that records can be appended in order.
+
+The \fn{\_\_tostring} metamethod composes a string similar to the output of the venerable dig utility.
+
+\subsubsection[\fn{packet.section[]}]{\fn{packet.section[]}}
+
+A table mapping packet section string identifiers to number values, and vice-versa. A packet is composed of only four sections: QUESTION, ANSWER, AUTHORITY, and ADDITIONAL.
+
+\subsubsection[\fn{packet.opcode[]}]{\fn{packet.opcode[]}}
+
+A table mapping packet opcode string identifiers to number values, and vice-versa. The currently mapped opcodes are QUERY, IQUERY, STATUS, NOTIFY, and UPDATE.
+
+\subsubsection[\fn{packet.rcode[]}]{\fn{packet.rcode[]}}
+
+A table mapping packet rcode string identifiers to number values, and vice-versa. The currently mapped rcodes are NOERROR, FORMERR, SERVFAIL, NXDOMAIN, NOTIMP, REFUSED, YXDOMAIN, YXRRSET, NXRRSET, NOTAUTH, and NOTZONE.
+
+\subsubsection[\fn{packet.interpose}]{\fn{packet.interpose}}
+
+Add or interpose a packet class method. Returns the previous method, if any.
+
+\subsubsection[\fn{packet.new}]{\fn{packet.new([prepbufsiz])}}
+
+Instantiate a new packet object. `prepbufsiz' is the maximum space available for appending compressed records. For constructing a packet with a single question, the most space possibly necessary is 260---256 bytes for the name, and 2 bytes each for the type and class (a QUESTION record has no TTL or rdata section).
+
+\subsubsection[\fn{packet:qid}]{\fn{packet:qid()}}
+
+Returns the 16-bit QID value.
+
+\subsubsection[\fn{packet:flags}]{\fn{packet:flags()}}
+
+Returns a table of packet header flags.
+
+\begin{tabular}{ c | c | l }
+field & type & description\\\hline
+.qr & integer & specifies whether the packet is a query (0) or response (1)\\
+.opcode & number & specifies the query type\\
+.aa & boolean & signals an authoritative answer\\
+.tc & boolean & signals packet truncation\\
+.rd & boolean & signals ``recursion desired''\\
+.ra & boolean & signals ``recursion available''\\
+.z & boolean & reserved by RFC 1035 and used by other RFCs\\
+.rcode & integer & specifies the response disposition
+\end{tabular}
+
+\subsubsection[\fn{packet:count}]{\fn{packet:count([sections])}}
+
+Returns a count of records in the sections specified by the bitwise parameter `sections'. Defaults to \texttt{packet.section.ALL}, which is the XOR of all four sections.
+
+\subsubsection[\fn{packet:grep}]{\fn{packet:grep\{ $\ldots$ \}}}
+
+Returns a record iterator over the packet according to all the criteria specified by the optional table parameter.
+
+\begin{tabular}{ c | l }
+field & description\\\hline
+.section & select records by bitwise AND with the specified sections\\
+.type & select records of this type (not bitwise)\\
+.class & selects records of this class (not bitwise)\\
+.name & select records with this name
+\end{tabular}
+
+\end{Module}
+
+
+\begin{Module}{cqueues.dns.config}
+
+The traditional BSD /etc/resolv.conf file is the prototype for this module, although it's also capable of parsing /etc/nsswitch.conf. \module{cqueues.dns.config} objects are used when instantiating new resolver objects, and provide the general options controlling a resolver.
+
+The \fn{\_\_tostring} metamethod composes a string adhering to /etc/resolv.conf syntax, with /etc/nsswitch.conf alternatives as comments.
+
+\subsubsection[\fn{config[]}]{\fn{config[]}}
+
+A table mapping flag identifiers to number values.
+
+\begin{tabular}{ c | l }
+field & description\\\hline
+TCP\_ENABLE & fall back to TCP when truncation detected (default)\\
+TCP\_ONLY & only use TCP when querying\\
+TCP\_DISABLE & do not fall back to TCP\\
+RESOLV\_CONF & specifies BSD /etc/resolv.conf input syntax\\
+NSSWITCH\_CONF & specifies Solaris /etc/nsswitch.conf input syntax
+\end{tabular}
+
+\subsubsection[\fn{config.interpose}]{\fn{config.interpose(name, function)}}
+
+Add or interpose a config class method. Returns the previous method, if any.
+
+\subsubsection[\fn{config.new}]{\fn{config.new\{ $\ldots$ \}}}
+
+Returns a new config object, optionally initialized according to the specified table values.
+
+\begin{ctabular}{ c | c | p{5in} }
+field & type & description\\\hline
+.nameserver & table & list of IP address strings to use for stub resolvers\\
+.search & table & list of domain suffixes to append to query names\\
+.lookup & table & order of lookup methods---``file'' and ``bind''\\
+.options & table & canonical location for .edns0, .ndots, .timeout, .attempts, .rotate, .recurse, .smart, and .tcp options\\
+..edns0 & boolean & enable EDNS0 support\\
+..ndots & number & if query name has fewer labels than this, reverse suffix search order\\
+..timeout & number & timeout between query retries\\
+..attempts & number & maximum number of attempts per nameserver\\
+..rotate & boolean & randomize nameserver selection\\
+..recurse & boolean & query recursively instead of as a simple stub resolver\\
+..smart & boolean & for NS, MX, SRV and similar record queries, resolve the A record if not included as glue in the initial answer\\
+..tcp & number & see TCP\_ENABLE, TCP\_ONLY, TCP\_DISABLE in \fn{config[]}\\
+.interface & string & IP address to bind to when querying (e.g. [192.168.1.1]:1234)
+\end{ctabular}
+\subsubsection[\fn{config.stub}]{\fn{config.stub\{ $\ldots$ \}}}
+
+Returns a config object initialized for a stub resolver by loading the relevant system files; e.g. /etc/resolv.conf and /etc/nsswitch.conf. Takes optional initialization values like \fn{config.new}.
+
+\subsubsection[\fn{config.root}]{\fn{config.root\{ $\ldots$ \}}}
+
+Returns a config object initialized for a recursive resolver. Takes optional initialization values like \fn{config.new}.
+
+\subsubsection[\fn{config:loadfile}]{\fn{config:loadfile(file[, syntax])}}
+
+Parse the Lua file object `file'. `syntax' describes the format, which should be RESOLV\_CONF (default), or NSSWITCH\_CONF.
+
+\subsubsection[\fn{config:loadpath}]{\fn{config:loadpath(path[, syntax])}}
+
+Like :loadfile, but takes a file path.
+
+\subsubsection[\fn{config:get}]{\fn{config:get()}}
+
+Returns the configuration as a Lua table structure. See \fn{config.new} for a description of the values.
+
+\subsubsection[\fn{config:set}]{\fn{config:set\{ $\ldots$ \}}}
+
+Apply the defined configuration values. The table should have the same structure as described for \fn{config.new}.
+
+\end{Module}
+
+
+\begin{Module}{cqueues.dns.hosts}
+
+The traditional BSD /etc/hosts file is the prototype for this module, and provides resolvers the data source for the ``file'' lookup method.
+
+The \fn{\_\_tostring} metamethod composes a string adhering to /etc/hosts syntax.
+
+\subsubsection[\fn{hosts.interpose}]{\fn{hosts.interpose(name, function)}}
+
+Add or interpose a hosts class method. Returns the previous method, if any.
+
+\subsubsection[\fn{hosts.new}]{\fn{hosts.new()}}
+
+Returns a new hosts object.
+
+\subsubsection[\fn{hosts.stub}]{\fn{hosts.stub()}}
+
+Returns a host object initialized for a stub resolver by loading the relevant system files; e.g. /etc/hosts.
+
+\subsubsection[\fn{hosts.root}]{\fn{hosts.root()}}
+
+Returns a hosts object initialized for a recursive resolver.
+
+\subsubsection[\fn{hosts:loadfile}]{\fn{hosts:loadfile(file)}}
+
+Parse the Lua file object `file' for host entries.
+
+\subsubsection[\fn{hosts:loadpath}]{\fn{hosts:loadpath(path)}}
+
+Like :loadfile, but takes a file path.
+
+\subsubsection[\fn{hosts:insert}]{\fn{hosts:insert(address, name[, alias])}}
+
+Inserts a new hosts entry. `address' should be an IPv4 or IPv6 address string, `name' the domain name, and `alias' a boolean---true if `name' is canonical and a valid response for a reverse address lookup.
+
+\end{Module}
+
+
+\begin{Module}{cqueues.dns.hints}
+
+The internal DNS library is implemented as a recursive resolver. No matter whether configured as a stub or recursive resolver, when a query is submitted it consults a ``hints'' database for the initial name servers to contact. In stub mode these would usually be the local recursive, caching name servers, derived from the \module{cqueues.dns.config} object; in recursive mode, the root IANA name servers.
+
+The \fn{\_\_tostring} metamethod composes a multi-line string indexing SOA zone names and addresses.
+
+\subsubsection[\fn{hints.interpose}]{\fn{hints.interpose(name, function)}}
+
+Add or interpose a hints class method. Returns the previous method, if any.
+
+\subsubsection[\fn{hints.new}]{\fn{hints.new([resconf])}}
+
+Returns a new hints object. `resconf' is an optional \module{cqueues.dns.config} object which in the future may be used to initialize database behavior. Currently it's unused, and \emph{does not} pre-load the name server list.
+
+\subsubsection[\fn{hints.stub}]{\fn{hints.stub([resconf])}}
+
+Returns a hints object initialized for a stub resolver. If provided, the initial hints are taken from the \module{cqueues.dns.config} object,  `resconf'. Otherwise, the hints are derived from a temporary ``stub'' config object internally.
+
+\subsubsection[\fn{hints.root}]{\fn{hints.root([resconf])}}
+
+Returns a hints object initialized for a recursive resolver. The root name servers are initialized from an internal database compiled into the module. See \fn{hints.new} for the function of the optional `resconf'.
+
+\subsubsection[\fn{hints:insert}]{\fn{hints:insert(zone, address|resconf[, priority])}}
+
+Inserts a new hints entry. `zone' is the domain name which anchors the SOA (e.g. ``.'', or ``com.''), and `address' the IPv4 or IPv6 of the nameserver. Alternatively, in lieu of a string address a \module{cqueues.dns.config} object can be specified, and the addresses taken from the nameserver list property. `priority' is used for ordering  nameservers in each zone.
+
+IPv4 and IPv6 addresses can optionally contain a port component, e.g. ``[2001:503:ba3e::2:30]:123'' or ``[198.41.0.4]:53''.
+
+\end{Module}
+
+
+\begin{Module}{cqueues.dns.resolver}
+
+\subsubsection[\fn{resolver.interpose}]{\fn{resolver.interpose(name, function)}}
+
+Add or interpose a resolver class method. Returns the previous method, if any.
+
+\subsubsection[\fn{resolver.new}]{\fn{resolver.new([resconf][,hosts][,hints])}}
+
+Returns a new resolver object, configured according to the specified config, hosts, and hints objects. `resconf' can be either an object, or a table suitable for passing to \fn{config.new}. `hosts' and `hints', if nil, are instantiated according to the mode---recursive or stub---of the config object.
+
+\subsubsection[\fn{resolver.stub}]{\fn{resolver.stub\{ $\ldots$ \}}}
+
+Returns a stub resolver, optionally initialized to the defined config parameters, which should have a structure suitable for passing to \fn{cqueues.dns.config.new}.
+
+\subsubsection[\fn{resolver.root}]{\fn{resolver.root\{ $\ldots$ \}}}
+
+Returns a recursive resolver, optionally initialized to the defined config parameters, which should have a structure suitable for passing to \fn{cqueues.dns.config.new}.
+
+\subsubsection[\fn{resolver:query}]{\fn{resolver:query(name[, type][, class][, timeout])}}
+
+Query for the DNS resource record with the specified type and class. `name' is the fully-qualified or prefix domain name string. `type' and `class' are numbers corresponding to the IANA assigned numeric identifier, and default to A (0x01) and IN (0x01), respectively. `timeout' is the total elapsed time for resolution, irrespective of the .attempts and .timeout option values of the  configuration.
+
+Returns a \module{cqueues.dns.packet} answer packet on success, or nil and a numeric error code on failure. The answer may not actually have anything in the ANSWERS section; e.g. if the RCODE is NXDOMAIN.
+
+\subsubsection[\fn{resolver:close}]{\fn{resolver:close()}}
+
+Explicitly destroy the resolver object, immediately closing all internal descriptors. This routine ensures all descriptors are properly cancelled.
+
+\end{Module}
+
+
 \begin{Module}{openssl.bignum}
 
 \module{openssl.bignum} binds OpenSSL's libcrypto bignum library. It supports all the standard arithmetic operations. Regular number operands in a mixed arithmetic expression are upgraded as-if \method{bignum.new} was used explicitly. The \fn{to string} metamethod generates a decimal encoded represention.
