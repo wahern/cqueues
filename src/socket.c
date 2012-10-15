@@ -474,13 +474,22 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 	struct so_options opts;
 	struct luasocket *S;
 	size_t plen;
-	int error;
+	int family, type, error;
 
 	if (lua_istable(L, 1)) {
 		opts = lso_checkopts(L, 1);
 
+		lua_getfield(L, 1, "family");
+		family = luaL_optinteger(L, -1, AF_INET);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 1, "type");
+		type = luaL_optinteger(L, -1, SOCK_STREAM);
+		lua_pop(L, 1);
+
 		if (lso_getfield(L, 1, "path")) {
 			path = luaL_checklstring(L, -1, &plen);
+			family = AF_UNIX;
 		} else {
 			lua_getfield(L, 1, "host");
 			host = luaL_checkstring(L, -1);
@@ -491,6 +500,8 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
+		family = luaL_optinteger(L, 3, AF_INET);
+		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
 	S = lso_newsocket(L);
@@ -502,13 +513,13 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		struct sockaddr_un sun;
 
 		memset(&sun, 0, sizeof sun);
-		sun.sun_family = AF_LOCAL;
+		sun.sun_family = AF_UNIX;
 		memcpy(sun.sun_path, path, MIN(plen, sizeof sun.sun_path));
 
-		if (!(S->socket = so_dial((struct sockaddr *)&sun, SOCK_STREAM, &opts, &error)))
+		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, PF_INET, SOCK_STREAM, &opts, &error)))
+		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -551,13 +562,22 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 	struct so_options opts;
 	struct luasocket *S;
 	size_t plen;
-	int error;
+	int family, type, error;
 
 	if (lua_istable(L, 1)) {
 		opts = lso_checkopts(L, 1);
 
+		lua_getfield(L, 1, "family");
+		family = luaL_optinteger(L, -1, AF_INET);
+		lua_pop(L, 1);
+
+		lua_getfield(L, 1, "type");
+		type = luaL_optinteger(L, -1, SOCK_STREAM);
+		lua_pop(L, 1);
+
 		if (lso_getfield(L, 1, "path")) {
 			path = luaL_checklstring(L, -1, &plen);
+			family = AF_UNIX;
 		} else {
 			lua_getfield(L, 1, "host");
 			host = luaL_checkstring(L, -1);
@@ -568,6 +588,8 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
+		family = luaL_optinteger(L, 3, AF_INET);
+		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
 	S = lso_newsocket(L);
@@ -579,13 +601,13 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		struct sockaddr_un sun;
 
 		memset(&sun, 0, sizeof sun);
-		sun.sun_family = AF_LOCAL;
+		sun.sun_family = AF_UNIX;
 		memcpy(sun.sun_path, path, MIN(plen, sizeof sun.sun_path));
 
-		if (!(S->socket = so_dial((struct sockaddr *)&sun, SOCK_STREAM, &opts, &error)))
+		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, PF_INET, SOCK_STREAM, &opts, &error)))
+		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -1641,6 +1663,34 @@ static lso_nargs_t lso_localname(lua_State *L) {
 } /* lso_localname() */
 
 
+static lso_nargs_t lso_stat(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	const struct so_stat *st = so_stat(S->socket);
+
+	lua_newtable(L);
+
+	lua_newtable(L);
+	lua_pushnumber(L, st->sent.count);
+	lua_setfield(L, -2, "count");
+	lua_pushboolean(L, st->sent.eof);
+	lua_setfield(L, -2, "eof");
+	lua_pushnumber(L, st->sent.time);
+	lua_setfield(L, -2, "time");
+	lua_setfield(L, -2, "sent");
+
+	lua_newtable(L);
+	lua_pushnumber(L, st->rcvd.count);
+	lua_setfield(L, -2, "count");
+	lua_pushboolean(L, st->rcvd.eof);
+	lua_setfield(L, -2, "eof");
+	lua_pushnumber(L, st->rcvd.time);
+	lua_setfield(L, -2, "time");
+	lua_setfield(L, -2, "rcvd");
+
+	return 1;
+} /* lso_stat() */
+
+
 static void lso_destroy(lua_State *L, struct luasocket *S) {
 	cqs_unref(L, &S->onerror);
 
@@ -1720,6 +1770,7 @@ static luaL_Reg lso_methods[] = {
 	{ "accept",    &lso_accept },
 	{ "peername",  &lso_peername },
 	{ "localname", &lso_localname },
+	{ "stat",      &lso_stat },
 	{ "close",     &lso_close },
 	{ 0, 0 }
 }; /* lso_methods[] */

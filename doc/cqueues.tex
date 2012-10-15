@@ -344,7 +344,7 @@ Much better alternatives are possible for Solaris, but require global process st
 
 \subsubsection[\fn{socket[]}]{\fn{socket[]}}
 
-A table mapping socket related system identifier names to number codes, including AF_UNSPEC, AF_INET, AF_INET6, AF_UNIX, SOCK_STREAM, and SOCK_DGRAM.
+A table mapping socket related system identifier names to number codes, including AF\_UNSPEC, AF\_INET, AF\_INET6, AF\_UNIX, SOCK\_STREAM, and SOCK\_DGRAM.
 
 \subsubsection[\fn{socket.interpose}]{\fn{socket.interpose(name, function)}}
 Add or interpose a socket class method. Returns the previous method, if any.
@@ -375,6 +375,10 @@ field & type:default & description\\\hline
 
 .path & string:nil & UNIX domain socket path \\
 
+.family & number & protocol family---AF\_INET (default), AF\_INET6, AF\_UNIX (default if .path specified)\\
+
+.type & number & protocol type---SOCK\_STREAM (default) or SOCK\_DGRAM\\
+
 .mode & string:nil & fchmod or chmod socket after creating UNIX domain socket
 %NOTE: There's a race between bind and the following chmod. fchmod is attempted before the bind, however it fails on BSD derivatives. Not all platforms obey UNIX domain socket permissions (e.g. Solaris). Check peer credentials, instead, to be portable.
 \\
@@ -396,7 +400,7 @@ field & type:default & description\\\hline
 
 .nosigpipe & boolean:true & O\_NOSIGPIPE, SO\_NOSIGPIPE, MSG\_NOSIGNAL, or equivalent descriptor flag \\
 
-.verify & boolean:false & require SSL certificate verification (UNFINISHED) \\
+.verify & boolean:false & require SSL certificate verification \\
 
 .time & boolean:true & track elapsed time for statistics \\
 \end{ctabular}
@@ -408,7 +412,7 @@ field & type:default & description\\\hline
 	Like \fn{socket.listen}. See also \fn{socket.connect\{\}}.
 
 \subsubsection[\fn{socket.pair}]{\fn{socket.pair([type])}}
-Returns two bound sockets. Type should be the system type number, e.g. \fn{socket.SOCK_STREAM} or \fn{socket.SOCK_DGRAM}.
+Returns two bound sockets. Type should be the system type number, e.g. \fn{socket.SOCK\_STREAM} or \fn{socket.SOCK\_DGRAM}.
 
 \subsubsection[\fn{socket.setvbuf}]{\fn{socket.setvbuf(mode [, size])}}
 	Set the default output buffering. See \fn{socket:setvbuf}.
@@ -530,6 +534,10 @@ On failure returns nil and a numeric error code.
 \subsubsection[\fn{socket:localname}]{\fn{socket:localname()}}
 
 Identical to \fn{socket:peer name}, but returns the local address of the socket.
+
+\subsubsection[\fn{socket:stat}]{\fn{socket:stat()}}
+
+Returns a table containing two subtables, `sent' and `rcvd', which each have three fields---.count for the number of bytes sent or received, a boolean .eof  signaling whether input or output has been shutdown, and .time logging the last send or receive operation.
 
 \subsubsection[\fn{socket:close}]{\fn{socket:close()}}
 Explicitly and immediately close all internal descriptors. This routine ensures all descriptors are properly cancelled.
