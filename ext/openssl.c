@@ -2986,10 +2986,10 @@ static int sx_new(lua_State *L) {
 	static const char *opts[] = {
 		"SSLv2", "SSLv3", "SSLv23", "SSL", "TLSv1", "TLS", NULL
 	};
-	SSL_CTX **ud = prepsimple(L, SSL_CTX_CLASS);
 	/* later versions of SSL declare a const qualifier on the return type */
 	__typeof__(&TLSv1_client_method) method = &TLSv1_client_method;
 	_Bool srv;
+	SSL_CTX **ud;
 
 	lua_settop(L, 2);
 	srv = lua_toboolean(L, 2);
@@ -3014,6 +3014,8 @@ static int sx_new(lua_State *L) {
 		method = (srv)? &TLSv1_server_method : &TLSv1_client_method;
 		break;
 	}
+
+	ud = prepsimple(L, SSL_CTX_CLASS);
 
 	if (!(*ud = SSL_CTX_new(method())))
 		return throwssl(L, "ssl.context.new");

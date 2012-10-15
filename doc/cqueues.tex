@@ -433,9 +433,12 @@ Iterator over \method{socket:accept}: \texttt{for con in srv:clients() do ... en
 %	Associate a certificate for subsequent :starttls operation.
 %	[UNFINISHED]
 
-\subsubsection[\fn{socket:starttls}]{\fn{socket:starttls([context])}}
-Place socket into TLS mode, optionally using the \module{openssl.ssl.context} object as the configuration prototype. Returns immediately.
-%[FUTURE: take parameter to return immediately or wait for channel establishment.]
+\subsubsection[\fn{socket:starttls}]{\fn{socket:starttls([context][, timeout])}}
+Place socket into TLS mode, optionally using the \module{openssl.ssl.context} object as the configuration prototype. If no timeout specified,  returns immediately. Otherwise, retries and polls for up to `timeout' seconds for completion. Returns true on success, false and an error code on failure.
+
+\subsubsection[\fn{socket:checktls}]{\fn{socket:checktls()}}
+
+If in TLS mode, returns a \module{openssl.ssl} object, otherwise nil. If the openssl module cannot be loaded, returns nil and an error string.
 
 \subsubsection[\fn{socket:setvbuf}]{\fn{socket:setvbuf(mode [, size])}}
 Same as Lua \fn{file:setvbuf}. Analogous to ``n'', ``l'', and ``f'' mode flags.
@@ -1290,9 +1293,9 @@ VERIFY\_CLIENT\_ONCE & do not request peer certificates after initial handshake
 
 See the \href{http://www.openssl.org/docs/ssl/SSL_CTX_set_verify.html#NOTES}{NOTES section} in the OpenSSL documentation for \fn{SSL\_CTX\_set\_verify\_mode}.
 
-\subsubsection[\fn{context.new}]{\fn{context.new()}}
+\subsubsection[\fn{context.new}]{\fn{context.new([protocol][, server])}}
 
-Returns a new context object.
+Returns a new context object. `protocol' is an optional string identifier selecting the SSL mode---TLSv1 (default), SSLv3, SSLv23, or SSLv2. If `server' is true, then SSL connections instantiated using this context will be placed into server mode, otherwise they behave as clients.
 
 \subsubsection[\fn{context.interpose}]{\fn{context.interpose(name, function)}}
 
@@ -1320,6 +1323,24 @@ Sets the private key \module{openssl.pubkey} object `key' for use during SSL con
 
 \end{Module}
 
+
+\begin{Module}{openssl.ssl}
+
+Binds the ``SSL'' OpenSSL object, which represents an SSL connection instance. See \method{socket.checktls}.
+
+\subsubsection[\fn{ssl.interpose}]{\fn{ssl.interpose(name, function)}}
+
+Add or interpose an ssl class method. Returns the previous method, if any.
+
+\subsubsection[\fn{ssl:getPeerCertificate}]{\fn{ssl:getPeerCertificate()}}
+
+Returns the X.509 peer certificate as a \module{cqueues.openssl.x509} object. If no peer certificate is available, returns nil.
+
+\subsubsection[\fn{ssl:getPeerChain}]{\fn{ssl:getPeerChain()}}
+
+Similar to :getPeerCertifiate, but returns the entire chain sent by the peer as a \module{cqueues.openssl.x509.chain} object.
+
+\end{Module}
 
 
 

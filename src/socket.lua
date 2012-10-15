@@ -72,13 +72,25 @@ end)
 -- socket:starttls
 --
 local starttls; starttls = socket.interpose("starttls", function(self, ...)
-	if select("#", ...) == 0 then
+	local nargs = select("#", ...)
+	local arg1, arg2 = ...
+	local ctx, timeout
+
+	if nargs == 0 then
 		return starttls(self)
+	elseif nargs == 1 then
+		if type(arg1) == "userdata" then
+			return starttls(self, arg1)
+		end
+
+		timeout = arg1
+	else
+		ctx = arg1
+		timeout = arg2
 	end
 
-	local timeout = select(1, ...)
 	local deadline = timeout and monotime() + timeout
-	local ok, why = starttls(self)
+	local ok, why = starttls(self, ctx)
 
 	while not ok do
 		if why == EAGAIN then
@@ -97,7 +109,7 @@ local starttls; starttls = socket.interpose("starttls", function(self, ...)
 			return false, oops(self, "starttls", why)
 		end
 
-		ok, why = starttls(self)
+		ok, why = starttls(self, ctx)
 	end
 
 	return true
