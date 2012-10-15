@@ -757,9 +757,10 @@ int luaopen__cqueues_dns_record(lua_State *L) {
 
 static int pkt_new(lua_State *L) {
 	struct dns_packet *P;
-	size_t size;
+	size_t prepbufsiz, size;
 
-	size = luaL_optunsigned(L, 1, DNS_P_QBUFSIZ);
+	prepbufsiz = luaL_optunsigned(L, 1, DNS_P_QBUFSIZ);
+	size = dns_p_calcsize(prepbufsiz);
 	P = memset(lua_newuserdata(L, size), '\0', size);
 	luaL_setmetatable(L, PACKET_CLASS);
 
@@ -784,7 +785,7 @@ static int pkt_flags(lua_State *L) {
 
 	lua_newtable(L);
 
-	lua_pushboolean(L, hdr->qr);
+	lua_pushinteger(L, hdr->qr);
 	lua_setfield(L, -2, "qr");
 
 	lua_pushinteger(L, hdr->opcode);
