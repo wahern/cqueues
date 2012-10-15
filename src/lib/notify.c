@@ -25,6 +25,7 @@
  */
 #include <limits.h>	/* NAME_MAX */
 #include <stddef.h>	/* offsetof */
+#include <stdint.h>	/* intptr_t */
 #include <stdlib.h>	/* calloc(3) free(3) */
 #include <string.h>	/* memcpy(3) memchr(3) strcmp(3) */
 #include <strings.h>	/* ffs(3) */

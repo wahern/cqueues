@@ -26,6 +26,8 @@
 #ifndef CQUEUES_H
 #define CQUEUES_H
 
+#include <signal.h>	/* sigset_t */
+
 #include <errno.h>	/* EINTR */
 
 #include <sys/types.h>

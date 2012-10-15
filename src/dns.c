@@ -32,6 +32,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>	/* AF_INET AF_INET6 */
+#include <netinet/in.h>	/* struct sockaddr_in struct sockaddr_in6 */
 
 #include <arpa/inet.h>	/* INET_ADDSTRLEN INET6_ADDRSTRLEN inet_ntop(3) */
 
