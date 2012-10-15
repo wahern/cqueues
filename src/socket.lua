@@ -7,6 +7,9 @@ local errno = require("cqueues.errno")
 local poll = cqueues.poll
 local monotime = cqueues.monotime
 
+local SOCK_STREAM = socket.SOCK_STREAM
+local SOCK_DGRAM = socket.SOCK_DGRAM
+
 local EAGAIN = errno.EAGAIN
 local EPIPE = errno.EPIPE
 local ETIMEDOUT = errno.ETIMEDOUT
@@ -29,6 +32,20 @@ local function oops(con, op, why)
 		error(msg)
 	end
 end -- oops
+
+
+--
+-- Yielding socket.pair
+--
+local pair = socket.pair; socket.pair = function(type)
+	if type == "stream" then
+		type = SOCK_STREAM
+	elseif type == "dgram" then
+		type = SOCK_DGRAM
+	end
+
+	return pair(type)
+end
 
 
 --

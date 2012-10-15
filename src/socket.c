@@ -736,22 +736,12 @@ error:
 
 
 static lso_nargs_t lso_pair(lua_State *L) {
-	static const char *types[] = { "stream", "dgram", NULL };
 	struct luasocket *a = NULL, *b = NULL;
 	struct so_options *opts = so_opts();
 	int fd[2] = { -1, -1 };
 	int type, error;
 
-	switch (luaL_checkoption(L, 1, "stream", types)) {
-	case 0:
-		type = SOCK_STREAM;
-		break;
-	case 1:
-		type = SOCK_DGRAM;
-		break;
-	default:
-		return 0;
-	}
+	type = luaL_optinteger(L, 1, SOCK_STREAM);
 
 	a = lso_newsocket(L);
 	b = lso_newsocket(L);
@@ -1755,6 +1745,15 @@ static luaL_Reg lso_globals[] = {
 
 
 lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
+	static const struct cqs_macro macros[] = {
+		{ "AF_UNSPEC",   AF_UNSPEC },
+		{ "AF_INET",     AF_INET },
+		{ "AF_INET6",    AF_INET6 },
+		{ "AF_UNIX",     AF_UNIX },
+		{ "SOCK_STREAM", SOCK_STREAM },
+		{ "SOCK_DGRAM",  SOCK_DGRAM },
+	};
+
 	if (luaL_newmetatable(L, LSO_CLASS)) {
 		luaL_setfuncs(L, lso_metamethods, 0);
 
@@ -1766,6 +1765,7 @@ lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 
 	luaL_newlib(L, lso_globals);
 
+	cqs_addmacros(L, -1, macros, countof(macros), 0);
+
 	return 1;
 } /* luaopen__cqueues_socket() */
-
