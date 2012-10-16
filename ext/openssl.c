@@ -3103,6 +3103,19 @@ static int sx_setPrivateKey(lua_State *L) {
 } /* sx_setPrivateKey() */
 
 
+static int sx_setCipherList(lua_State *L) {
+	SSL_CTX *ctx = checksimple(L, 1, SSL_CTX_CLASS);
+	const char *ciphers = luaL_checkstring(L, 2);
+
+	if (!SSL_CTX_set_cipher_list(ctx, ciphers))
+		return throwssl(L, "ssl.context:setCipherList");
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* sx_setCipherList() */
+
+
 static int sx__gc(lua_State *L) {
 	SSL_CTX **ud = luaL_checkudata(L, 1, SSL_CTX_CLASS);
 
@@ -3119,6 +3132,7 @@ static const luaL_Reg sx_methods[] = {
 	{ "getVerify", &sx_getVerify },
 	{ "setCertificate", &sx_setCertificate },
 	{ "setPrivateKey", &sx_setPrivateKey },
+	{ "setCipherList", &sx_setCipherList },
 	{ NULL, NULL },
 };
 
@@ -3195,6 +3209,32 @@ static int ssl_getPeerChain(lua_State *L) {
 } /* ssl_getPeerChain() */
 
 
+static int ssl_getCipherInfo(lua_State *L) {
+	SSL *ssl = checksimple(L, 1, SSL_CLASS);
+	SSL_CIPHER *cipher;
+	char descr[256];
+
+	if (!(cipher = SSL_get_current_cipher(ssl)))
+		return 0;
+
+	lua_newtable(L);
+
+	lua_pushstring(L, SSL_CIPHER_get_name(cipher));
+	lua_setfield(L, -2, "name");
+
+	lua_pushinteger(L, SSL_CIPHER_get_bits(cipher, 0));
+	lua_setfield(L, -2, "bits");
+
+	lua_pushstring(L, SSL_CIPHER_get_version(cipher));
+	lua_setfield(L, -2, "version");
+
+	lua_pushstring(L, SSL_CIPHER_description(cipher, descr, sizeof descr));
+	lua_setfield(L, -2, "description");
+
+	return 1;
+} /* ssl_getCipherInfo() */
+
+
 static int ssl__gc(lua_State *L) {
 	SSL **ud = luaL_checkudata(L, 1, SSL_CLASS);
 
@@ -3208,6 +3248,7 @@ static int ssl__gc(lua_State *L) {
 static const luaL_Reg ssl_methods[] = {
 	{ "getPeerCertificate", &ssl_getPeerCertificate },
 	{ "getPeerChain",       &ssl_getPeerChain },
+	{ "getCipherInfo",      &ssl_getCipherInfo },
 	{ NULL,                 NULL },
 };
 

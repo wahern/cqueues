@@ -1341,6 +1341,10 @@ Sets the X.509 certificate \module{openssl.x509} object `x509' to send during SS
 
 Sets the private key \module{openssl.pubkey} object `key' for use during SSL connection instance handshakes.
 
+\subsubsection[\fn{context:setCipherList}]{\fn{context:setCipherList(string)}}
+
+Sets the allowed public key and private key algorithms. The string format is documented in the \href{http://www.openssl.org/docs/apps/ciphers.html#CIPHER_LIST_FORMAT}{OpenSSL ciphers(1) utility documentation}.
+
 \end{Module}
 
 
@@ -1359,6 +1363,18 @@ Returns the X.509 peer certificate as a \module{cqueues.openssl.x509} object. If
 \subsubsection[\fn{ssl:getPeerChain}]{\fn{ssl:getPeerChain()}}
 
 Similar to :getPeerCertifiate, but returns the entire chain sent by the peer as a \module{cqueues.openssl.x509.chain} object.
+
+\subsubsection[\fn{ssl:getCipherInfo}]{\fn{ssl:getCipherInfo()}}
+
+Returns a table of information on the current cipher. 
+
+\begin{tabular}{ c | l }
+field & description\\\hline
+.name & cipher name returned by \fn{SSL\_CIPHER\_get\_name}\\
+.bits & number of secret bits returned by \fn{SSL\_CIPHER\_get\_bits}\\
+.version & SSL/TLS version string returned by \fn{SSL\_CIPHER\_get\_version}\\
+.description & key:value cipher description returned by \fn{SSL\_CIPHER\_description}
+\end{tabular}
 
 \end{Module}
 
