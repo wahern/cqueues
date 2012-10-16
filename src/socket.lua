@@ -120,9 +120,9 @@ local starttls; starttls = socket.interpose("starttls", function(self, ...)
 					return false, oops(self, "starttls", ETIMEDOUT)
 				end
 
-				cqueues.poll(self, deadline - curtime)
+				poll(self, deadline - curtime)
 			else
-				cqueues.poll(self)
+				poll(self)
 			end
 		else
 			return false, oops(self, "starttls", why)
@@ -344,6 +344,37 @@ local unpack; unpack = socket.interpose("unpack", function (self, nbits)
 	until num
 
 	return num
+end)
+
+
+--
+-- socket:fill
+--
+local fill; fill = socket.interpose("fill", function (self, size, timeout)
+	local ok, why = fill(self, size)
+	local deadline = timeout and monotime() + timeout
+
+	while not ok do
+		if why == EAGAIN then
+			if deadline then
+				local curtime = monotime()
+
+				if deadline <= curtime then
+					return false, oops(self, "fill", why)
+				end
+
+				poll(self, deadline - curtime)
+			else
+				poll(self)
+			end
+		else
+			return false, oops(self, "fill", why)
+		end
+
+		ok, why = fill(self, size)
+	end
+
+	return true
 end)
 
 

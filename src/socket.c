@@ -1506,6 +1506,24 @@ error:
 } /* lso_unpack2() */
 
 
+static lso_nargs_t lso_fill2(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	size_t size = lso_checksize(L, 2);
+	int error;
+
+	if ((error = lso_fill(S, size))) {
+		lua_pushboolean(L, 0);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+} /* lso_fill2() */
+
+
 static lso_nargs_t lso_clear(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 
@@ -1762,6 +1780,7 @@ static luaL_Reg lso_methods[] = {
 	{ "recvfd",    &lso_recvfd2 },
 	{ "pack",      &lso_pack4 },
 	{ "unpack",    &lso_unpack2 },
+	{ "fill",      &lso_fill2 },
 	{ "clear",     &lso_clear },
 	{ "pollfd",    &lso_pollfd },
 	{ "events",    &lso_events },
