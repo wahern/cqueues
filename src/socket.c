@@ -1234,7 +1234,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	const unsigned char *src, *lf;
 	size_t tp, p, pe, end, n;
-	int mode, error;
+	int mode, byline, error;
 
 	lua_settop(L, 5);
 
@@ -1242,6 +1242,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	tp = lso_checksize(L, 3) - 1;
 	pe = lso_checksize(L, 4);
 	mode = lso_imode(luaL_optstring(L, 5, ""), S->obuf.mode);
+	byline = (mode & (LSO_TEXT|LSO_LINEBUF)) || (S->obuf.mode & LSO_LINEBUF);
 
 	luaL_argcheck(L, tp <= end, 3, "start index beyond object boundary");
 	luaL_argcheck(L, pe <= end, 4, "end index beyond object boundary");
@@ -1251,7 +1252,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	so_clear(S->socket);
 
 	while (p < pe) {
-		if (mode & (LSO_TEXT|LSO_LINEBUF)) {
+		if (byline) {
 			n = MIN(pe - p, S->obuf.maxline);
 
 			if ((lf = memchr(&src[p], '\n', n))) {
