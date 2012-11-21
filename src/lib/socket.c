@@ -2089,8 +2089,13 @@ int so_recvmsg(struct socket *so, struct msghdr *msg, int flags) {
 
 	so->events &= ~POLLIN;
 retry:
-	if (-1 == (count = recvmsg(so->fd, msg, flags)))
+	if (-1 == (count = recvmsg(so->fd, msg, flags))) {
 		goto syerr;
+	} else if (!count) {
+		so->st.rcvd.eof = 1;
+		error = EPIPE;
+		goto error;
+	}
 
 	st_update(&so->st.rcvd, count, &so->opts);
 
