@@ -1,4 +1,2 @@
-debian/tmp/usr/lib/lua/5.2/lib* usr/lib/lua/5.2
+debian/tmp/usr/lib/lua/5.2/* usr/lib/lua/5.2
 debian/tmp/usr/share/lua/5.2/* usr/share/lua/5.2
-debian/tmp/usr/share/lua/5.2/cqueues/* usr/share/lua/5.2/cqueues
-debian/tmp/usr/share/lua/5.2/openssl/* usr/share/lua/5.2/openssl

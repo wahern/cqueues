@@ -19,7 +19,7 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 all: cqueues.so
 
 CPPFLAGS = -D_REENTRANT -D_THREAD_SAFE
-CPPFLAGS += -D_GNU_SOURCE -I$(DESTDIR)$(lua52include) -DSOCKET_DEBUG
+CPPFLAGS += -D_GNU_SOURCE -I$(lua52include) -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
@@ -52,12 +52,12 @@ CPPFLAGS += -DDNS_RANDOM=RAND_bytes
 endif
 
 ifeq ($(VENDOR.OS), Linux)
-LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto -lrt -lm -pthread
+LDFLAGS = -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lrt -lm -pthread
 else
 ifeq ($(VENDOR.OS), SunOS)
-LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto -lpthread
+LDFLAGS = -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
 else
-LDFLAGS = -L$(DESTDIR)$(libdir) -lssl -lcrypto -lpthread
+LDFLAGS = -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
 endif
 endif
 
@@ -105,74 +105,80 @@ lib/notify.o: lib/notify.c lib/notify.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
-install: $(lua52cpath)/_cqueues.so $(lua52path)/cqueues.lua \
-         $(lua52path)/cqueues/socket.lua $(lua52path)/cqueues/errno.lua \
-         $(lua52path)/cqueues/signal.lua $(lua52path)/cqueues/thread.lua \
-         $(lua52path)/cqueues/notify.lua $(lua52path)/cqueues/dns/resolver.lua \
-         $(lua52path)/cqueues/dns/config.lua $(lua52path)/cqueues/dns/hosts.lua \
-         $(lua52path)/cqueues/dns/hints.lua $(lua52path)/cqueues/dns/record.lua \
-         $(lua52path)/cqueues/dns/packet.lua
+install: $(DESTDIR)$(lua52cpath)/_cqueues.so \
+         $(DESTDIR)$(lua52path)/cqueues.lua \
+         $(DESTDIR)$(lua52path)/cqueues/socket.lua \
+         $(DESTDIR)$(lua52path)/cqueues/errno.lua \
+         $(DESTDIR)$(lua52path)/cqueues/signal.lua \
+         $(DESTDIR)$(lua52path)/cqueues/thread.lua \
+         $(DESTDIR)$(lua52path)/cqueues/notify.lua \
+         $(DESTDIR)$(lua52path)/cqueues/dns/resolver.lua \
+         $(DESTDIR)$(lua52path)/cqueues/dns/config.lua \
+         $(DESTDIR)$(lua52path)/cqueues/dns/hosts.lua \
+         $(DESTDIR)$(lua52path)/cqueues/dns/hints.lua \
+         $(DESTDIR)$(lua52path)/cqueues/dns/record.lua \
+         $(DESTDIR)$(lua52path)/cqueues/dns/packet.lua
 
-$(lua52cpath)/_cqueues.so: cqueues.so
+$(DESTDIR)$(lua52cpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/cqueues.lua: cqueues.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
-
-$(lua52path)/cqueues/socket.lua: socket.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
-
-$(lua52path)/cqueues/errno.lua: errno.lua
+$(DESTDIR)$(lua52path)/cqueues.lua: cqueues.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/signal.lua: signal.lua
+$(DESTDIR)$(lua52path)/cqueues/socket.lua: socket.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/thread.lua: thread.lua
+$(DESTDIR)$(lua52path)/cqueues/errno.lua: errno.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/notify.lua: notify.lua
+$(DESTDIR)$(lua52path)/cqueues/signal.lua: signal.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/dns/resolver.lua: dns.resolver.lua
+$(DESTDIR)$(lua52path)/cqueues/thread.lua: thread.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/dns/config.lua: dns.config.lua
+$(DESTDIR)$(lua52path)/cqueues/notify.lua: notify.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/dns/hosts.lua: dns.hosts.lua
+$(DESTDIR)$(lua52path)/cqueues/dns/resolver.lua: dns.resolver.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/dns/hints.lua: dns.hints.lua
+$(DESTDIR)$(lua52path)/cqueues/dns/config.lua: dns.config.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/dns/record.lua: dns.record.lua
+$(DESTDIR)$(lua52path)/cqueues/dns/hosts.lua: dns.hosts.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(lua52path)/cqueues/dns/packet.lua: dns.packet.lua
+$(DESTDIR)$(lua52path)/cqueues/dns/hints.lua: dns.hints.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(DESTDIR)$(lua52path)/cqueues/dns/record.lua: dns.record.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(DESTDIR)$(lua52path)/cqueues/dns/packet.lua: dns.packet.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@

@@ -12,7 +12,7 @@ VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
 
-CPPFLAGS = -I$(DESTDIR)$(lua52include)
+CPPFLAGS = -I$(lua52include)
 
 ifeq ($(VENDOR.CC), sunpro)
 DFLAGS = -g
@@ -44,49 +44,54 @@ openssl.o: openssl.c compat52.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
-install: $(lua52cpath)/_openssl.so $(lua52path)/openssl/bignum.lua \
-         $(lua52path)/openssl/pubkey.lua $(lua52path)/openssl/x509.lua \
-         $(lua52path)/openssl/x509/name.lua $(lua52path)/openssl/x509/altname.lua \
-         $(lua52path)/openssl/x509/chain.lua $(lua52path)/openssl/x509/store.lua \
-         $(lua52path)/openssl/ssl/context.lua $(lua52path)/openssl/ssl.lua
+install: $(DESTDIR)$(lua52cpath)/_openssl.so \
+         $(DESTDIR)$(lua52path)/openssl/bignum.lua \
+         $(DESTDIR)$(lua52path)/openssl/pubkey.lua \
+         $(DESTDIR)$(lua52path)/openssl/x509.lua \
+         $(DESTDIR)$(lua52path)/openssl/x509/name.lua \
+         $(DESTDIR)$(lua52path)/openssl/x509/altname.lua \
+         $(DESTDIR)$(lua52path)/openssl/x509/chain.lua \
+         $(DESTDIR)$(lua52path)/openssl/x509/store.lua \
+         $(DESTDIR)$(lua52path)/openssl/ssl/context.lua \
+         $(DESTDIR)$(lua52path)/openssl/ssl.lua
 
-$(lua52cpath)/_openssl.so: openssl.so
+$(DESTDIR)$(lua52cpath)/_openssl.so: openssl.so
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/bignum.lua: openssl.bignum.lua
+$(DESTDIR)$(lua52path)/openssl/bignum.lua: openssl.bignum.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/pubkey.lua: openssl.pubkey.lua
+$(DESTDIR)$(lua52path)/openssl/pubkey.lua: openssl.pubkey.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/x509.lua: openssl.x509.lua
+$(DESTDIR)$(lua52path)/openssl/x509.lua: openssl.x509.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/x509/name.lua: openssl.x509.name.lua
+$(DESTDIR)$(lua52path)/openssl/x509/name.lua: openssl.x509.name.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/x509/altname.lua: openssl.x509.altname.lua
+$(DESTDIR)$(lua52path)/openssl/x509/altname.lua: openssl.x509.altname.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/x509/chain.lua: openssl.x509.chain.lua
+$(DESTDIR)$(lua52path)/openssl/x509/chain.lua: openssl.x509.chain.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/x509/store.lua: openssl.x509.store.lua
+$(DESTDIR)$(lua52path)/openssl/x509/store.lua: openssl.x509.store.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/ssl/context.lua: openssl.ssl.context.lua
+$(DESTDIR)$(lua52path)/openssl/ssl/context.lua: openssl.ssl.context.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(lua52path)/openssl/ssl.lua: openssl.ssl.lua
+$(DESTDIR)$(lua52path)/openssl/ssl.lua: openssl.ssl.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
