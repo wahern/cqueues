@@ -1,4 +1,4 @@
-lua-cqueues (20121110-0) unstable; urgency=low
+lua-cqueues (20130106-0) unstable; urgency=low
 
   * Initial debian build.
 
