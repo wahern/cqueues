@@ -7,6 +7,6 @@ Standards-Version: 3.9.2
 
 Package: lua-cqueues
 Architecture: any
-Depends: libssl, liblua5.2
+Depends: openssl, liblua5.2-0
 Description: Event, socket, signal, thread, and file change notification Lua
   library.
