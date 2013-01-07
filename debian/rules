@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+
+CFLAGS := -O3 -g -fstack-protector --param=ssp-buffer-size=4
+CXXFLAGS := $(CFLAGS)
+
+prefix=/usr
+lua52include=$(prefix)/include/lua5.2
+LUAC=$(prefix)/luac5.2
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	true
+
+override_dh_auto_build:
+	make prefix=$(prefix) lua52include=$(lua52include) LUAC=$(LUAC)
+
+override_dh_install:
+	make prefix=$(prefix) DESTDIR=debian/tmp/ install
+
+override_dh_auto_test:
+	true

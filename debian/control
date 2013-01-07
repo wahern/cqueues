@@ -1,0 +1,12 @@
+Source: lua-cqueues
+Section: unknown
+Priority: extra
+Maintainer: William Ahern <william@25thandClement.com>
+Build-Depends: debhelper (>= 9), m4, lua5.2, liblua5.2-dev, libssl-dev
+Standards-Version: 3.9.2
+
+Package: lua-cqueues
+Architecture: any
+Depends: libssl, liblua5.2
+Description: Event, socket, signal, thread, and file change notification Lua
+  library.

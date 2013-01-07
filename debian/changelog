@@ -1,0 +1,5 @@
+lua-cqueues (20121110-0) unstable; urgency=low
+
+  * Initial debian build.
+
+ -- William Ahern <william@25thandClement.com>  Mon, 07 Jan 2013 05:00:48 UTC
