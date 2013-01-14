@@ -1,0 +1,10 @@
+
+DPKG_BUILDPACKAGE ?= dpkg-buildpackage
+FAKEROOT ?= fakeroot
+DPKG_BUILDPACKAGE_OPTIONS ?= -b -uc -us
+
+all: debian/rules src/Makefile $(wildcard src/*.{h,c,lua,m4}) $(wildcard ext/*.{h,c,lua,m4})
+	$(DPKG_BUILDPACKAGE) -rfakeroot $(DPKG_BUILDPACKAGE_OPTIONS)
+
+clean:
+	$(FAKEROOT) ./debian/rules clean
