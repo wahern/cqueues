@@ -3211,7 +3211,7 @@ static int ssl_getPeerChain(lua_State *L) {
 
 static int ssl_getCipherInfo(lua_State *L) {
 	SSL *ssl = checksimple(L, 1, SSL_CLASS);
-	SSL_CIPHER *cipher;
+	const SSL_CIPHER *cipher;
 	char descr[256];
 
 	if (!(cipher = SSL_get_current_cipher(ssl)))
