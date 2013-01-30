@@ -1,3 +1,9 @@
+lua-cqueues (20130129-0) unstable; urgency=low
+
+  * Bind interface for acquiring DNS resolver statistics.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 29 Jan 2013 17:19:28 -0800
+
 lua-cqueues (20130106-0) unstable; urgency=low
 
   * Initial debian build.
