@@ -1993,6 +1993,38 @@ static int res_events(lua_State *L) {
 } /* res_events() */
 
 
+static int res_stat(lua_State *L) {
+	struct dns_resolver *R = res_check(L, 1);
+	const struct dns_stat *st = dns_res_stat(R);
+
+	lua_newtable(L);
+
+	lua_pushnumber(L, st->queries);
+	lua_setfield(L, -2, "queries");
+
+#define setboth(st, table) do { \
+	lua_newtable(L); \
+	lua_pushnumber(L, (st).count); \
+	lua_setfield(L, -2, "count"); \
+	lua_pushnumber(L, (st).bytes); \
+	lua_setfield(L, -2, "bytes"); \
+	lua_setfield(L, -2, table); \
+} while (0)
+
+	lua_newtable(L);
+	setboth(st->udp.sent, "sent");
+	setboth(st->udp.rcvd, "rcvd");
+	lua_setfield(L, -2, "udp");
+
+	lua_newtable(L);
+	setboth(st->tcp.sent, "sent");
+	setboth(st->tcp.rcvd, "rcvd");
+	lua_setfield(L, -2, "tcp");
+
+	return 1;
+} /* res_stat() */
+
+
 static int res_close(lua_State *L) {
 	struct resolver *R = luaL_checkudata(L, 1, RESOLVER_CLASS);
 
@@ -2027,6 +2059,7 @@ static const luaL_Reg res_methods[] = {
 	{ "fetch",  &res_fetch },
 	{ "pollfd", &res_pollfd },
 	{ "events", &res_events },
+	{ "stat",   &res_stat },
 	{ "close",  &res_close },
 	{ NULL,     NULL },
 }; /* res_methods[] */
