@@ -951,6 +951,23 @@ Query for the DNS resource record with the specified type and class. `name' is t
 
 Returns a \module{cqueues.dns.packet} answer packet on success, or nil and a numeric error code on failure. The answer may not actually have anything in the ANSWERS section; e.g. if the RCODE is NXDOMAIN.
 
+\subsubsection[\fn{resolver:stat}]{\fn{resolver:stat()}}
+
+Returns a table of statistics for the resolver instance.
+
+\begin{ctabular}{ c | p{5in}}
+field & description\\\hline
+.queries & number of queries submitted \\
+.udp.sent.count & number of UDP packets sent \\
+.udp.sent.bytes & number of UDP bytes sent \\
+.udp.rcvd.count & number of UDP packets received \\
+.udp.rcvd.bytes & number of UDP bytes received \\
+.tcp.sent.count & number of TCP packets sent \\
+.tcp.sent.bytes & number of TCP bytes sent \\
+.tcp.rcvd.count & number of TCP packets received \\
+.tcp.rcvd.bytes & number of TCP bytes received \\
+
+\end{ctabular}
 \subsubsection[\fn{resolver:close}]{\fn{resolver:close()}}
 
 Explicitly destroy the resolver object, immediately closing all internal descriptors. This routine ensures all descriptors are properly cancelled.
