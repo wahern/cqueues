@@ -237,7 +237,7 @@ static _Bool loadfield(lua_State *L, int index, const char *k, int type, void *p
 } /* loadfield() */
 
 
-const char *pushnid(lua_State *L, int nid) {
+static const char *pushnid(lua_State *L, int nid) {
 	const char *txt;
 	ASN1_OBJECT *obj;
 	char buf[256];
