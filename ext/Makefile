@@ -53,7 +53,9 @@ install: $(DESTDIR)$(lua52cpath)/_openssl.so \
          $(DESTDIR)$(lua52path)/openssl/x509/chain.lua \
          $(DESTDIR)$(lua52path)/openssl/x509/store.lua \
          $(DESTDIR)$(lua52path)/openssl/ssl/context.lua \
-         $(DESTDIR)$(lua52path)/openssl/ssl.lua
+         $(DESTDIR)$(lua52path)/openssl/ssl.lua \
+         $(DESTDIR)$(lua52path)/openssl/digest.lua \
+         $(DESTDIR)$(lua52path)/openssl/hmac.lua
 
 $(DESTDIR)$(lua52cpath)/_openssl.so: openssl.so
 	mkdir -p $(@D)
@@ -92,6 +94,14 @@ $(DESTDIR)$(lua52path)/openssl/ssl/context.lua: openssl.ssl.context.lua
 	cp -p $< $@
 
 $(DESTDIR)$(lua52path)/openssl/ssl.lua: openssl.ssl.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(DESTDIR)$(lua52path)/openssl/digest.lua: openssl.digest.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(DESTDIR)$(lua52path)/openssl/hmac.lua: openssl.hmac.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 

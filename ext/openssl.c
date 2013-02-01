@@ -47,6 +47,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
+#include <openssl/hmac.h>
 
 #include <lua.h>
 #include <lualib.h>
@@ -68,6 +69,8 @@
 #define X509_STCTX_CLASS "OpenSSL X.509 Store Context"
 #define SSL_CTX_CLASS    "OpenSSL SSL Context"
 #define SSL_CLASS        "OpenSSL SSL"
+#define DIGEST_CLASS     "OpenSSL Digest"
+#define HMAC_CLASS       "OpenSSL HMAC"
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
@@ -3272,6 +3275,204 @@ int luaopen__openssl_ssl(lua_State *L) {
 } /* luaopen__openssl_ssl() */
 
 
+/*
+ * Digest - openssl.digest
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static const EVP_MD *md_optdigest(lua_State *L, int index) {
+	const char *name = luaL_optstring(L, index, "sha1");
+	const EVP_MD *type;
+
+	if (!(type = EVP_get_digestbyname(name)))
+		luaL_argerror(L, index, lua_pushfstring(L, "%s: invalid digest type", name));
+
+	return type;
+} /* md_optdigest() */
+
+
+static int md_new(lua_State *L) {
+	const EVP_MD *type = md_optdigest(L, 1);
+	EVP_MD_CTX *ctx;
+
+	ctx = prepudata(L, sizeof *ctx, DIGEST_CLASS, NULL);
+
+	EVP_MD_CTX_init(ctx);
+
+	if (!EVP_DigestInit_ex(ctx, type, NULL))
+		return throwssl(L, "digest.new");
+
+	return 1;
+} /* md_new() */
+
+
+static int md_interpose(lua_State *L) {
+	return interpose(L, DIGEST_CLASS);
+} /* md_interpose() */
+
+
+static int md_update(lua_State *L) {
+	EVP_MD_CTX *ctx = luaL_checkudata(L, 1, DIGEST_CLASS);
+	int i, top = lua_gettop(L);
+
+	for (i = 2; i < top; i++) {
+		const void *p;
+		size_t n;
+
+		p = luaL_checklstring(L, i, &n);
+
+		if (!EVP_DigestUpdate(ctx, p, n))
+			return throwssl(L, "digest:update");
+	}
+
+	lua_pushboolean(L, 1);
+	
+	return 1;
+} /* md_update() */
+
+
+static int md_final(lua_State *L) {
+	EVP_MD_CTX *ctx = luaL_checkudata(L, 1, DIGEST_CLASS);
+	unsigned char md[EVP_MAX_MD_SIZE];
+	unsigned len;
+
+	if (!EVP_DigestFinal_ex(ctx, md, &len))
+		return throwssl(L, "digest:final");
+
+	lua_pushlstring(L, (char *)md, len);
+
+	return 1;
+} /* md_final() */
+
+
+static int md__gc(lua_State *L) {
+	EVP_MD_CTX *ctx = luaL_checkudata(L, 1, DIGEST_CLASS);
+
+	EVP_MD_CTX_cleanup(ctx);
+
+	return 0;
+} /* md__gc() */
+
+
+static const luaL_Reg md_methods[] = {
+	{ "update", &md_update },
+	{ "final",  &md_final },
+	{ NULL,     NULL },
+};
+
+static const luaL_Reg md_metatable[] = {
+	{ "__gc", &md__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg md_globals[] = {
+	{ "new",       &md_new },
+	{ "interpose", &md_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_digest(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, md_globals);
+
+	return 1;
+} /* luaopen__openssl_digest() */
+
+
+/*
+ * HMAC - openssl.hmac
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int hmac_new(lua_State *L) {
+	const void *key;
+	size_t len;
+	const EVP_MD *type;
+	HMAC_CTX *ctx;
+
+	key = luaL_checklstring(L, 1, &len);
+	type = md_optdigest(L, 2);
+
+	ctx = prepudata(L, sizeof *ctx, HMAC_CLASS, NULL);
+
+	HMAC_Init_ex(ctx, key, len, type, NULL);
+
+	return 1;
+} /* hmac_new() */
+
+
+static int hmac_interpose(lua_State *L) {
+	return interpose(L, HMAC_CLASS);
+} /* hmac_interpose() */
+
+
+static int hmac_update(lua_State *L) {
+	HMAC_CTX *ctx = luaL_checkudata(L, 1, HMAC_CLASS);
+	int i, top = lua_gettop(L);
+
+	for (i = 2; i < top; i++) {
+		const void *p;
+		size_t n;
+
+		p = luaL_checklstring(L, i, &n);
+		HMAC_Update(ctx, p, n);
+	}
+
+	lua_pushboolean(L, 1);
+	
+	return 1;
+} /* hmac_update() */
+
+
+static int hmac_final(lua_State *L) {
+	HMAC_CTX *ctx = luaL_checkudata(L, 1, HMAC_CLASS);
+	unsigned char hmac[EVP_MAX_MD_SIZE];
+	unsigned len;
+
+	HMAC_Final(ctx, hmac, &len);
+
+	lua_pushlstring(L, (char *)hmac, len);
+
+	return 1;
+} /* hmac_final() */
+
+
+static int hmac__gc(lua_State *L) {
+	HMAC_CTX *ctx = luaL_checkudata(L, 1, HMAC_CLASS);
+
+	HMAC_CTX_cleanup(ctx);
+
+	return 0;
+} /* hmac__gc() */
+
+
+static const luaL_Reg hmac_methods[] = {
+	{ "update", &hmac_update },
+	{ "final",  &hmac_final },
+	{ NULL,     NULL },
+};
+
+static const luaL_Reg hmac_metatable[] = {
+	{ "__gc", &hmac__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg hmac_globals[] = {
+	{ "new",       &hmac_new },
+	{ "interpose", &hmac_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_hmac(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, hmac_globals);
+
+	return 1;
+} /* luaopen__openssl_hmac() */
+
+
 static void initall(lua_State *L) {
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
@@ -3286,6 +3487,8 @@ static void initall(lua_State *L) {
 	addclass(L, X509_STORE_CLASS, xs_methods, xs_metatable);
 	addclass(L, SSL_CTX_CLASS, sx_methods, sx_metatable);
 	addclass(L, SSL_CLASS, ssl_methods, ssl_metatable);
+	addclass(L, DIGEST_CLASS, md_methods, md_metatable);
+	addclass(L, HMAC_CLASS, hmac_methods, hmac_metatable);
 } /* initall() */
 
 
