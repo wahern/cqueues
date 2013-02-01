@@ -1399,6 +1399,51 @@ field & description\\\hline
 \end{Module}
 
 
+\begin{Module}{openssl.digest}
+
+Binds the ``EVP\_MD\_CTX'' OpenSSL object, which represents a cryptographic message digest (i.e. hashing) algorithm instance.
+
+\subsubsection[\fn{digest.interpose}]{\fn{digest.interpose(name, function)}}
+
+Add or interpose a digest class method. Returns the previous method, if any.
+
+\subsubsection[\fn{digest.new}]{\fn{digest.new([type])}}
+
+Return a new digest instance using the specified algorithm `type'. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_digestbyname, and defaults to ``sha1''.
+
+\subsubsection[\fn{digest:update}]{\fn{digest:update(string [, ...])}}
+
+Update the digest with the specified strings. Returns true.
+
+\subsubsection[\fn{digest:final}]{\fn{digest:final()}}
+
+Return the final message digest as a binary string.
+
+\end{Module}
+
+
+\begin{Module}{openssl.hmac}
+
+Binds the ``HMAC\_CTX'' OpenSSL object, which represents a cryptographic HMAC algorithm instance.
+
+\subsubsection[\fn{hmac.interpose}]{\fn{hmac.interpose(name, function)}}
+
+Add or interpose an HMAC class method. Returns the previous method, if any.
+
+\subsubsection[\fn{hmac.new}]{\fn{hmac.new(key [, type])}}
+
+Return a new HMAC instance using the specified `key' and `type'. `key' is the secret used for HMAC authentication. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_digestbyname, and defaults to ``sha1''.
+
+\subsubsection[\fn{hmac:update}]{\fn{hmac:update(string [, ...])}}
+
+Update the HMAC with the specified strings. Returns true.
+
+\subsubsection[\fn{hmac:final}]{\fn{hmac:final()}}
+
+Return the final HMAC checksum as a binary string.
+
+\end{Module}
+
 
 \chapter{Examples}
 
