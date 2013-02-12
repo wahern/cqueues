@@ -59,7 +59,7 @@ static inline uint64_t rotr(const uint64_t v, int c) {
  * The constant was found by brute force search with a sieve to quickly
  * discard invalid patterns. The following program generates constants for
  * mapping words of length 2^N (0 <= N <= 6), although it's not exhaustive.
- * Decode with `uudecode -p | gunzip -c`.
+ * Decode with `sed -e 's/^ \* //' | uudecode -p | gunzip -c`.
  *
  * begin 644 -
  * M'XL(`+J'&E$``\53VV[30!!]SG[%M%'3W=:T<5-%2$XL`4\(@9"@3S2*XAM=
