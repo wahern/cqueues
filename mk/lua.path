@@ -44,7 +44,9 @@
 # 	recursive searching.
 #
 # * 2013-09-09 - NetBSD's sh gets upset over the noclobber option and
-# 	redirection to /dev/null, so use append operator, instead.
+# 	redirection to /dev/null, so use append operator. And check $#
+# 	before iterating over a null parameter set with `do X; ...  done`
+# 	when `set -u` is enabled--it complains about $@ being unset.
 #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
@@ -271,13 +273,15 @@ findversion() {
 		set -- ${CPPDIRS}
 		unset IFS
 
-		for D; do
-			tryluainclude "${D}/lua.h"
+		if [ $# -gt 0 ]; then
+			for D; do
+				tryluainclude "${D}/lua.h"
 
-			if foundversion; then
-				return 0
-			fi
-		done
+				if foundversion; then
+					return 0
+				fi
+			done
+		fi
 	fi
 
 
@@ -289,6 +293,23 @@ findversion() {
 		set -- ${PKGDIRS}
 		unset IFS
 
+		if [ $# -gt 0 ]; then
+			for D; do
+				tryluainclude "${D}/lua.h"
+
+				if foundversion; then
+					return 0
+				fi
+			done
+		fi
+	fi
+
+
+	IFS=:
+	set -- ${INCDIRS}
+	unset IFS
+
+	if [ $# -gt 0 ]; then
 		for D; do
 			tryluainclude "${D}/lua.h"
 
@@ -299,19 +320,6 @@ findversion() {
 	fi
 
 
-	IFS=:
-	set -- ${INCDIRS}
-	unset IFS
-
-	for D; do
-		tryluainclude "${D}/lua.h"
-
-		if foundversion; then
-			return 0
-		fi
-	done
-
-
 	[ "${RECURSE}" = "yes" ] || return 0
 
 
@@ -320,15 +328,17 @@ findversion() {
 	set -- ${CPPDIRS}
 	unset IFS
 
-	for D; do
-		for F in $(find ${D} ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
-			tryluainclude "${F}"
+	if [ $# -gt 0 ]; then
+		for D; do
+			for F in $(find ${D} ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
+				tryluainclude "${F}"
 
-			if foundversion; then
-				return 0
-			fi
+				if foundversion; then
+					return 0
+				fi
+			done
 		done
-	done
+	fi
 
 
 	# recurse into INCDIRS
@@ -336,15 +346,17 @@ findversion() {
 	set -- ${INCDIRS}
 	unset IFS
 
-	for D; do
-		for F in $(find ${D}/. ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
-			tryluainclude "${F}"
+	if [ $# -gt 0 ]; then
+		for D; do
+			for F in $(find ${D}/. ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
+				tryluainclude "${F}"
 
-			if foundversion; then
-				return 0
-			fi
+				if foundversion; then
+					return 0
+				fi
+			done
 		done
-	done
+	fi
 }
 
 
@@ -364,9 +376,11 @@ findpath() {
 	set -- ${WHERE}
 	unset IFS
 
-	for D; do
-		find "${D}/." ${MAXDEPTH} ${XDEV} ${PRUNE} -name "${NAME}" -print 2>>/dev/null | sed -e 's/\/\.//'
-	done
+	if [ $# -gt 0 ]; then
+		for D; do
+			find "${D}/." ${MAXDEPTH} ${XDEV} ${PRUNE} -name "${NAME}" -print 2>>/dev/null | sed -e 's/\/\.//'
+		done
+	fi
 }
 
 
