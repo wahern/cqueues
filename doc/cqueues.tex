@@ -135,7 +135,7 @@ Microsoft Windows support is basically out of the question, for far too many rea
 \section{Libraries}
 
 \subsection{Lua 5.2, LuaJIT}
-\cqueues principally targets Lua 5.2. It's not fully portable to Lua 5.1 because \cqueues relies on ephemeron tables to prevent coroutine/controller reference cycles, and because Lua 5.1 does not support yielding from metamethods. LuaJIT removes the latter of these handicaps, and so \cqueues targets LuaJIT secondarily. In lieu of ephemeron tables, application code must be sure not to hold a reference to a parent controller in an upvalue of the coroutine. Instead, use \fn{cqueues.running}.
+\cqueues principally targets Lua 5.2. It's not fully portable to Lua 5.1 because \cqueues relies on ephemeron tables to prevent coroutine/controller reference cycles, and because Lua 5.1 does not support yielding from metamethods and iterators. LuaJIT removes the latter of these handicaps, and so \cqueues targets LuaJIT secondarily. In lieu of ephemeron tables, application code must be sure not to hold a reference to a parent controller in an upvalue of the coroutine. Instead, use \fn{cqueues.running}.
 
 \subsection{OpenSSL}
 The \cqueues \module{socket} module provides seamless SSL/TLS support using OpenSSL, and comprehensive bindings for certificate and key management are provided in the extension \module{openssl} module.
@@ -169,6 +169,8 @@ The Makefile expects Lua headers to exist in \$(includedir)/lua/5.2. This is unf
 \begin{code}{sh}
 make prefix=/opt/lua52 lua52include=/opt/lua52/include
 \end{code}
+
+Other important Make variables to consider include lua52path, lua52cpath, and LUAC. They default to \$(prefix)/share/lua/5.2, \$(prefix)/lib/lua/5.2, and luac, respectively. The install target can build the library from scratch, so there's no need to `make depends' or `make all'.
 
 %\begin{code}{sh}
 %make prefix=/opt/luajit \
