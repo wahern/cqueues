@@ -1,3 +1,9 @@
+== WARNING ==
+
+This document is likely out-of-date. Please refer to the PDF available at
+
+	http://25thandclement.com/~william/projects/cqueues.pdf
+
 == DEPENDENCIES ==
 
 The Makefile requires GNU Make. The source code should build with recent
@@ -9,6 +15,10 @@ it quite obviously ought to be. To source the usual location, try something
 like
 
 	make lua52include=/opt/lua52/include
+
+Other important Make variables to consider: lua52path, lua52cpath, and LUAC.
+They default to $(prefix)/share/lua/5.2, $(prefix)/lib/lua/5.2, and luac,
+respectively.
 
 If you use your own Makefile, note that GCC and especially clang may emit
 copious warnings about initializers and unused parameters. These warnings
@@ -26,11 +36,14 @@ Linux, OS X, Solaris, NetBSD, FreeBSD, OpenBSD, and derivatives. The only
 other possible candidate is AIX, if and when support for AIX's pollset
 interface is added to the embedded "kpoll" library.
 
-cqueues requires Lua 5.2. It's not portable to Lua 5.1 because it relies on
-ephemeron tables to prevent coroutine/controller reference cycles. LuaJIT
-patches are welcome, but probably won't make it into mainline unless they're
-relatively small or result in a saner overall implementation.
-
+cqueues principally targets Lua 5.2. It's not fully portable to Lua 5.1
+because cqueues relies on ephemeron tables to prevent coroutine/controller
+reference cycles, and because Lua 5.1 does not support yielding from
+metamethods and iterators. LuaJIT removes the latter of these handicaps, and
+so cqueues targets LuaJIT secondarily. In lieu of ephemeron tables,
+application code must be sure not to hold a reference to a parent controller
+in an upvalue of the coroutine. Instead, use cqueues.running to temporarily
+acquire a reference.
 
 == USAGE ==
 
