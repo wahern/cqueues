@@ -183,6 +183,37 @@ pselect
 	Last updated 2012-09-21.
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Linux connect(2) associations
+
+	Linux will not reassociate a UDP socket to a non-loopback address if
+	the first association was to the loopback. No other system exhibits
+	this behavior. Presumably it's some pitiful security feature. It
+	also contravenes POSIX, and is otherwise surprising and confusing.
+
+	This bug/feature can manifest, for example, when your
+	/etc/resolv.conf files looks like
+
+		nameserver 127.0.0.1
+		nameserver 1.2.3.4
+
+	and the DNS resolver uses connect(2) to efficiently filter replies.
+	Failover of queries from 127.0.0.1 to 1.2.3.4 will return a system
+	error because Linux will return EINVAL when reassociating the socket
+	with connect(udp-socket, 1.2.3.4).
+
+	Reassociating from loopback to external address:
+
+	EINVAL : Linux 3.2.0 (and various 3.x)
+	    OK : OS X 10.8.2
+	    OK : OpenBSD 5.1
+	    OK : OpenBSD 5.2
+	    OK : Solaris 11.0
+	    OK : FreeBSD 9.0
+	    OK : NetBSD 5.1.2
+
+	Last updated 2013-02-23.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 A P P E N D I X
 = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
