@@ -1034,7 +1034,7 @@ Set the private key component to that described by the PEM encoded private key i
 
 Sign data which has been consumed by the specified \module{openssl.digest} `digest'. Digests and keys are not all interchangeable. For example, an elliptic curve key requires a digest of type ``ecdsa-with-SHA1''.
 
-Returns the signature as an opaque binary string\footnote{Elliptic curve signatures are two X509 DER-encoded numbers, for example, while RSA signatures are encrypted DER structures.} on success, and throws an error otherwise.
+Returns the signature as an opaque binary string\footnote{Elliptic curve signatures are two X.509 DER-encoded numbers, for example, while RSA signatures are encrypted DER structures.} on success, and throws an error otherwise.
 
 \subsubsection[\fn{pubkey:verify}]{\fn{pubkey:verify(signature, digest)}}
 
