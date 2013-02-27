@@ -1,6 +1,7 @@
 M4 = m4
 
 prefix = /usr/local/lua52
+bindir = $(prefix)/bin
 libdir = $(prefix)/lib
 datadir = $(prefix)/share
 includedir = $(prefix)/include
@@ -8,7 +9,7 @@ luainclude = $(includedir)/lua/5.2
 luapath = $(datadir)/lua/5.2
 luacpath = $(libdir)/lua/5.2
 
-LUAC = $(prefix)/bin/luac
+LUAC = $(bindir)/luac
 
 # backwards compatibile install paths
 ifneq ($(origin lua52include), undefined)
@@ -221,6 +222,9 @@ help:
 	@echo 'luainclude - path to Lua headers ($$(prefix)/include/lua/5.2)'
 	@echo '   luapath - install path for Lua modules ($$(prefix)/share/lua/5.2)'
 	@echo '  luacpath - install path for Lua C modules ($$(prefix)/lib/lua/5.2)'
-	@echo '      LUAC - path to luac utility ($$(prefix)/bin/luac)'
+	@echo '      LUAC - path to luac utility ($$(bindir)/luac)'
+	@echo ""
+	@echo "(NOTE: all the common GNU-style paths are supported, including"
+	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"
 	@echo ""
 	@echo "Report bugs to <william@25thandClement.com>"
