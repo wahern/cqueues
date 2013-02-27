@@ -12,8 +12,10 @@ local x509 = require"openssl.x509"
 local name = require"openssl.x509.name"
 local altname = require"openssl.x509.altname"
 
--- generate an elliptic curve key (could also specify RSA or DSA)
-local key = pubkey.new{ type = "EC", bits = 512 }
+-- generate our public/private key pair
+--local key = pubkey.new{ type = "RSA", bits = 1024 }
+--local key = pubkey.new{ type = "DSA", bits = 1024 }
+local key = pubkey.new{ type = "EC", curve = "prime192v1" }
 
 -- our Subject and Issuer DN (self-signed, so same)
 local dn = name.new()
