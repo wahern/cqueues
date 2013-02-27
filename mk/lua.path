@@ -3,14 +3,21 @@
 # Try to derive Lua compilation and installation paths. The following
 # environment variables are used for hinting
 #
-# 	PREFIX BINDIR LIBDIR DATADIR INCLUDEDIR
+# 	PATH CC CPPFLAGS PREFIX BINDIR LIBDIR DATADIR INCLUDEDIR
 #
-# while these are presumed correct
+# while these are presumed correct if set and not null
 #
 # 	LUAINCLUDE LUAPATH LUACPATH LUAC
 #
 # The script tries to ensure version consistency according to the detected
 # compilation environment.
+#
+# The first step is to find our lua.h header, if any, to determine our major
+# and minor Lua API version. Everything flows from the version number.
+#
+# The most recent Lua API version is preferred. If both LuaJIT and Lua are
+# detected, LuaJIT 2.x is preferred over Lua 5.2 and LuaJIT 1.x over Lua
+# 5.1.
 #
 # Run `./lua.path -h` for usage help.
 #
@@ -53,7 +60,7 @@ luainclude() {
 
 	I="${INCLUDEDIR:-${PREFIX:-/usr}/include}"
 
-	for F in $(find "$I" -maxdepth 3 -name lua.h); do
+	for F in $(find "$I" -maxdepth 3 -name lua.h 2>/dev/null); do
 		V="$(getversion \"$F\" LUA_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$LUA_V" ]; then
@@ -62,7 +69,7 @@ luainclude() {
 		fi
 	done
 
-	for F in $(find "$I" -maxdepth 3 -name luajit.h); do
+	for F in $(find "$I" -maxdepth 3 -name luajit.h 2>/dev/null); do
 		V="$(getversion \"$F\" LUAJIT_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$JIT_V" ]; then
@@ -72,6 +79,8 @@ luainclude() {
 	done
 
 	if [ "$JIT_V" -ge 20000 ]; then
+		echo "$JIT_D"
+	elif [ "$JIT_V" -gt 0 -a "$LUA_V" -le 501 ]; then
 		echo "$JIT_D"
 	else
 		echo "$LUA_D"
@@ -86,21 +95,27 @@ luapath() {
 
 usage() {
 	cat <<- EOF
-	usage: $(basename $0) [-h] include|path|cpath|luac
-	  -h  print this usage message
+	usage: $(basename $0) [-p:h] include|path|cpath|luac|cppflags|version
+	  -p PATH  compilation and installation prefix path
+	  -h       print this usage message
 
-	  include  preprocessor -I path to reach Lua headers (possibly empty)
-	  path     installation path of Lua modules
-	  cpath    installation path of Lua C modules
-	  luac     luac command path
+	  include   preprocessor -I path to reach Lua headers (possibly empty)
+	  path      installation path of Lua modules
+	  cpath     installation path of Lua C modules
+	  luac      luac command path
+	  cppflags  CPPFLAGS plus lua.h include path, if not empty
+	  version   derived Lua API version
 	
 	Report bugs to <william@25thandClement.com>
 	EOF
 }
 
 
-while getopts h OPT; do
+while getopts p:h OPT; do
 	case "${OPT}" in
+	p)
+		PREFIX="$OPTARG"
+		;;
 	h)
 		usage
 		exit 0
@@ -152,6 +167,12 @@ while [ $# -ge 1 ]; do
 
 		echo "${LUAC:=:}"
 
+		;;
+	cppflags)
+		echo "${CPPFLAGS:-}${LUAINCLUDE:+${CPPFLAGS:+ }-I${LUAINCLUDE}}"
+		;;
+	version)
+		echo "${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
 		;;
 	*)
 		usage >&2
