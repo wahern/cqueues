@@ -14,11 +14,12 @@ is unfortunately not the default install location for Lua headers, although
 it quite obviously ought to be. To source the usual location, try something
 like
 
-	make lua52include=/opt/lua52/include
+	make luainclude=/opt/lua52/include
 
-Other important Make variables to consider: lua52path, lua52cpath, and LUAC.
-They default to $(prefix)/share/lua/5.2, $(prefix)/lib/lua/5.2, and luac,
-respectively.
+Other important Make variables to consider: luapath, luacpath, and LUAC.
+They default to $(prefix)/share/lua/5.2, $(prefix)/lib/lua/5.2, and
+$(prefix)/bin/luac respectively. `make help' will emit additional usage
+information.
 
 If you use your own Makefile, note that GCC and especially clang may emit
 copious warnings about initializers and unused parameters. These warnings
