@@ -1030,6 +1030,18 @@ Set the public key component to that described by the PEM encoded public key in 
 
 Set the private key component to that described by the PEM encoded private key in `string'.
 
+\subsubsection[\fn{pubkey:sign}]{\fn{pubkey:sign(digest)}}
+
+Sign data which has been consumed by the specified \module{openssl.digest} `digest'. Digests and keys are not all interchangeable. For example, an elliptic curve key requires a digest of type ``ecdsa-with-SHA1''.
+
+Returns the signature as an opaque binary string\footnote{Elliptic curve signatures are two X509 DER-encoded numbers, for example, while RSA signatures are encrypted DER structures.} on success, and throws an error otherwise.
+
+\subsubsection[\fn{pubkey:verify}]{\fn{pubkey:verify(signature, digest)}}
+
+Verify the string `signature' as signing the document consumed by \module{openssl.digest} `digest`. See the :sign method for constraints on the format and type of the parameters.
+
+Returns true on success, false for properly formatted but invalid signatures, and throws an error otherwise. Because the structure of the signature is opaque and not susceptible to sanity checking before passing to OpenSSL, an application should always be prepared for an error to be thrown when verifying untrusted signatures. OpenSSL, of course, should be able to handle all malformed inputs. But the module does not attempt to differentiate local system errors from errors triggered by malformed signatures because the set of such errors may change in the future.
+
 \subsubsection[\fn{pubkey:toPEM}]{\fn{pubkey:toPEM(which[, which])}}
 
 Returns the PEM encoded string representation(s) of the specified key component. `which' must be one of ``public'', ``PublicKey'', ``private'', or ``PrivateKey''. For the two argument form, returns two values.
