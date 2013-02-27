@@ -1,0 +1,163 @@
+#!/bin/sh
+#
+# Try to derive Lua compilation and installation paths. The following
+# environment variables are used for hinting
+#
+# 	PREFIX BINDIR LIBDIR DATADIR INCLUDEDIR
+#
+# while these are presumed correct
+#
+# 	LUAINCLUDE LUAPATH LUACPATH LUAC
+#
+# The script tries to ensure version consistency according to the detected
+# compilation environment.
+#
+# Run `./lua.path -h` for usage help.
+#
+set -e # strict errors
+set -u # don't expand unbound variables
+\unalias -a # no surprises
+
+macros() {
+	env CC="${CC:-cc}" CPPFLAGS="${CPPFLAGS:-}" "$(dirname $0)/macros.ls" $*
+}
+
+
+getversion() {
+	macros -i "${1}" -m "${2}" -x 2>/dev/null | awk '$2~/[0123456789]+/{ print $2; exit }'
+}
+
+
+#
+# Deriving LUAINCLUDE is the most important, because module installation
+# paths and luac selection depend on the Lua implementation and version.
+#
+luainclude() {
+	LUA_D=
+	LUA_V=0
+
+	JIT_D=
+	JIT_V=0
+
+	V="$(getversion lua.h LUA_VERSION_NUM)"
+
+	if [ -n "$V" ]; then
+		LUA_V="$V"
+	fi
+
+	V="$(getversion luajit.h LUAJIT_VERSION_NUM)"
+
+	if [ -n "$V" ]; then
+		JIT_V="$V"
+	fi
+
+	I="${INCLUDEDIR:-${PREFIX:-/usr}/include}"
+
+	for F in $(find "$I" -maxdepth 3 -name lua.h); do
+		V="$(getversion \"$F\" LUA_VERSION_NUM)"
+
+		if [ "${V:-0}" -gt "$LUA_V" ]; then
+			LUA_D="${F%%/lua.h}"
+			LUA_V="$V"
+		fi
+	done
+
+	for F in $(find "$I" -maxdepth 3 -name luajit.h); do
+		V="$(getversion \"$F\" LUAJIT_VERSION_NUM)"
+
+		if [ "${V:-0}" -gt "$JIT_V" ]; then
+			JIT_D="${F%%/luajit.h}"
+			JIT_V="$V"
+		fi
+	done
+
+	if [ "$JIT_V" -ge 20000 ]; then
+		echo "$JIT_D"
+	else
+		echo "$LUA_D"
+	fi
+}
+
+
+luapath() {
+	echo "0"	
+}
+
+
+usage() {
+	cat <<- EOF
+	usage: $(basename $0) [-h] include|path|cpath|luac
+	  -h  print this usage message
+
+	  include  preprocessor -I path to reach Lua headers (possibly empty)
+	  path     installation path of Lua modules
+	  cpath    installation path of Lua C modules
+	  luac     luac command path
+	
+	Report bugs to <william@25thandClement.com>
+	EOF
+}
+
+
+while getopts h OPT; do
+	case "${OPT}" in
+	h)
+		usage
+		exit 0
+		;;
+	*)
+		usage >&2
+		exit 1
+		;;
+	esac
+done
+
+shift $(($OPTIND - 1))
+
+
+: ${LUAINCLUDE:=$(luainclude)}
+: ${LUA_VERSION_NUM:=$(getversion "${LUAINCLUDE:+${LUAINCLUDE}/}lua.h" LUA_VERSION_NUM)}
+: ${LUA_VERSION_NUM:=502}
+: ${LUA_VERSION_MAJOR:=$((${LUA_VERSION_NUM} / 100))}
+: ${LUA_VERSION_MINOR:=$((${LUA_VERSION_NUM} % 100))}
+: ${PREFIX:=/usr}
+: ${DATADIR:=${PREFIX}/share}
+: ${LIBDIR:=${PREFIX}/lib}
+: ${BINDIR:=${PREFIX}/bin}
+
+while [ $# -ge 1 ]; do
+	case "$1" in
+	include)
+		echo "${LUAINCLUDE}"
+		;;
+	path)
+		echo "${LUAPATH:=${DATADIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}}"
+		;;
+	cpath)
+		echo "${LUACPATH:=${LIBDIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}}"
+		;;
+	luac)
+		if [ -z "${LUAC:-}" ]; then
+			for C in "${BINDIR}/luac" "$(command -v luac)"; do
+				if [ -x "$C" ]; then
+					V="$(${C} -v 2>/dev/null | sed -ne 's/^Lua \([0123456789]*\.[0123456789]*\).*/\1/p')"
+					: ${V:=0.0}
+
+					if [ "$LUA_VERSION_MAJOR" -eq "${V%%.*}" -a "$LUA_VERSION_MINOR" -eq "${V##*.}" ]; then
+						: ${LUAC:=${C}}
+					fi
+				fi
+			done
+		fi
+
+		echo "${LUAC:=:}"
+
+		;;
+	*)
+		usage >&2
+		exit 1
+		;;
+	esac
+
+	shift
+done
