@@ -8,9 +8,22 @@ luacpath = $(libdir)/lua/5.2
 
 LUAC = $(prefix)/bin/luac
 
+# backwards compatibile install paths
+ifneq ($(origin lua52include), undefined)
+luainclude = $(lua52include)
+endif
+
+ifneq ($(origin lua52path), undefined)
+luapath = $(lua52path)
+endif
+
+ifneq ($(origin lua52cpath), undefined)
+luacpath = $(lua52cpath)
+endif
+
+
 VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
-
 
 CPPFLAGS = -I$(luainclude)
 

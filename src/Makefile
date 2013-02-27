@@ -4,11 +4,25 @@ prefix = /usr/local/lua52
 libdir = $(prefix)/lib
 datadir = $(prefix)/share
 includedir = $(prefix)/include
-lua52include = $(includedir)/lua/5.2
-lua52path = $(datadir)/lua/5.2
-lua52cpath = $(libdir)/lua/5.2
+luainclude = $(includedir)/lua/5.2
+luapath = $(datadir)/lua/5.2
+luacpath = $(libdir)/lua/5.2
 
 LUAC = $(prefix)/bin/luac
+
+# backwards compatibile install paths
+ifneq ($(origin lua52include), undefined)
+luainclude = $(lua52include)
+endif
+
+ifneq ($(origin lua52path), undefined)
+luapath = $(lua52path)
+endif
+
+ifneq ($(origin lua52cpath), undefined)
+luacpath = $(lua52cpath)
+endif
+
 
 VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
@@ -19,7 +33,7 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 all: cqueues.so
 
 CPPFLAGS = -D_REENTRANT -D_THREAD_SAFE
-CPPFLAGS += -D_GNU_SOURCE -I$(lua52include) -DSOCKET_DEBUG
+CPPFLAGS += -D_GNU_SOURCE -I$(luainclude) -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
@@ -105,80 +119,80 @@ lib/notify.o: lib/notify.c lib/notify.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 
-install: $(DESTDIR)$(lua52cpath)/_cqueues.so \
-         $(DESTDIR)$(lua52path)/cqueues.lua \
-         $(DESTDIR)$(lua52path)/cqueues/socket.lua \
-         $(DESTDIR)$(lua52path)/cqueues/errno.lua \
-         $(DESTDIR)$(lua52path)/cqueues/signal.lua \
-         $(DESTDIR)$(lua52path)/cqueues/thread.lua \
-         $(DESTDIR)$(lua52path)/cqueues/notify.lua \
-         $(DESTDIR)$(lua52path)/cqueues/dns/resolver.lua \
-         $(DESTDIR)$(lua52path)/cqueues/dns/config.lua \
-         $(DESTDIR)$(lua52path)/cqueues/dns/hosts.lua \
-         $(DESTDIR)$(lua52path)/cqueues/dns/hints.lua \
-         $(DESTDIR)$(lua52path)/cqueues/dns/record.lua \
-         $(DESTDIR)$(lua52path)/cqueues/dns/packet.lua
+install: $(DESTDIR)$(luacpath)/_cqueues.so \
+         $(DESTDIR)$(luapath)/cqueues.lua \
+         $(DESTDIR)$(luapath)/cqueues/socket.lua \
+         $(DESTDIR)$(luapath)/cqueues/errno.lua \
+         $(DESTDIR)$(luapath)/cqueues/signal.lua \
+         $(DESTDIR)$(luapath)/cqueues/thread.lua \
+         $(DESTDIR)$(luapath)/cqueues/notify.lua \
+         $(DESTDIR)$(luapath)/cqueues/dns/resolver.lua \
+         $(DESTDIR)$(luapath)/cqueues/dns/config.lua \
+         $(DESTDIR)$(luapath)/cqueues/dns/hosts.lua \
+         $(DESTDIR)$(luapath)/cqueues/dns/hints.lua \
+         $(DESTDIR)$(luapath)/cqueues/dns/record.lua \
+         $(DESTDIR)$(luapath)/cqueues/dns/packet.lua
 
-$(DESTDIR)$(lua52cpath)/_cqueues.so: cqueues.so
+$(DESTDIR)$(luacpath)/_cqueues.so: cqueues.so
 	mkdir -p $(@D)
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues.lua: cqueues.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
-
-$(DESTDIR)$(lua52path)/cqueues/socket.lua: socket.lua
+$(DESTDIR)$(luapath)/cqueues.lua: cqueues.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/errno.lua: errno.lua
+$(DESTDIR)$(luapath)/cqueues/socket.lua: socket.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/signal.lua: signal.lua
+$(DESTDIR)$(luapath)/cqueues/errno.lua: errno.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/thread.lua: thread.lua
+$(DESTDIR)$(luapath)/cqueues/signal.lua: signal.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/notify.lua: notify.lua
+$(DESTDIR)$(luapath)/cqueues/thread.lua: thread.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/dns/resolver.lua: dns.resolver.lua
+$(DESTDIR)$(luapath)/cqueues/notify.lua: notify.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/dns/config.lua: dns.config.lua
+$(DESTDIR)$(luapath)/cqueues/dns/resolver.lua: dns.resolver.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/dns/hosts.lua: dns.hosts.lua
+$(DESTDIR)$(luapath)/cqueues/dns/config.lua: dns.config.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/dns/hints.lua: dns.hints.lua
+$(DESTDIR)$(luapath)/cqueues/dns/hosts.lua: dns.hosts.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/dns/record.lua: dns.record.lua
+$(DESTDIR)$(luapath)/cqueues/dns/hints.lua: dns.hints.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
 
-$(DESTDIR)$(lua52path)/cqueues/dns/packet.lua: dns.packet.lua
+$(DESTDIR)$(luapath)/cqueues/dns/record.lua: dns.record.lua
+	mkdir -p $(@D)
+	$(LUAC) -p $<
+	cp -p $< $@
+
+$(DESTDIR)$(luapath)/cqueues/dns/packet.lua: dns.packet.lua
 	mkdir -p $(@D)
 	$(LUAC) -p $<
 	cp -p $< $@
@@ -190,3 +204,23 @@ clean:
 
 clean~: clean
 	rm -f *~ lib/*~
+
+help:
+	@echo "Available targets:"
+	@echo ""
+	@echo "       all - build all binary targets"
+	@echo "cqueues.so - build cqueues.so module"
+	@echo "   install - install cqueues modules"
+	@echo "     clean - rm binary targets, object files, debugging symbols, etc"
+	@echo "    clean~ - clean + rm *~"
+	@echo "      help - echo this help message"
+	@echo ""
+	@echo "Some important Make variables:"
+	@echo ""
+	@echo "    prefix - path to install root"
+	@echo 'luainclude - path to Lua headers ($$(prefix)/include/lua/5.2)'
+	@echo '   luapath - install path for Lua modules ($$(prefix)/share/lua/5.2)'
+	@echo '  luacpath - install path for Lua C modules ($$(prefix)/lib/lua/5.2)'
+	@echo '      LUAC - path to luac utility ($$(prefix)/bin/luac)'
+	@echo ""
+	@echo "Report bugs to <william@25thandClement.com>"
