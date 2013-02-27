@@ -940,6 +940,52 @@ static int pk_setPrivateKey(lua_State *L) {
 } /* pk_setPrivateKEY() */
 
 
+static int pk_sign(lua_State *L) {
+	EVP_PKEY *key = checksimple(L, 1, PUBKEY_CLASS);
+	EVP_MD_CTX *md = luaL_checkudata(L, 2, DIGEST_CLASS);
+	luaL_Buffer B;
+	unsigned n;
+
+	if (LUAL_BUFFERSIZE < EVP_PKEY_size(key))
+		return luaL_error(L, "pubkey:sign: LUAL_BUFFERSIZE(%zu) < EVP_PKEY_size(%zu)", (size_t)LUAL_BUFFERSIZE, (size_t)EVP_PKEY_size(key));
+
+	luaL_buffinit(L, &B);
+	n = LUAL_BUFFERSIZE;
+
+	if (!EVP_SignFinal(md, (void *)luaL_prepbuffer(&B), &n, key))
+		return throwssl(L, "pubkey:sign");
+
+	luaL_addsize(&B, n);
+	luaL_pushresult(&B);
+
+	return 1;
+} /* pk_sign() */
+
+
+static int pk_verify(lua_State *L) {
+	EVP_PKEY *key = checksimple(L, 1, PUBKEY_CLASS);
+	size_t len;
+	const void *sig = luaL_checklstring(L, 2, &len);
+	EVP_MD_CTX *md = luaL_checkudata(L, 3, DIGEST_CLASS);
+
+	switch (EVP_VerifyFinal(md, sig, len, key)) {
+	case 0: /* WRONG */
+		ERR_clear_error();
+		lua_pushboolean(L, 0);
+
+		break;
+	case 1: /* OK */
+		lua_pushboolean(L, 1);
+
+		break;
+	default:
+		return throwssl(L, "pubkey:verify");
+	}
+
+	return 1;
+} /* pk_verify() */
+
+
 static int pk_toPEM(lua_State *L) {
 	EVP_PKEY *key = checksimple(L, 1, PUBKEY_CLASS);
 	int top, i, ok;
@@ -1074,6 +1120,8 @@ static const luaL_Reg pk_methods[] = {
 	{ "type",          &pk_type },
 	{ "setPublicKey",  &pk_setPublicKey },
 	{ "setPrivateKey", &pk_setPrivateKey },
+	{ "sign",          &pk_sign },
+	{ "verify",        &pk_verify },
 	{ "toPEM",         &pk_toPEM },
 	{ NULL,            NULL },
 };
