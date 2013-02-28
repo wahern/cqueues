@@ -27,7 +27,16 @@ set -u # don't expand unbound variables
 
 
 getversion() {
-	printf "#include <$1>\n<<<<$2>>>>\n" | ${CC:-cc} ${CPPFLAGS:-} -E - 2>/dev/null | sed -ne 's/^.*<<<< *\([0123456789]*\) *>>>>.*$/\1/p'
+	printf "#include <$1>\n<<<<$2>>>>\n" \
+	| ${CC:-cc} ${CPPFLAGS:-} -E - 2>/dev/null \
+	| sed -ne '
+		s/^.*<<<< *\([0123456789]*\) *>>>>.*$/\1/
+		t Found
+		d
+		:Found
+		p
+		q
+	'
 }
 
 
