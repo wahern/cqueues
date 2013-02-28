@@ -60,7 +60,7 @@ luainclude() {
 
 	I="${INCLUDEDIR:-${PREFIX:-/usr}/include}"
 
-	for F in $(find "$I" -maxdepth 3 -name lua.h 2>/dev/null); do
+	for F in $(find "$I" -name lua.h 2>/dev/null); do
 		V="$(getversion \"$F\" LUA_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$LUA_V" ]; then
@@ -69,7 +69,7 @@ luainclude() {
 		fi
 	done
 
-	for F in $(find "$I" -maxdepth 3 -name luajit.h 2>/dev/null); do
+	for F in $(find "$I" -name luajit.h 2>/dev/null); do
 		V="$(getversion \"$F\" LUAJIT_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$JIT_V" ]; then
