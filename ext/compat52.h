@@ -64,7 +64,7 @@ static void luaL_setfuncs(lua_State *L, const luaL_Reg *l, int nup) {
 		lua_setfield(L, t, l->name);
 	}
 
-	return lua_pop(L, nup);
+	lua_pop(L, nup);
 } /* luaL_setfuncs() */
 
 
