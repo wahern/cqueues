@@ -1,17 +1,16 @@
 M4 = m4
 
-prefix = /usr/local/lua52
+prefix = /usr/local
 bindir = $(prefix)/bin
 libdir = $(prefix)/lib
 datadir = $(prefix)/share
 includedir = $(prefix)/include
-luainclude = $(includedir)/lua/5.2
-luapath = $(datadir)/lua/5.2
-luacpath = $(libdir)/lua/5.2
+luainclude =
+luapath =
+luacpath =
+LUAC =
 
-LUAC = $(bindir)/luac
-
-# backwards compatibile install paths
+# backwards compatible install paths
 ifneq ($(origin lua52include), undefined)
 luainclude = $(lua52include)
 endif
@@ -25,6 +24,13 @@ luacpath = $(lua52cpath)
 endif
 
 
+# call helper to derive our Lua paths
+ENV = CC CPPFLAGS prefix bindir libdir datadir includedir \
+      luainclude luapath luacpath LUAC
+$(shell env $(foreach V, $(ENV), $(V)="$(call $(V))") ../mk/lua.path make > .config)
+include .config
+
+
 VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
@@ -33,8 +39,12 @@ cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 
 all: cqueues.so
 
-CPPFLAGS = -D_REENTRANT -D_THREAD_SAFE
-CPPFLAGS += -D_GNU_SOURCE -I$(luainclude) -DSOCKET_DEBUG
+ifneq ($(luainclude),)
+CPPFLAGS = -I$(luainclude)
+endif
+
+CPPFLAGS += -D_REENTRANT -D_THREAD_SAFE
+CPPFLAGS += -D_GNU_SOURCE -DSOCKET_DEBUG
 CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
 ifeq ($(VENDOR.CC), gcc)
@@ -202,6 +212,7 @@ $(DESTDIR)$(luapath)/cqueues/dns/packet.lua: dns.packet.lua
 
 clean:
 	rm -rf errno.c *.so *.o lib/*.o *.dSYM
+	rm -f .config
 
 clean~: clean
 	rm -f *~ lib/*~

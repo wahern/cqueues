@@ -8,7 +8,7 @@ luapath =
 luacpath =
 LUAC =
 
-# backwards compatibile install paths
+# backwards compatible install paths
 ifneq ($(origin lua52include), undefined)
 luainclude = $(lua52include)
 endif
