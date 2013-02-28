@@ -54,9 +54,7 @@ luainclude() {
 		JIT_V="$V"
 	fi
 
-	I="${INCLUDEDIR:-${PREFIX:-/usr}/include}"
-
-	for F in $(find "$I" -name lua.h 2>/dev/null); do
+	for F in $(find "${INCLUDEDIR}" -name lua.h 2>/dev/null); do
 		V="$(getversion $F LUA_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$LUA_V" ]; then
@@ -65,7 +63,7 @@ luainclude() {
 		fi
 	done
 
-	for F in $(find "$I" -name luajit.h 2>/dev/null); do
+	for F in $(find "${INCLUDEDIR}" -name luajit.h 2>/dev/null); do
 		V="$(getversion $F LUAJIT_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$JIT_V" ]; then
@@ -85,7 +83,29 @@ luainclude() {
 
 
 luapath() {
-	echo "0"	
+	echo "${DATADIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
+}
+
+
+luacpath() {
+	echo "${LIBDIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
+}
+
+
+_luac() {
+	for C in "${BINDIR}/luac" "$(command -v luac)"; do
+		if [ -x "$C" ]; then
+			V="$(${C} -v 2>/dev/null | sed -ne 's/^Lua \([0123456789]*\.[0123456789]*\).*/\1/p')"
+			: ${V:=0.0}
+
+			if [ "$LUA_VERSION_MAJOR" -eq "${V%%.*}" -a "$LUA_VERSION_MINOR" -eq "${V##*.}" ]; then
+				echo "${C}"
+				return
+			fi
+		fi
+	done
+
+	echo ":"
 }
 
 
@@ -126,15 +146,17 @@ done
 shift $(($OPTIND - 1))
 
 
+: ${PREFIX:=${prefix:-/usr}}
+: ${DATADIR:=${datadir:-${PREFIX}/share}}
+: ${LIBDIR:=${libdir:-${PREFIX}/lib}}
+: ${BINDIR:=${bindir:-${PREFIX}/bin}}
+: ${INCLUDEDIR:=${includedir:-${PREFIX}/include}}
 : ${LUAINCLUDE:=$(luainclude)}
 : ${LUA_VERSION_NUM:=$(getversion "${LUAINCLUDE:+${LUAINCLUDE}/}lua.h" LUA_VERSION_NUM)}
 : ${LUA_VERSION_NUM:=502}
 : ${LUA_VERSION_MAJOR:=$((${LUA_VERSION_NUM} / 100))}
 : ${LUA_VERSION_MINOR:=$((${LUA_VERSION_NUM} % 100))}
-: ${PREFIX:=/usr}
-: ${DATADIR:=${PREFIX}/share}
-: ${LIBDIR:=${PREFIX}/lib}
-: ${BINDIR:=${PREFIX}/bin}
+
 
 while [ $# -ge 1 ]; do
 	case "$1" in
@@ -142,33 +164,27 @@ while [ $# -ge 1 ]; do
 		echo "${LUAINCLUDE}"
 		;;
 	path)
-		echo "${LUAPATH:=${DATADIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}}"
+		echo "${LUAPATH:=$(luapath)}"
 		;;
 	cpath)
-		echo "${LUACPATH:=${LIBDIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}}"
+		echo "${LUACPATH:=$(luacpath)}"
 		;;
 	luac)
-		if [ -z "${LUAC:-}" ]; then
-			for C in "${BINDIR}/luac" "$(command -v luac)"; do
-				if [ -x "$C" ]; then
-					V="$(${C} -v 2>/dev/null | sed -ne 's/^Lua \([0123456789]*\.[0123456789]*\).*/\1/p')"
-					: ${V:=0.0}
-
-					if [ "$LUA_VERSION_MAJOR" -eq "${V%%.*}" -a "$LUA_VERSION_MINOR" -eq "${V##*.}" ]; then
-						: ${LUAC:=${C}}
-					fi
-				fi
-			done
-		fi
-
-		echo "${LUAC:=:}"
-
+		echo "${LUAC:=$(_luac)}"
 		;;
 	cppflags)
 		echo "${CPPFLAGS:-}${LUAINCLUDE:+${CPPFLAGS:+ }-I${LUAINCLUDE}}"
 		;;
 	version)
 		echo "${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
+		;;
+	make)
+		cat <<- EOF
+			luainclude=${LUAINCLUDE}
+			luapath=${LUAPATH:=$(luapath)}
+			luacpath=${LUACPATH:=$(luacpath)}
+			LUAC=${LUAC:=$(_luac)}
+		EOF
 		;;
 	*)
 		usage >&2
