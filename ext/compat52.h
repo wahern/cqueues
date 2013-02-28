@@ -133,6 +133,10 @@ static lua_Unsigned luaL_optunsigned(lua_State *L, int arg, lua_Unsigned def) {
 } /* luaL_optunsigned() */
 
 
+#ifndef LUA_FILEHANDLE
+#define LUA_FILEHANDLE "FILE*"
+#endif
+
 /*
  * Lua 5.1 userdata is a simple FILE *, while LuaJIT is a struct with the
  * first member a FILE *, similar to Lua 5.2.
