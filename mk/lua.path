@@ -25,13 +25,9 @@ set -e # strict errors
 set -u # don't expand unbound variables
 \unalias -a # no surprises
 
-macros() {
-	env CC="${CC:-cc}" CPPFLAGS="${CPPFLAGS:-}" "$(dirname $0)/macros.ls" $*
-}
-
 
 getversion() {
-	macros -i "${1}" -m "${2}" -x 2>/dev/null | awk '$2~/[0123456789]+/{ print $2; exit }'
+	printf "#include <$1>\n<<<<$2>>>>\n" | ${CC:-cc} ${CPPFLAGS:-} -E - 2>/dev/null | sed -ne 's/^.*<<<<\([0123456789]*\)>>>>.*$/\1/p'
 }
 
 
@@ -61,7 +57,7 @@ luainclude() {
 	I="${INCLUDEDIR:-${PREFIX:-/usr}/include}"
 
 	for F in $(find "$I" -name lua.h 2>/dev/null); do
-		V="$(getversion \"$F\" LUA_VERSION_NUM)"
+		V="$(getversion $F LUA_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$LUA_V" ]; then
 			LUA_D="${F%%/lua.h}"
@@ -70,7 +66,7 @@ luainclude() {
 	done
 
 	for F in $(find "$I" -name luajit.h 2>/dev/null); do
-		V="$(getversion \"$F\" LUAJIT_VERSION_NUM)"
+		V="$(getversion $F LUAJIT_VERSION_NUM)"
 
 		if [ "${V:-0}" -gt "$JIT_V" ]; then
 			JIT_D="${F%%/luajit.h}"
