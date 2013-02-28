@@ -1,13 +1,12 @@
-prefix = /usr/local/lua52
+prefix = /usr/local
 bindir = $(prefix)/bin
 libdir = $(prefix)/lib
 datadir = $(prefix)/share
 includedir = $(prefix)/include
-luainclude = $(includedir)/lua/5.2
-luapath = $(datadir)/lua/5.2
-luacpath = $(libdir)/lua/5.2
-
-LUAC = $(bindir)/luac
+luainclude =
+luapath =
+luacpath =
+LUAC =
 
 # backwards compatibile install paths
 ifneq ($(origin lua52include), undefined)
@@ -23,10 +22,19 @@ luacpath = $(lua52cpath)
 endif
 
 
+# call helper to derive our Lua paths
+ENV = CC CPPFLAGS prefix bindir libdir datadir includedir \
+      luainclude luapath luacpath LUAC
+$(shell env $(foreach V, $(ENV), $(V)="$(call $(V))") ../mk/lua.path make > .config)
+include .config
+
+
 VENDOR.OS = $(shell ../mk/vendor.os)
 VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
 
+ifneq ($(luainclude),)
 CPPFLAGS = -I$(luainclude)
+endif
 
 ifeq ($(VENDOR.CC), sunpro)
 DFLAGS = -g
@@ -121,6 +129,7 @@ $(DESTDIR)$(luapath)/openssl/hmac.lua: openssl.hmac.lua
 
 clean:
 	rm -f *.so *.o
+	rm -f .config
 
 clean~: clean
 	rm -f *~
