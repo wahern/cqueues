@@ -1,6 +1,7 @@
+.POSIX:
 
 all:
-	gmake -f GNUmakefile $(MAKEFLAGS) all
+	+gmake -f GNUmakefile all
 
 .DEFAULT:
-	gmake -f GNUmakefile $(MAKEFLAGS) $<
+	+gmake -f GNUmakefile $<
