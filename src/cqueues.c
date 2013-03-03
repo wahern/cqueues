@@ -63,7 +63,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUES_VENDOR "william@25thandClement.com"
-#define CQUEUES_VERSION 20130129L
+#define CQUEUES_VERSION 20130302L
 
 
 /*
