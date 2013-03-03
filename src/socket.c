@@ -920,6 +920,11 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 } /* lso_fill() */
 
 
+static _Bool lso_nomore(struct luasocket *S, size_t limit) {
+	return S->ibuf.eof || fifo_rlen(&S->ibuf.fifo) >= limit;
+} /* lso_nomore() */
+
+
 static lso_error_t lso_asserterror(int error) {
 	return (error)? error : EFAULT;
 } /* lso_asserterror() */
@@ -934,7 +939,7 @@ static lso_error_t lso_getline(struct luasocket *S, struct iovec *iov) {
 		if (fifo_lvec(&S->ibuf.fifo, iov))
 			break;
 
-		if (fifo_rlen(&S->ibuf.fifo) > 0 && (S->ibuf.eof || fifo_rlen(&S->ibuf.fifo) >= S->ibuf.maxline)) {
+		if (fifo_rlen(&S->ibuf.fifo) > 0 && lso_nomore(S, S->ibuf.maxline)) {
 			fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
 			break;
@@ -957,19 +962,44 @@ static inline _Bool lso_isfname(unsigned char ch) {
 	return ch >= 33 && ch <= 126 && ch != ':';
 } /* lso_isfname() */
 
+static inline _Bool lso_isbreak(struct iovec *iov, _Bool eof) {
+	unsigned char *p, *pe;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	while (p < pe && lso_isfname(*p))
+		p++;
+
+	while (p < pe && lso_isblank(*p))
+		p++;
+
+	if (p < pe && *p == ':')
+		return 0;
+
+	return eof || !!memchr(p, '\n', pe - p);
+} /* lso_isbreak() */
+
 static lso_error_t lso_getheader(struct luasocket *S, struct iovec *iov) {
 	unsigned char *p, *pe;
 	size_t eoh;
+	_Bool eof;
 	int error;
 
 	fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
-	if (!(eoh = iov_eoh(iov, (S->ibuf.eof || iov->iov_len >= S->ibuf.maxline)))) {
+	if (lso_isbreak(iov, lso_nomore(S, S->ibuf.maxline)))
+		goto nomore;
+
+	if (!(eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline)))) {
 		error = lso_fill(S, S->ibuf.maxline);
 
 		fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
-		if (!(eoh = iov_eoh(iov, (S->ibuf.eof || iov->iov_len >= S->ibuf.maxline))))
+		if (lso_isbreak(iov, lso_nomore(S, S->ibuf.maxline)))
+			goto nomore;
+
+		if (!(eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline))))
 			return lso_asserterror(error);
 	}
 
@@ -985,6 +1015,10 @@ static lso_error_t lso_getheader(struct luasocket *S, struct iovec *iov) {
 		p++;
 
 	return (p < pe && *p == ':')? 0 : EPIPE;
+nomore:
+	iov->iov_len = 0;
+
+	return 0;
 } /* lso_getheader() */
 
 
@@ -1099,25 +1133,29 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		if ((error = lso_getheader(S, &iov)))
 			goto error;
 
-		count = iov.iov_len;
+		if ((count = iov.iov_len)) {
+			iov_trimcrlf(&iov);
 
-		iov_trimcrlf(&iov);
-
-		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, count);
+			lua_pushlstring(L, iov.iov_base, iov.iov_len);
+			fifo_discard(&S->ibuf.fifo, count);
+		} else {
+			lua_pushnil(L);
+		}
 
 		return 1;
 	case LSO_HEADER:
 		if ((error = lso_getheader(S, &iov)))
 			goto error;
 
-		count = iov.iov_len;
+		if ((count = iov.iov_len)) {
+			if (op.mode & LSO_TEXT)
+				iov_trimcr(&iov);
 
-		if (op.mode & LSO_TEXT)
-			iov_trimcr(&iov);
-
-		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, count);
+			lua_pushlstring(L, iov.iov_base, iov.iov_len);
+			fifo_discard(&S->ibuf.fifo, count);
+		} else {
+			lua_pushnil(L);
+		}
 
 		return 1;
 	case LSO_BLOCK:

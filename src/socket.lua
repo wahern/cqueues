@@ -187,7 +187,7 @@ local function read(self, what, ...)
 
 	local data, why = self:recv(what)
 
-	while not data do
+	while not data and why do
 		if why == EAGAIN then
 			poll(self)
 		else
