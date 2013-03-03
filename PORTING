@@ -187,8 +187,16 @@ Linux connect(2) associations
 
 	Linux will not reassociate a UDP socket to a non-loopback address if
 	the first association was to the loopback. No other system exhibits
-	this behavior. Presumably it's some pitiful security feature. It
-	also contravenes POSIX, and is otherwise surprising and confusing.
+	this behavior.
+
+	An argument can be made that reassociations should fail if the
+	existing source address (perhaps auto-bound on the first
+	association) does not match the new destination network. But this
+	has apparently always been allowed on various systems as far as I
+	can tell, even on previous versions of Linux.
+
+	A work around is to break an existing association by connecting to
+	AF_UNSPEC.
 
 	This bug/feature can manifest, for example, when your
 	/etc/resolv.conf files looks like
@@ -211,7 +219,7 @@ Linux connect(2) associations
 	    OK : FreeBSD 9.0
 	    OK : NetBSD 5.1.2
 
-	Last updated 2013-02-23.
+	Last updated 2013-03-02.
 
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
