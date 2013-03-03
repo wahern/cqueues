@@ -81,11 +81,21 @@ loop:wrap(function()
 					hdr[f] = b
 				end
 
+				con:read"*l" -- discard header/body break
+
 				local path = string.match(get, "^%w+%s+/?([^%s]+)") or "/dev/null"
+
+				if not path then
+					warn("%s:%d: no path specified", ip, port)
+
+					return
+				end
+
 				local file = io.open(path, "r")
 
 				if file then
 					con:write"HTTP/1.0 200 OK\n"
+					con:write"Connection: close\n"
 
 					local ext = string.match(path, "(%w+)$") or ""
 					local ctype = mime[string.lower(ext)] or "application/octet-stream"
@@ -102,7 +112,8 @@ loop:wrap(function()
 
 					file:close()
 				else
-					con:write("HTTP/1.0 404 Not Found\n\n")
+					con:write"HTTP/1.0 404 Not Found\n"
+					con:write"Connection: close\n\n"
 				end
 
 				local ok, why = con:flush()
@@ -111,7 +122,15 @@ loop:wrap(function()
 					warn("%s:%d: cannot flush (%s)", ip, port, errno.strerror(why))
 				end
 
-				con:shutdown("rw")
+				con:shutdown"w"
+
+				local junk = con:read(1) -- wait for EOF
+
+				if junk then
+					warn("%s:%d: spurious data", ip, port)
+				end
+
+				con:shutdown"r"
 			end)
 
 			if ok then
