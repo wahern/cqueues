@@ -8,10 +8,23 @@ local cqueues = require"cqueues"
 local socket = require"cqueues.socket"
 local errno = require"cqueues.errno"
 local bind, port = ...
+local verbose = false --true
 
 
 local function fmt(...)
 	return string.format(...)
+end
+
+local info
+
+if verbose then
+	info = function(...)
+		io.stderr:write(fmt(...), "\n")
+	end
+else
+	info = function()
+		return true
+	end
 end
 
 local function warn(...)
@@ -36,16 +49,30 @@ local srv = socket.listen(bind or "127.0.0.1", tonumber(port or 8000))
 local loop = cqueues.new()
 
 loop:wrap(function()
+	local count = 0
+
 	for con in srv:clients() do
+		count = count + 1
+
+		local id = count
+
 		loop:wrap(function()
 			local _, ip, port = con:peername()
+
+			info("%s:%d: connected", ip, port)
 
 			local ok, why = pcall(function()
 				con:setmode("tl", "tf")
 
-				local get = con:read"*l" or ""
+				local get, why = con:read"*l"
 
-				warn("%s:%d: %s", ip, port, get)
+				if not get then
+					warn("%s:%d: no request (%s)", ip, port, errno.strerror(why))
+
+					return
+				end
+
+				info("%s:%d: %s", ip, port, get)
 
 				local hdr = {}
 
@@ -72,6 +99,8 @@ loop:wrap(function()
 					for blk in file:lines(1024) do
 						con:write(blk)
 					end
+
+					file:close()
 				else
 					con:write("HTTP/1.0 404 Not Found\n\n")
 				end
@@ -79,16 +108,16 @@ loop:wrap(function()
 				local ok, why = con:flush()
 
 				if not ok then
-					error(fmt("%s:%d: %s", ip, port, errno.strerror(why)))
+					warn("%s:%d: cannot flush (%s)", ip, port, errno.strerror(why))
 				end
 
 				con:shutdown("rw")
 			end)
 
 			if ok then
-				warn("%s:%d: disconnected", ip, port)
+				info("%s:%d: disconnected", ip, port)
 			else
-				warn("%s", why)
+				warn("%s:%d: %s", ip, port, why)
 			end
 
 			con:close()
