@@ -1,0 +1,102 @@
+#!/usr/local/lua52/bin/lua
+--
+-- Very simple HTTP server.
+--
+-- httpd.srv [bind-address [bind-port]]
+--
+local cqueues = require"cqueues"
+local socket = require"cqueues.socket"
+local errno = require"cqueues.errno"
+local bind, port = ...
+
+
+local function fmt(...)
+	return string.format(...)
+end
+
+local function warn(...)
+	io.stderr:write(fmt(...), "\n")
+end
+
+
+local mime = {
+	html = "text/html",
+	xml  = "application/xml",
+	css  = "text/css",
+	js   = "text/javascript",
+	txt  = "text/plain",
+	gif  = "image/gif",
+	png  = "image/png",
+	jpg  = "image/jpeg",
+}
+
+
+local srv = socket.listen(bind or "127.0.0.1", tonumber(port or 8000))
+
+local loop = cqueues.new()
+
+loop:wrap(function()
+	for con in srv:clients() do
+		loop:wrap(function()
+			local _, ip, port = con:peername()
+
+			local ok, why = pcall(function()
+				con:setmode("tl", "tf")
+
+				local get = con:read"*l" or ""
+
+				warn("%s:%d: %s", ip, port, get)
+
+				local hdr = {}
+
+				for h in con:lines"*h" do
+					local f, b = string.match(h, "^([^:%s]+)%s*:%s*(.*)$")
+					hdr[f] = b
+				end
+
+				local path = string.match(get, "^%w+%s+/?([^%s]+)") or "/dev/null"
+				local file = io.open(path, "r")
+
+				if file then
+					con:write"HTTP/1.0 200 OK\n"
+
+					local ext = string.match(path, "(%w+)$") or ""
+					local ctype = mime[string.lower(ext)] or "application/octet-stream"
+
+					con:write("Content-Type: ", ctype, "\n\n")
+
+					if not string.match(ctype, "^text/") then
+						con:setmode(nil, "bf")
+					end
+
+					for blk in file:lines(1024) do
+						con:write(blk)
+					end
+				else
+					con:write("HTTP/1.0 404 Not Found\n\n")
+				end
+
+				local ok, why = con:flush()
+
+				if not ok then
+					error(fmt("%s:%d: %s", ip, port, errno.strerror(why)))
+				end
+
+				con:shutdown("rw")
+			end)
+
+			if ok then
+				warn("%s:%d: disconnected", ip, port)
+			else
+				warn("%s", why)
+			end
+
+			con:close()
+		end)
+	end
+end)
+
+while not loop:empty() do
+	local ok, err = loop:step()
+	if not ok then error("loop.step: " .. err) end
+end
