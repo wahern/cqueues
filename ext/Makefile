@@ -74,7 +74,8 @@ install: $(DESTDIR)$(luacpath)/_openssl.so \
          $(DESTDIR)$(luapath)/openssl/ssl/context.lua \
          $(DESTDIR)$(luapath)/openssl/ssl.lua \
          $(DESTDIR)$(luapath)/openssl/digest.lua \
-         $(DESTDIR)$(luapath)/openssl/hmac.lua
+         $(DESTDIR)$(luapath)/openssl/hmac.lua \
+         $(DESTDIR)$(luapath)/openssl/cipher.lua
 
 $(DESTDIR)$(luacpath)/_openssl.so: openssl.so
 	mkdir -p $(@D)
@@ -121,6 +122,10 @@ $(DESTDIR)$(luapath)/openssl/digest.lua: openssl.digest.lua
 	cp -p $< $@
 
 $(DESTDIR)$(luapath)/openssl/hmac.lua: openssl.hmac.lua
+	mkdir -p $(@D)
+	cp -p $< $@
+
+$(DESTDIR)$(luapath)/openssl/cipher.lua: openssl.cipher.lua
 	mkdir -p $(@D)
 	cp -p $< $@
 
