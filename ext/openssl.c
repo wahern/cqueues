@@ -3567,13 +3567,13 @@ static int cipher_init(lua_State *L, _Bool encrypt) {
 	const void *key, *iv;
 	size_t n, m;
 
-	key = luaL_checklstring(L, 1, &n);
+	key = luaL_checklstring(L, 2, &n);
 	m = (size_t)EVP_CIPHER_CTX_key_length(ctx);
-	luaL_argcheck(L, 1, n == m, lua_pushfstring(L, "%u: invalid key length (should be %u)", (unsigned)n, (unsigned)m));
+	luaL_argcheck(L, 2, n == m, lua_pushfstring(L, "%u: invalid key length (should be %u)", (unsigned)n, (unsigned)m));
 
-	iv = luaL_checklstring(L, 2, &n);
+	iv = luaL_checklstring(L, 3, &n);
 	m = (size_t)EVP_CIPHER_CTX_iv_length(ctx);
-	luaL_argcheck(L, 2, n == m, lua_pushfstring(L, "%u: invalid IV length (should be %u)", (unsigned)n, (unsigned)m));
+	luaL_argcheck(L, 3, n == m, lua_pushfstring(L, "%u: invalid IV length (should be %u)", (unsigned)n, (unsigned)m));
 
 	if (!EVP_CipherInit_ex(ctx, NULL, NULL, key, iv, encrypt))
 		return throwssl(L, (encrypt)? "cipher:encrypt" : "cipher:decrypt");
@@ -3661,8 +3661,8 @@ static int cipher__gc(lua_State *L) {
 
 
 static const luaL_Reg cipher_methods[] = {
-	{ "encrypt", &cipher_update },
-	{ "decrypt", &cipher_final },
+	{ "encrypt", &cipher_encrypt },
+	{ "decrypt", &cipher_decrypt },
 	{ "update",  &cipher_update },
 	{ "final",   &cipher_final },
 	{ NULL,      NULL },
