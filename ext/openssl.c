@@ -71,12 +71,16 @@
 #define SSL_CLASS        "OpenSSL SSL"
 #define DIGEST_CLASS     "OpenSSL Digest"
 #define HMAC_CLASS       "OpenSSL HMAC"
+#define CIPHER_CLASS     "OpenSSL Cipher"
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
 #define endof(a) (&(a)[countof(a)])
 
 #define CLAMP(i, min, max) (((i) < (min))? (min) : ((i) > (max))? (max) : (i))
+
+#undef MIN
+#define MIN(a, b) (((a) < (b))? (a) : (b))
 
 #define stricmp(a, b) strcasecmp((a), (b))
 #define strieq(a, b) (!stricmp((a), (b)))
@@ -947,7 +951,7 @@ static int pk_sign(lua_State *L) {
 	unsigned n;
 
 	if (LUAL_BUFFERSIZE < EVP_PKEY_size(key))
-		return luaL_error(L, "pubkey:sign: LUAL_BUFFERSIZE(%zu) < EVP_PKEY_size(%zu)", (size_t)LUAL_BUFFERSIZE, (size_t)EVP_PKEY_size(key));
+		return luaL_error(L, "pubkey:sign: LUAL_BUFFERSIZE(%u) < EVP_PKEY_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)EVP_PKEY_size(key));
 
 	luaL_buffinit(L, &B);
 	n = LUAL_BUFFERSIZE;
@@ -3521,6 +3525,169 @@ int luaopen__openssl_hmac(lua_State *L) {
 } /* luaopen__openssl_hmac() */
 
 
+/*
+ * Cipher - openssl.cipher
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static const EVP_CIPHER *cipher_checktype(lua_State *L, int index) {
+	const char *name = luaL_checkstring(L, index);
+	const EVP_CIPHER *type;
+
+	if (!(type = EVP_get_cipherbyname(name)))
+		luaL_argerror(L, index, lua_pushfstring(L, "%s: invalid cipher type", name));
+
+	return type;
+} /* cipher_checktype() */
+
+
+static int cipher_new(lua_State *L) {
+	const EVP_CIPHER *type;
+	EVP_CIPHER_CTX *ctx;
+
+	type = cipher_checktype(L, 1);
+
+	ctx = prepudata(L, sizeof *ctx, CIPHER_CLASS, NULL);
+	EVP_CIPHER_CTX_init(ctx);
+
+	if (!EVP_CipherInit_ex(ctx, type, NULL, NULL, NULL, -1))
+		return throwssl(L, "cipher.new");
+
+	return 1;
+} /* cipher_new() */
+
+
+static int cipher_interpose(lua_State *L) {
+	return interpose(L, HMAC_CLASS);
+} /* cipher_interpose() */
+
+
+static int cipher_init(lua_State *L, _Bool encrypt) {
+	EVP_CIPHER_CTX *ctx = luaL_checkudata(L, 1, CIPHER_CLASS);
+	const void *key, *iv;
+	size_t n, m;
+
+	key = luaL_checklstring(L, 1, &n);
+	m = (size_t)EVP_CIPHER_CTX_key_length(ctx);
+	luaL_argcheck(L, 1, n == m, lua_pushfstring(L, "%u: invalid key length (should be %u)", (unsigned)n, (unsigned)m));
+
+	iv = luaL_checklstring(L, 2, &n);
+	m = (size_t)EVP_CIPHER_CTX_iv_length(ctx);
+	luaL_argcheck(L, 2, n == m, lua_pushfstring(L, "%u: invalid IV length (should be %u)", (unsigned)n, (unsigned)m));
+
+	if (!EVP_CipherInit_ex(ctx, NULL, NULL, key, iv, encrypt))
+		return throwssl(L, (encrypt)? "cipher:encrypt" : "cipher:decrypt");
+
+	lua_settop(L, 1);
+
+	return 1;
+} /* cipher_init() */
+
+
+static int cipher_encrypt(lua_State *L) {
+	return cipher_init(L, 1);
+} /* cipher_encrypt() */
+
+
+static int cipher_decrypt(lua_State *L) {
+	return cipher_init(L, 0);
+} /* cipher_decrypt() */
+
+
+static int cipher_update(lua_State *L) {
+	EVP_CIPHER_CTX *ctx = luaL_checkudata(L, 1, CIPHER_CLASS);
+	const unsigned char *p, *pe;
+	luaL_Buffer B;
+	size_t block, step, n;
+
+	block = EVP_CIPHER_CTX_block_size(ctx);
+
+	if (LUAL_BUFFERSIZE < block * 2)
+		return luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < 2 * EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
+
+	step = LUAL_BUFFERSIZE - block;
+
+	p = (const unsigned char *)luaL_checklstring(L, 2, &n);
+	pe = p + n;
+
+	luaL_buffinit(L, &B);
+
+	while (p < pe) {
+		int in = (int)MIN((size_t)(pe - p), step), out;
+
+		if (!EVP_CipherUpdate(ctx, (void *)luaL_prepbuffer(&B), &out, p, in))
+			return throwssl(L, "cipher:update");
+
+		p += in;
+		luaL_addsize(&B, out);
+	}
+
+	luaL_pushresult(&B);
+
+	return 1;
+} /* cipher_update() */
+
+
+static int cipher_final(lua_State *L) {
+	EVP_CIPHER_CTX *ctx = luaL_checkudata(L, 1, CIPHER_CLASS);
+	luaL_Buffer B;
+	size_t block;
+	int out;
+
+	block = EVP_CIPHER_CTX_block_size(ctx);
+
+	if (LUAL_BUFFERSIZE < block)
+		return luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
+
+	luaL_buffinit(L, &B);
+
+	if (!EVP_CipherFinal(ctx, (void *)luaL_prepbuffer(&B), &out))
+		return throwssl(L, "cipher:final");
+
+	luaL_addsize(&B, out);
+	luaL_pushresult(&B);
+
+	return 1;
+} /* cipher_final() */
+
+
+static int cipher__gc(lua_State *L) {
+	EVP_CIPHER_CTX *ctx = luaL_checkudata(L, 1, CIPHER_CLASS);
+
+	EVP_CIPHER_CTX_cleanup(ctx);
+
+	return 0;
+} /* cipher__gc() */
+
+
+static const luaL_Reg cipher_methods[] = {
+	{ "encrypt", &cipher_update },
+	{ "decrypt", &cipher_final },
+	{ "update",  &cipher_update },
+	{ "final",   &cipher_final },
+	{ NULL,      NULL },
+};
+
+static const luaL_Reg cipher_metatable[] = {
+	{ "__gc", &cipher__gc },
+	{ NULL,   NULL },
+};
+
+static const luaL_Reg cipher_globals[] = {
+	{ "new",       &cipher_new },
+	{ "interpose", &cipher_interpose },
+	{ NULL,        NULL },
+};
+
+int luaopen__openssl_cipher(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, cipher_globals);
+
+	return 1;
+} /* luaopen__openssl_cipher() */
+
+
 static void initall(lua_State *L) {
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
@@ -3537,6 +3704,7 @@ static void initall(lua_State *L) {
 	addclass(L, SSL_CLASS, ssl_methods, ssl_metatable);
 	addclass(L, DIGEST_CLASS, md_methods, md_metatable);
 	addclass(L, HMAC_CLASS, hmac_methods, hmac_metatable);
+	addclass(L, CIPHER_CLASS, cipher_methods, cipher_metatable);
 } /* initall() */
 
 
