@@ -3571,7 +3571,7 @@ static int cipher_init(lua_State *L, _Bool encrypt) {
 	m = (size_t)EVP_CIPHER_CTX_key_length(ctx);
 	luaL_argcheck(L, 2, n == m, lua_pushfstring(L, "%u: invalid key length (should be %u)", (unsigned)n, (unsigned)m));
 
-	iv = luaL_checklstring(L, 3, &n);
+	iv = luaL_optlstring(L, 3, NULL, &n);
 	m = (size_t)EVP_CIPHER_CTX_iv_length(ctx);
 	luaL_argcheck(L, 3, n == m, lua_pushfstring(L, "%u: invalid IV length (should be %u)", (unsigned)n, (unsigned)m));
 
