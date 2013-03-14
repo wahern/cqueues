@@ -146,13 +146,14 @@ static void *testsimple(lua_State *L, int index, const char *tname) {
 } /* testsimple() */
 
 
-static int throwssl(lua_State *L, const char *fun) {
+static const char *pusherror(lua_State *L, const char *fun) {
 	unsigned long code;
 	const char *path, *file;
 	int line;
 	char txt[256];
 
 	code = ERR_get_error_line(&path, &line);
+
 	if ((file = strrchr(path, '/')))
 		++file;
 	else
@@ -162,7 +163,17 @@ static int throwssl(lua_State *L, const char *fun) {
 
 	ERR_error_string_n(code, txt, sizeof txt);
 
-	return luaL_error(L, "%s: %s:%d:%s", fun, file, line, txt);
+	if (fun)
+		return lua_pushfstring(L, "%s: %s:%d:%s", fun, file, line, txt);
+	else
+		return lua_pushfstring(L, "%s:%d:%s", file, line, txt);
+} /* pusherror() */
+
+
+static int throwssl(lua_State *L, const char *fun) {
+	pusherror(L, fun);
+
+	return lua_error(L);
 } /* throwssl() */
 
 
@@ -3576,11 +3587,20 @@ static int cipher_init(lua_State *L, _Bool encrypt) {
 	luaL_argcheck(L, 3, n == m, lua_pushfstring(L, "%u: invalid IV length (should be %u)", (unsigned)n, (unsigned)m));
 
 	if (!EVP_CipherInit_ex(ctx, NULL, NULL, key, iv, encrypt))
-		return throwssl(L, (encrypt)? "cipher:encrypt" : "cipher:decrypt");
+		goto sslerr;
+
+	if (!lua_isnoneornil(L, 4)) {
+		luaL_checktype(L, 4, LUA_TBOOLEAN);
+
+		if (!EVP_CIPHER_CTX_set_padding(ctx, lua_toboolean(L, 4)))
+			goto sslerr;
+	}
 
 	lua_settop(L, 1);
 
 	return 1;
+sslerr:
+	return throwssl(L, (encrypt)? "cipher:encrypt" : "cipher:decrypt");
 } /* cipher_init() */
 
 
@@ -3616,7 +3636,7 @@ static int cipher_update(lua_State *L) {
 		int in = (int)MIN((size_t)(pe - p), step), out;
 
 		if (!EVP_CipherUpdate(ctx, (void *)luaL_prepbuffer(&B), &out, p, in))
-			return throwssl(L, "cipher:update");
+			goto sslerr;
 
 		p += in;
 		luaL_addsize(&B, out);
@@ -3625,6 +3645,11 @@ static int cipher_update(lua_State *L) {
 	luaL_pushresult(&B);
 
 	return 1;
+sslerr:
+	lua_pushnil(L);
+	pusherror(L, NULL);
+
+	return 2;
 } /* cipher_update() */
 
 
@@ -3642,12 +3667,17 @@ static int cipher_final(lua_State *L) {
 	luaL_buffinit(L, &B);
 
 	if (!EVP_CipherFinal(ctx, (void *)luaL_prepbuffer(&B), &out))
-		return throwssl(L, "cipher:final");
+		goto sslerr;
 
 	luaL_addsize(&B, out);
 	luaL_pushresult(&B);
 
 	return 1;
+sslerr:
+	lua_pushnil(L);
+	pusherror(L, NULL);
+
+	return 2;
 } /* cipher_final() */
 
 
