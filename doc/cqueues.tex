@@ -1425,13 +1425,13 @@ Add or interpose a digest class method. Returns the previous method, if any.
 
 Return a new digest instance using the specified algorithm `type'. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_digestbyname, and defaults to ``sha1''.
 
-\subsubsection[\fn{digest:update}]{\fn{digest:update(string [, ...])}}
+\subsubsection[\fn{digest:update}]{\fn{digest:update([string [, ...]])}}
 
 Update the digest with the specified strings. Returns true.
 
-\subsubsection[\fn{digest:final}]{\fn{digest:final()}}
+\subsubsection[\fn{digest:final}]{\fn{digest:final([string [, ...]])}}
 
-Return the final message digest as a binary string.
+Update the digest with the specified strings. Returns the final message digest as a binary string.
 
 \end{Module}
 
@@ -1448,13 +1448,46 @@ Add or interpose an HMAC class method. Returns the previous method, if any.
 
 Return a new HMAC instance using the specified `key' and `type'. `key' is the secret used for HMAC authentication. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_digestbyname, and defaults to ``sha1''.
 
-\subsubsection[\fn{hmac:update}]{\fn{hmac:update(string [, ...])}}
+\subsubsection[\fn{hmac:update}]{\fn{hmac:update([string [, ...]])}}
 
 Update the HMAC with the specified strings. Returns true.
 
-\subsubsection[\fn{hmac:final}]{\fn{hmac:final()}}
+\subsubsection[\fn{hmac:final}]{\fn{hmac:final([string [, ...]])}}
 
-Return the final HMAC checksum as a binary string.
+Update the HMAC with the specified strings. Returns the final HMAC checksum as a binary string.
+
+\end{Module}
+
+
+\begin{Module}{openssl.cipher}
+
+Binds the ``EVP\_CIPHER\_CTX'' OpenSSL object, which represents a cryptographic cipher instance.
+
+\subsubsection[\fn{cipher.interpose}]{\fn{cipher.interpose(name, function)}}
+
+Add or interpose a cipher class method. Returns the previous method, if any.
+
+\subsubsection[\fn{cipher.new}]{\fn{cipher.new(type)}}
+
+Return a new, uninitialized cipher instance. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_cipherbyname, typically of a form similar to ``AES-128-CBC''.
+
+The cipher is uninitialized because some algorithms support or require additional \textit{ad hoc} parameters before key initialization. The API still allows one-shot encryption like ``cipher.new(type):encrypt(key, iv):final(plaintext)''.
+
+\subsubsection[\fn{cipher:encrypt}]{\fn{cipher:encrypt(key [, iv] [, padding])}}
+
+Initialize the cipher in encryption mode. `key' and `iv' are binary strings with lengths equal to that required by the cipher instance as configured. In other words, key stretching and other transformations must be done explicitly. If the mode does not take an IV or equivalent, such as in ECB mode, then it may be nil. `padding' is a boolean which controls whether PKCS padding is applied, and defaults to true. Returns the cipher instance.
+
+\subsubsection[\fn{cipher:decrypt}]{\fn{cipher:decrypt(key [, iv] [, padding])}}
+
+Initialize the cipher in decryption mode. `key', `iv', and `padding' are as described in :encrypt. Returns the cipher instance.
+
+\subsubsection[\fn{cipher:update}]{\fn{cipher:update([string [, ...]])}}
+
+Update the cipher instance with the specified strings. Returns a string on success, or nil and an error message on failure. The returned string may be empty if no blocks can be flushed.
+
+\subsubsection[\fn{cipher:final}]{\fn{cipher:final([string [, ...]])}}
+
+Update the cipher with the specified strings. Returns the final output string on success, or nil and an error message on failure. The returned string may be empty if all blocks have already been flushed in prior :update calls.
 
 \end{Module}
 
