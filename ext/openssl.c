@@ -3374,19 +3374,26 @@ static int md_interpose(lua_State *L) {
 } /* md_interpose() */
 
 
-static int md_update(lua_State *L) {
-	EVP_MD_CTX *ctx = luaL_checkudata(L, 1, DIGEST_CLASS);
-	int i, top = lua_gettop(L);
+static void md_update_(lua_State *L, EVP_MD_CTX *ctx, int from, int to) {
+	int i;
 
-	for (i = 2; i < top; i++) {
+	for (i = from; i <= to; i++) {
 		const void *p;
 		size_t n;
 
 		p = luaL_checklstring(L, i, &n);
 
 		if (!EVP_DigestUpdate(ctx, p, n))
-			return throwssl(L, "digest:update");
+			throwssl(L, "digest:update");
 	}
+} /* md_update_() */
+
+
+static int md_update(lua_State *L) {
+	EVP_MD_CTX *ctx = luaL_checkudata(L, 1, DIGEST_CLASS);
+	int i, top = lua_gettop(L);
+
+	md_update_(L, ctx, 2, lua_gettop(L));
 
 	lua_pushboolean(L, 1);
 	
@@ -3398,6 +3405,8 @@ static int md_final(lua_State *L) {
 	EVP_MD_CTX *ctx = luaL_checkudata(L, 1, DIGEST_CLASS);
 	unsigned char md[EVP_MAX_MD_SIZE];
 	unsigned len;
+
+	md_update_(L, ctx, 2, lua_gettop(L));
 
 	if (!EVP_DigestFinal_ex(ctx, md, &len))
 		return throwssl(L, "digest:final");
@@ -3470,17 +3479,24 @@ static int hmac_interpose(lua_State *L) {
 } /* hmac_interpose() */
 
 
-static int hmac_update(lua_State *L) {
-	HMAC_CTX *ctx = luaL_checkudata(L, 1, HMAC_CLASS);
-	int i, top = lua_gettop(L);
+static void hmac_update_(lua_State *L, HMAC_CTX *ctx, int from, int to) {
+	int i;
 
-	for (i = 2; i < top; i++) {
+	for (i = from; i <= to; i++) {
 		const void *p;
 		size_t n;
 
 		p = luaL_checklstring(L, i, &n);
+
 		HMAC_Update(ctx, p, n);
 	}
+} /* hmac_update_() */
+
+
+static int hmac_update(lua_State *L) {
+	HMAC_CTX *ctx = luaL_checkudata(L, 1, HMAC_CLASS);
+
+	hmac_update_(L, ctx, 2, lua_gettop(L));
 
 	lua_pushboolean(L, 1);
 	
@@ -3492,6 +3508,8 @@ static int hmac_final(lua_State *L) {
 	HMAC_CTX *ctx = luaL_checkudata(L, 1, HMAC_CLASS);
 	unsigned char hmac[EVP_MAX_MD_SIZE];
 	unsigned len;
+
+	hmac_update_(L, ctx, 2, lua_gettop(L));
 
 	HMAC_Final(ctx, hmac, &len);
 
@@ -3614,33 +3632,45 @@ static int cipher_decrypt(lua_State *L) {
 } /* cipher_decrypt() */
 
 
-static int cipher_update(lua_State *L) {
-	EVP_CIPHER_CTX *ctx = luaL_checkudata(L, 1, CIPHER_CLASS);
+static _Bool cipher_update_(lua_State *L, EVP_CIPHER_CTX *ctx, luaL_Buffer *B, int from, int to) {
 	const unsigned char *p, *pe;
-	luaL_Buffer B;
 	size_t block, step, n;
+	int i;
 
 	block = EVP_CIPHER_CTX_block_size(ctx);
 
 	if (LUAL_BUFFERSIZE < block * 2)
-		return luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < 2 * EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
+		luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < 2 * EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
 
 	step = LUAL_BUFFERSIZE - block;
 
-	p = (const unsigned char *)luaL_checklstring(L, 2, &n);
-	pe = p + n;
+	for (i = from; i <= to; i++) {
+		p = (const unsigned char *)luaL_checklstring(L, i, &n);
+		pe = p + n;
+
+		while (p < pe) {
+			int in = (int)MIN((size_t)(pe - p), step), out;
+
+			if (!EVP_CipherUpdate(ctx, (void *)luaL_prepbuffer(B), &out, p, in))
+				return 0;
+
+			p += in;
+			luaL_addsize(B, out);
+		}
+	}
+
+	return 1;
+} /* cipher_update_() */
+
+
+static int cipher_update(lua_State *L) {
+	EVP_CIPHER_CTX *ctx = luaL_checkudata(L, 1, CIPHER_CLASS);
+	luaL_Buffer B;
 
 	luaL_buffinit(L, &B);
 
-	while (p < pe) {
-		int in = (int)MIN((size_t)(pe - p), step), out;
-
-		if (!EVP_CipherUpdate(ctx, (void *)luaL_prepbuffer(&B), &out, p, in))
-			goto sslerr;
-
-		p += in;
-		luaL_addsize(&B, out);
-	}
+	if (!cipher_update_(L, ctx, &B, 2, lua_gettop(L)))
+		goto sslerr;
 
 	luaL_pushresult(&B);
 
@@ -3659,12 +3689,15 @@ static int cipher_final(lua_State *L) {
 	size_t block;
 	int out;
 
+	luaL_buffinit(L, &B);
+
+	if (!cipher_update_(L, ctx, &B, 2, lua_gettop(L)))
+		goto sslerr;
+
 	block = EVP_CIPHER_CTX_block_size(ctx);
 
 	if (LUAL_BUFFERSIZE < block)
 		return luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
-
-	luaL_buffinit(L, &B);
 
 	if (!EVP_CipherFinal(ctx, (void *)luaL_prepbuffer(&B), &out))
 		goto sslerr;
