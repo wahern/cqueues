@@ -3598,11 +3598,11 @@ static int cipher_init(lua_State *L, _Bool encrypt) {
 
 	key = luaL_checklstring(L, 2, &n);
 	m = (size_t)EVP_CIPHER_CTX_key_length(ctx);
-	luaL_argcheck(L, 2, n == m, lua_pushfstring(L, "%u: invalid key length (should be %u)", (unsigned)n, (unsigned)m));
+	luaL_argcheck(L, n == m, 2, lua_pushfstring(L, "%d: invalid key length (should be %d)", (int)n, (int)m));
 
 	iv = luaL_optlstring(L, 3, NULL, &n);
 	m = (size_t)EVP_CIPHER_CTX_iv_length(ctx);
-	luaL_argcheck(L, 3, n == m, lua_pushfstring(L, "%u: invalid IV length (should be %u)", (unsigned)n, (unsigned)m));
+	luaL_argcheck(L, n == m, 3, lua_pushfstring(L, "%d: invalid IV length (should be %d)", (int)n, (int)m));
 
 	if (!EVP_CipherInit_ex(ctx, NULL, NULL, key, iv, encrypt))
 		goto sslerr;
@@ -3640,7 +3640,7 @@ static _Bool cipher_update_(lua_State *L, EVP_CIPHER_CTX *ctx, luaL_Buffer *B, i
 	block = EVP_CIPHER_CTX_block_size(ctx);
 
 	if (LUAL_BUFFERSIZE < block * 2)
-		luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < 2 * EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
+		luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%d) < 2 * EVP_CIPHER_CTX_block_size(%d)", (int)LUAL_BUFFERSIZE, (int)block);
 
 	step = LUAL_BUFFERSIZE - block;
 
@@ -3697,7 +3697,7 @@ static int cipher_final(lua_State *L) {
 	block = EVP_CIPHER_CTX_block_size(ctx);
 
 	if (LUAL_BUFFERSIZE < block)
-		return luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%u) < EVP_CIPHER_CTX_block_size(%u)", (unsigned)LUAL_BUFFERSIZE, (unsigned)block);
+		return luaL_error(L, "cipher:update: LUAL_BUFFERSIZE(%d) < EVP_CIPHER_CTX_block_size(%d)", (int)LUAL_BUFFERSIZE, (int)block);
 
 	if (!EVP_CipherFinal(ctx, (void *)luaL_prepbuffer(&B), &out))
 		goto sslerr;
