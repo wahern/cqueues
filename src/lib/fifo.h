@@ -1,7 +1,7 @@
 /* ==========================================================================
  * fifo.h - Simple byte FIFO with simple bit packing.
  * --------------------------------------------------------------------------
- * Copyright (c) 2008-2011  William Ahern
+ * Copyright (c) 2008-2013  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -26,9 +26,10 @@
 #ifndef FIFO_H
 #define FIFO_H
 
+#include <stdarg.h>	/* va_list va_start() va_end() */
 #include <stddef.h>	/* size_t */
 #include <stdint.h>	/* SIZE_MAX */
-#include <stdio.h>	/* EOF FILE fputc(3) */
+#include <stdio.h>	/* EOF FILE fputc(3) vsnprintf(3) */
 #include <stdlib.h>	/* realloc(3) free(3) */
 
 #include <string.h>	/* memcpy(3) memmove(3) strlen(3) memchr(3) */
@@ -58,9 +59,9 @@
 
 #define FIFO_VENDOR "william@25thandClement.com"
 
-#define FIFO_V_REL  0x20120911 /* 0x20120713 */
+#define FIFO_V_REL  0x20130325 /* 0x20120911 */
 #define FIFO_V_ABI  0x20111113 /* 0x20100815 */
-#define FIFO_V_API  0x20111113 /* 0x20100904 */
+#define FIFO_V_API  0x20130325 /* 0x20111113 */
 
 static inline const char *fifo_vendor(void) { return FIFO_VENDOR; }
 
@@ -84,8 +85,10 @@ static inline int fifo_v_api(void) { return FIFO_V_API; }
 
 #if __GNUC__
 #define FIFO_NOTUSED __attribute__((unused))
+#define FIFO_FORMAT(type, x, y) __attribute__((format (type, x, y)))
 #else
 #define FIFO_NOTUSED
+#define FIFO_FORMAT()
 #endif
 
 
@@ -161,6 +164,11 @@ static inline struct fifo *fifo_from(struct fifo *fifo, void *src, size_t size) 
 #define fifo_from2(src, size) fifo_from3(&(struct fifo)FIFO_INITIALIZER, (src), (size))
 #define fifo_from1(src)       fifo_from3(&(struct fifo)FIFO_INITIALIZER, (src), __builtin_object_size((src), 3))
 #define fifo_from(...)        FIFO_XPASTE(fifo_from, FIFO_NARG(__VA_ARGS__))(__VA_ARGS__)
+
+
+#define fifo_into2(buf, size) fifo_init(&(struct fifo)FIFO_INITIALIZER, (buf), (size))
+#define fifo_into1(buf)       fifo_init(&(struct fifo)FIFO_INITIALIZER, (buf), __builtin_object_size((buf), 3))
+#define fifo_into(...)        FIFO_XPASTE(fifo_into, FIFO_NARG(__VA_ARGS__))(__VA_ARGS__)
 
 
 FIFO_NOTUSED static struct fifo *fifo_reset(struct fifo *fifo) {
@@ -374,6 +382,20 @@ static inline size_t fifo_lvec(struct fifo *fifo, struct iovec *iov) {
 } /* fifo_lvec() */
 
 
+static int fifo_wbuf(struct fifo *fifo, struct iovec *iov, size_t size) {
+	int error;
+
+	if ((error = fifo_grow(fifo, size)))
+		return error;
+
+	/* try to avoid realigning buffer */
+	if (fifo_wvec(fifo, iov, 0) < size)
+		fifo_wvec(fifo, iov, 1);
+
+	return 0;
+} /* fifo_wbuf() */
+
+
 /*
  * R E A D  /  W R I T E   R O U T I N E S
  *
@@ -461,6 +483,27 @@ static int fifo_putc(struct fifo *fifo, int c) {
 static inline int fifo_puts(struct fifo *fifo, const void *src) {
 	return fifo_write(fifo, src, strlen(src));
 } /* fifo_puts() */
+
+
+FIFO_NOTUSED FIFO_FORMAT(printf, 2, 3) static int fifo_printf(struct fifo *fifo, const char *fmt, ...) {
+	va_list ap;
+	struct iovec iov;
+	int count = 0, error;
+
+	do {
+		if ((error = fifo_wbuf(fifo, &iov, (size_t)count + 1)))
+			return error;
+
+		va_start(ap, fmt);
+		count = vsnprintf(iov.iov_base, iov.iov_len, fmt, ap);
+		va_end(ap);
+
+		if (count < 0)
+			return (errno)? errno : ENOMEM;
+	} while ((size_t)count >= iov.iov_len);
+
+	return 0;
+} /* fifo_printf() */
 
 
 static inline int fifo_ungetc(struct fifo *fifo, int c)  {
