@@ -59,7 +59,7 @@
 
 #define FIFO_VENDOR "william@25thandClement.com"
 
-#define FIFO_V_REL  0x20130325 /* 0x20120911 */
+#define FIFO_V_REL  0x20130330 /* 0x20120911 */
 #define FIFO_V_ABI  0x20111113 /* 0x20100815 */
 #define FIFO_V_API  0x20130325 /* 0x20111113 */
 
@@ -501,6 +501,8 @@ FIFO_NOTUSED FIFO_FORMAT(printf, 2, 3) static int fifo_printf(struct fifo *fifo,
 		if (count < 0)
 			return (errno)? errno : ENOMEM;
 	} while ((size_t)count >= iov.iov_len);
+
+	fifo_update(fifo, count);
 
 	return 0;
 } /* fifo_printf() */
