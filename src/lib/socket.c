@@ -339,6 +339,7 @@ static void so_initdebug(void) {
 #define SO_EALREADY	WSAEALREADY
 #define SO_EAGAIN	WSAEWOULDBLOCK
 #define SO_ENOTCONN	WSAENOTCONN
+#define SO_ECONNABORTED WSAECONNABORTED
 
 #define so_syerr()	((int)GetLastError())
 #define so_soerr()	((int)WSAGetLastError())
@@ -352,6 +353,7 @@ static void so_initdebug(void) {
 #define SO_EALREADY	EALREADY
 #define SO_EAGAIN	EAGAIN
 #define SO_ENOTCONN	ENOTCONN
+#define SO_ECONNABORTED ECONNABORTED
 
 #define so_syerr()	errno
 #define so_soerr()	errno
@@ -1669,17 +1671,26 @@ int so_accept(struct socket *so, struct sockaddr *saddr, socklen_t *slen, int *e
 
 	so->events = POLLIN;
 
+retry:
 	if (-1 == (fd = accept(so->fd, saddr, slen)))
 		goto soerr;
 
 	return fd;
 soerr:
-	error = so_soerr();
-
+	switch ((error = so_soerr())) {
+	case SO_EINTR:
+		goto retry;
 #if SO_EWOULDBLOCK != SO_EAGAIN
-	if (error == SO_EWOULDBLOCK)
+	case SO_EWOULDBLOCK:
 		error = SO_EAGAIN;
+
+		break;
 #endif
+	case SO_ECONNABORTED:
+		error = SO_EAGAIN;
+
+		break;
+	}
 error:
 	*error_ = error;
 
