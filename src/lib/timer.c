@@ -148,21 +148,23 @@ static inline struct timeout *timeout_init(struct timeout *to) {
 } /* timeout_init() */
 
 
-#define PERIOD_BITS 6
-#define PERIOD_INTS (1 << PERIOD_BITS)
-#define PERIOD_MASK (PERIOD_INTS - 1)
-#define DEADLINE_MASK ((UINT64_C(1) << (PERIOD_BITS * 4)) - 1)
-
-#define TIMEOUT_PERIOD(time) (fls64(DEADLINE_MASK & time) / PERIOD_BITS)
-#define TIMEOUT_MINUTE(period, time) (((time) >> ((period) * PERIOD_BITS)) & PERIOD_MASK)
+#define PERIOD_BIT 6
+#define PERIOD_LEN (1 << PERIOD_BIT)
+#define PERIOD_MAX (PERIOD_LEN - 1)
+#define PERIOD_NUM 4
+#define PERIOD_MASK (PERIOD_LEN - 1)
+#define ELAPSED_MAX ((UINT64_C(1) << (PERIOD_BIT * PERIOD_NUM)) - 1)
+#define TIMEOUT_PERIOD(elapsed) (fls64(MIN(ELAPSED_MAX, elapsed)) / PERIOD_BIT)
+#define TIMEOUT_MINUTE(period, curtime, elapsed) (PERIOD_MASK & (((curtime) >> ((period) * PERIOD_BIT)) + ((elapsed) >> ((period) * PERIOD_BIT))))
 
 
 struct timer {
 	struct timeouts wheel[4][64], expired;
 
-	uint64_t populated[4];
-	uint64_t expire[5]; /* +1 for overflow */
-	uint64_t basetime;
+	uint64_t pending[4];
+
+//	uint64_t expire[5]; /* +1 for overflow */
+	uint64_t curtime;
 }; /* struct timer */
 
 
@@ -177,122 +179,145 @@ struct timer *timer_init(struct timer *T) {
 
 	CIRCLEQ_INIT(&T->expired);
 
-	memset(&T->populated, 0, sizeof *T - offsetof(struct timer, populated));
+	for (i = 0; i < countof(T->pending); i++) {
+		T->pending[i] = 0;
+	}
+
+	T->curtime = 0;
 
 	return T;
 } /* timer_init() */
 
 
-static inline uint64_t timer_rem(struct timer *T, struct timeout *to) {
-	return to->deadline - T->basetime;
-} /* timer_rem() */
-
-
 void timer_del(struct timer *T, struct timeout *to) {
 	if (to->pending) {
-		CIRCLEQ_REMOVE(to->pending, to, cqe);
-
 		if (to->pending != &T->expired && CIRCLEQ_EMPTY(to->pending)) {
 			ptrdiff_t index = to->pending - &T->wheel[0][0];
 			int period = index / 64;
 			int minute = index % 64;
 
-			T->populated[period] &= ~(UINT64_C(1) << minute);
+			T->pending[period] &= ~(UINT64_C(1) << minute);
 		}
 
+		CIRCLEQ_REMOVE(to->pending, to, cqe);
 		to->pending = NULL;
 	}
 } /* timer_del() */
 
 
+static inline uint64_t timer_rem(struct timer *T, struct timeout *to) {
+	return to->deadline - T->curtime;
+} /* timer_rem() */
+
+
+static char *fmt(char *buf, uint64_t ts) {
+	char *p = buf;
+	int period, n, i;
+
+	for (period = PERIOD_NUM - 2; period >= 0; period--) {
+		n = 63 & (ts >> (period * PERIOD_BIT));
+
+		for (i = 5; i >= 0; i--) {
+			*p++ = '0' + !!(n & (1 << i));
+		}
+
+		if (period != 0)
+			*p++ = ':';
+	}
+
+	*p = 0;
+
+	return buf;
+} /* fmt() */
+
+#define fmt(ts) fmt(((char[64]){ 0 }), (ts))
+
+
 void timer_add(struct timer *T, struct timeout *to, uint64_t deadline) {
-	uint64_t period, minute;
+	uint64_t rem;
+	unsigned period, minute;
 
 	timer_del(T, to);
 
 	to->deadline = deadline;
 
-	period = TIMEOUT_PERIOD(timer_rem(T, to));
-	minute = TIMEOUT_MINUTE(period, deadline);
+	if (deadline > T->curtime) {
+		rem = timer_rem(T, to);
 
-SAY("rem:%llu period:%llu (fls:%d) minute:%llu", timer_rem(T, to), period, fls64(timer_rem(T, to)), minute);
+		period = TIMEOUT_PERIOD(rem);
+		minute = TIMEOUT_MINUTE(period, T->curtime, rem);
 
-	to->pending = &T->wheel[period][minute];
-	CIRCLEQ_INSERT_HEAD(to->pending, to, cqe);
+		SAY("%llu rem:%llu period:%u (fls:%d) minute:%u", deadline, timer_rem(T, to), period, fls64(timer_rem(T, to)), minute);
+		SAY("clock: %s", fmt(deadline));
 
-	T->populated[period] |= UINT64_C(1) << minute;
+		to->pending = &T->wheel[period][minute];
+		CIRCLEQ_INSERT_HEAD(to->pending, to, cqe);
+
+		T->pending[period] |= UINT64_C(1) << minute;
+	} else {
+		to->pending = &T->expired;
+		CIRCLEQ_INSERT_HEAD(to->pending, to, cqe);
+	}
 } /* timer_add() */
 
 
-static inline void timer_tick(struct timer *T, int period, int ticks) {
-	uint64_t base = TIMEOUT_MINUTE(period, T->basetime);
-
-	T->expire[period] |= rotl(((UINT64_C(1) << ticks) - 1), base);
-
-if (period > 0)
-SAY("ticks:%d base:%llu period:%d expire:%llu", ticks, base, period, T->expire[period]);
-	if ((UINT64_C(1) << 63) & T->expire[period])
-		timer_tick(T, period + 1, 1);
-} /* timer_tick() */
-
-
-void timer_adjtime(struct timer *T, uint64_t abstime) {
-	uint64_t elapsed, period, jump;
-	struct timeout *to;
+void timer_step(struct timer *T, uint64_t curtime) {
+	uint64_t elapsed = curtime - T->curtime;
 	struct timeouts todo;
-
-	elapsed = abstime - T->basetime;
-
-	memset(T->expire, 0, sizeof T->expire);
-
-	for (period = 0; period < 4; period++) {
-		if (elapsed > (UINT64_C(1) << (PERIOD_BITS * (period + 1))) - 1) {
-			T->expire[period] = ~UINT64_C(0);
-		} else if ((jump = TIMEOUT_MINUTE(period, elapsed)) > 0) {
-			timer_tick(T, period, jump);
-		}
-	}
+	unsigned period;
 
 	CIRCLEQ_INIT(&todo);
+#if 0
+fputc('\n', stderr);
+SAY("-- step -----------------------------------------");
+SAY("%llu -> %llu", T->curtime, curtime);
+SAY("%s -> %s", fmt(T->curtime), fmt(curtime));
+#endif
+	for (period = 0; period < PERIOD_NUM; period++) {
+		uint64_t pending;
 
-	for (period = 0; period < 4; period++) {
-		uint64_t expire = T->expire[period] & T->populated[period];
-
-		while (expire) {
-			int minute = ffs64(expire) - 1;
-SAY("todo period:%llu minute:%d", period, minute);
-			CIRCLEQ_CONCAT(&todo, &T->wheel[period][minute], cqe);
-			T->populated[period] &= ~(UINT64_C(1) << minute);
-			expire &= ~(UINT64_C(1) << minute);
+//SAY("newtime: %llu elapsed:%llu", curtime, elapsed);
+		if ((elapsed >> (period * PERIOD_BIT)) > PERIOD_MAX) {
+			pending = ~UINT64_C(0);
+		} else {
+			uint64_t _elapsed = PERIOD_MASK & (elapsed >> (period * PERIOD_BIT));
+//			SAY("period:%u _elapsed:%llu minute:%llu", period, _elapsed, TIMEOUT_MINUTE(period, T->curtime, elapsed));
+			pending = rotl(rotl(((UINT64_C(1) << _elapsed) - 1), TIMEOUT_MINUTE(period, T->curtime, 0)), 1);
+//SAY("rotl:%.8x%.8x pending:%.8x%.8x", (unsigned)(((UINT64_C(1) << _elapsed) - 1) >> 32), (unsigned)((UINT64_C(1) << _elapsed) - 1), (unsigned)(pending >> 32), (unsigned)pending);
 		}
+
+//SAY("pending:%.8x%.8x & populated:%.8x%.8x", (unsigned)(pending >> 32), (unsigned)pending, (unsigned)(T->pending[period] >> 32), (unsigned)T->pending[period]);
+		while (pending & T->pending[period]) {
+			int minute = ffs64(pending & T->pending[period]) - 1;
+			CIRCLEQ_CONCAT(&todo, &T->wheel[period][minute], cqe);
+			T->pending[period] &= ~(UINT64_C(1) << minute);
+		}
+
+		if (!((UINT64_C(1) << 63) & pending))
+			break; /* break if we didn't reach end of period */
+
+		/* if we're continuing, the next period must tick at least once */ 
+		elapsed = MAX(elapsed, (UINT64_C(64) << (period * PERIOD_BIT)));
 	}
 
-	T->basetime = abstime;
+	T->curtime = curtime;
 
 	while (!CIRCLEQ_EMPTY(&todo)) {
 		struct timeout *to = CIRCLEQ_FIRST(&todo);
-		CIRCLEQ_REMOVE(&todo, to, cqe);
 
-		if (to->deadline <= abstime) {
-SAY("expiring %llu basetime:%llu", to->deadline, T->basetime);
-			to->pending = &T->expired;
-			CIRCLEQ_INSERT_TAIL(&T->expired, to, cqe);
-		} else {
-SAY("moving %llu", to->deadline);
-			to->pending = 0;
-			timer_add(T, to, to->deadline);
-		}
+		CIRCLEQ_REMOVE(&todo, to, cqe);
+		to->pending = 0;
+
+		timer_add(T, to, to->deadline);
 	}
-} /* timer_adjtime() */
+
+	return;
+} /* timer_step() */
 
 
 struct timeout *timer_expired(struct timer *T) {
 	if (!CIRCLEQ_EMPTY(&T->expired)) {
-		struct timeout *to = CIRCLEQ_FIRST(&T->expired);
-
-		timer_del(T, to);
-
-		return to;
+		return CIRCLEQ_FIRST(&T->expired);
 	} else {
 		return 0;
 	}
@@ -308,17 +333,25 @@ int main(void) {
 	uint64_t time = 0;
 
 	timer_init(&T);
-	timer_add(&T, timeout_init(&to[0]), 65);
-	timer_add(&T, timeout_init(&to[1]), 34);
-	timer_add(&T, timeout_init(&to[2]), 192);
+	timer_add(&T, timeout_init(&to[0]), 62);
+	timer_add(&T, timeout_init(&to[1]), 63);
+	timer_add(&T, timeout_init(&to[2]), 64);
+	timer_add(&T, timeout_init(&to[3]), 65);
+	timer_add(&T, timeout_init(&to[4]), 100);
+	timer_add(&T, timeout_init(&to[5]), 192);
 
-	while (CIRCLEQ_EMPTY(&T.expired) && time < 65537) {
-		time += 1;
-		timer_adjtime(&T, time);
+	while (time < 193) {
+		time += 3;
+printf("step: %llu\n", time);
+		timer_step(&T, time);
 
-		while ((expired = timer_expired(&T)))
-			SAY("expired %llu", expired->deadline);
+		while ((expired = timer_expired(&T))) {
+			timer_del(&T, expired);
+			SAY("expired %llu @@@@@@@@@@@@@@@@@@@@", expired->deadline);
+		}
 	}
+
+	SAY("curtime: %llu", T.curtime);
 
 	return 0;
 } /* main() */
