@@ -1,5 +1,5 @@
 /* ==========================================================================
- * timer.c - Hierarchical timing wheel.
+ * timer.c - Tickless hierarchical timing wheel.
  * --------------------------------------------------------------------------
  * Copyright (c) 2013  William Ahern
  *
@@ -33,10 +33,61 @@
 #include <sys/queue.h>
 #include <sys/param.h>
 
+
+/*
+ * D E B U G  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 #include <stdio.h>
+
 #define SAY_(fmt, ...) fprintf(stderr, fmt "%s", __FILE__, __LINE__, __func__, __VA_ARGS__);
 #define SAY(...) SAY_("@@ %s:%d:%s: " __VA_ARGS__, "\n");
 #define HAI SAY("HAI")
+
+
+static inline char *fmt_(char *buf, uint64_t ts) {
+	char *p = buf;
+	int period, n, i;
+
+	for (period = 2; period >= 0; period--) {
+		n = 63 & (ts >> (period * 6));
+
+		for (i = 5; i >= 0; i--) {
+			*p++ = '0' + !!(n & (1 << i));
+		}
+
+		if (period != 0)
+			*p++ = ':';
+	}
+
+	*p = 0;
+
+	return buf;
+} /* fmt_() */
+
+#define fmt(ts) fmt_(((char[64]){ 0 }), (ts))
+
+
+static inline char *bin64_(char *buf, uint64_t n) {
+	char *p = buf;
+	int i;
+
+	for (i = 0; i < 64; i++) {
+		*p++ = "01"[0x1 & (n >> (63 - i))];
+	}
+
+	*p = 0;
+
+	return buf;
+} /* bin64_() */
+
+#define bin64(ts) bin64_(((char[65]){ 0 }), (ts))
+
+
+/*
+ * A N C I L L A R Y  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define countof(a) (sizeof (a) / sizeof *(a))
 #define endof(a) (&(a)[countof(a)])
@@ -60,7 +111,6 @@
 		CIRCLEQ_INIT(head2);					\
 	}								\
 } while (0)
-
 
 
 static inline uint64_t rotl(const uint64_t v, int c) {
@@ -126,17 +176,32 @@ static inline int ffs64(const uint64_t v) {
 
 
 static inline int fls64(const uint64_t v) {
+#if 0
+	v--;
+	v |= v >> 1;
+	v |= v >> 2;
+	v |= v >> 4;
+	v |= v >> 8;
+	v |= v >> 16;
+	v |= v >> 32;
+	v++;
+#endif
+
 	return (v)? ((sizeof v * CHAR_BIT) - 1) - __builtin_clzll(v) : 0;
 } /* fls64 */
 
 
+/*
+ * T I M E O U T  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 CIRCLEQ_HEAD(timeouts, timeout);
 
 #define TIMEOUT_INITIALIZER { 0, 0, { 0, 0 } }
 
 struct timeout {
-	uint64_t deadline;
+	uint64_t expires;
 
 	struct timeouts *pending;
 	CIRCLEQ_ENTRY(timeout) cqe;
@@ -148,6 +213,11 @@ static inline struct timeout *timeout_init(struct timeout *to) {
 } /* timeout_init() */
 
 
+/*
+ * T I M E R  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
 #define PERIOD_BIT 6
 #define PERIOD_LEN (1 << PERIOD_BIT)
 #define PERIOD_MAX (PERIOD_LEN - 1)
@@ -157,14 +227,25 @@ static inline struct timeout *timeout_init(struct timeout *to) {
 #define TIMEOUT_PERIOD(elapsed) (fls64(MIN(ELAPSED_MAX, elapsed)) / PERIOD_BIT)
 #define TIMEOUT_MINUTE(period, curtime, elapsed) (PERIOD_MASK & (((curtime) >> ((period) * PERIOD_BIT)) + ((elapsed) >> ((period) * PERIOD_BIT))))
 
+static uint64_t timeout_minute(uint64_t period, uint64_t curtime, uint64_t elapsed) {
+//	return PERIOD_MASK & ((curtime + elapsed - !!period) >> (period * PERIOD_BIT));
+	uint64_t _curtime = curtime >> (period * PERIOD_BIT);
+	uint64_t _elapsed = elapsed >> (period * PERIOD_BIT);
+
+	return PERIOD_MASK & (_curtime + _elapsed - !!period);
+} /* timeout_minute() */
+
+#undef TIMEOUT_MINUTE
+#define TIMEOUT_MINUTE(...) timeout_minute(__VA_ARGS__)
+
 
 struct timer {
 	struct timeouts wheel[4][64], expired;
 
 	uint64_t pending[4];
 
-//	uint64_t expire[5]; /* +1 for overflow */
 	uint64_t curtime;
+	uint64_t hertz;
 }; /* struct timer */
 
 
@@ -206,49 +287,26 @@ void timer_del(struct timer *T, struct timeout *to) {
 
 
 static inline uint64_t timer_rem(struct timer *T, struct timeout *to) {
-	return to->deadline - T->curtime;
+	return to->expires - T->curtime;
 } /* timer_rem() */
 
 
-static char *fmt(char *buf, uint64_t ts) {
-	char *p = buf;
-	int period, n, i;
-
-	for (period = PERIOD_NUM - 2; period >= 0; period--) {
-		n = 63 & (ts >> (period * PERIOD_BIT));
-
-		for (i = 5; i >= 0; i--) {
-			*p++ = '0' + !!(n & (1 << i));
-		}
-
-		if (period != 0)
-			*p++ = ':';
-	}
-
-	*p = 0;
-
-	return buf;
-} /* fmt() */
-
-#define fmt(ts) fmt(((char[64]){ 0 }), (ts))
-
-
-void timer_add(struct timer *T, struct timeout *to, uint64_t deadline) {
+void timer_add(struct timer *T, struct timeout *to, uint64_t expires) {
 	uint64_t rem;
 	unsigned period, minute;
 
 	timer_del(T, to);
 
-	to->deadline = deadline;
+	to->expires = expires;
 
-	if (deadline > T->curtime) {
+	if (expires > T->curtime) {
 		rem = timer_rem(T, to);
 
 		period = TIMEOUT_PERIOD(rem);
 		minute = TIMEOUT_MINUTE(period, T->curtime, rem);
 
-		SAY("%llu rem:%llu period:%u (fls:%d) minute:%u", deadline, timer_rem(T, to), period, fls64(timer_rem(T, to)), minute);
-		SAY("clock: %s", fmt(deadline));
+		SAY("%llu rem:%llu period:%u (fls:%d) minute:%u", expires, timer_rem(T, to), period, fls64(timer_rem(T, to)), minute);
+		SAY("clock: %s", fmt(expires));
 
 		to->pending = &T->wheel[period][minute];
 		CIRCLEQ_INSERT_HEAD(to->pending, to, cqe);
@@ -282,11 +340,14 @@ SAY("%s -> %s", fmt(T->curtime), fmt(curtime));
 		} else {
 			uint64_t _elapsed = PERIOD_MASK & (elapsed >> (period * PERIOD_BIT));
 //			SAY("period:%u _elapsed:%llu minute:%llu", period, _elapsed, TIMEOUT_MINUTE(period, T->curtime, elapsed));
-			pending = rotl(rotl(((UINT64_C(1) << _elapsed) - 1), TIMEOUT_MINUTE(period, T->curtime, 0)), 1);
+			pending = rotl(rotl(((UINT64_C(1) << (_elapsed + 1)) - 1), TIMEOUT_MINUTE(period, T->curtime, 0)), 1);
+//			pending = rotl(((UINT64_C(1) << _elapsed) - 1), TIMEOUT_MINUTE(period, T->curtime, 0));
 //SAY("rotl:%.8x%.8x pending:%.8x%.8x", (unsigned)(((UINT64_C(1) << _elapsed) - 1) >> 32), (unsigned)((UINT64_C(1) << _elapsed) - 1), (unsigned)(pending >> 32), (unsigned)pending);
 		}
 
 //SAY("pending:%.8x%.8x & populated:%.8x%.8x", (unsigned)(pending >> 32), (unsigned)pending, (unsigned)(T->pending[period] >> 32), (unsigned)T->pending[period]);
+//SAY("pending   : %s", bin64(pending));
+//SAY("populated : %s", bin64(T->pending[period]));
 		while (pending & T->pending[period]) {
 			int minute = ffs64(pending & T->pending[period]) - 1;
 			CIRCLEQ_CONCAT(&todo, &T->wheel[period][minute], cqe);
@@ -308,7 +369,7 @@ SAY("%s -> %s", fmt(T->curtime), fmt(curtime));
 		CIRCLEQ_REMOVE(&todo, to, cqe);
 		to->pending = 0;
 
-		timer_add(T, to, to->deadline);
+		timer_add(T, to, to->expires);
 	}
 
 	return;
@@ -331,27 +392,33 @@ int main(void) {
 	struct timeout to[8];
 	struct timeout *expired;
 	uint64_t time = 0;
+	unsigned count = 0;
 
 	timer_init(&T);
-	timer_add(&T, timeout_init(&to[0]), 62);
-	timer_add(&T, timeout_init(&to[1]), 63);
-	timer_add(&T, timeout_init(&to[2]), 64);
-	timer_add(&T, timeout_init(&to[3]), 65);
-	timer_add(&T, timeout_init(&to[4]), 100);
-	timer_add(&T, timeout_init(&to[5]), 192);
+	timer_step(&T, time = 100);
+	timer_add(&T, timeout_init(&to[0]), time + 62); count++;
+	timer_add(&T, timeout_init(&to[1]), time + 63); count++;
+	timer_add(&T, timeout_init(&to[2]), time + 64); count++;
+	timer_add(&T, timeout_init(&to[3]), time + 65); count++;
+//	timer_add(&T, timeout_init(&to[4]), 100); count++;
+//	timer_add(&T, timeout_init(&to[5]), time + 192); count++;
+//	timer_add(&T, timeout_init(&to[6]), 65536); count++;
+//	timer_add(&T, timeout_init(&to[7]), 65535 + 62); count++;
 
-	while (time < 193) {
-		time += 3;
-printf("step: %llu\n", time);
+//	while (time < (1<<18)) {
+	while (count > 0) {
+		time += 1;
+//printf("step: %llu\n", time);
 		timer_step(&T, time);
 
 		while ((expired = timer_expired(&T))) {
 			timer_del(&T, expired);
-			SAY("expired %llu @@@@@@@@@@@@@@@@@@@@", expired->deadline);
+			SAY("step %llu expired %llu @@@@@@@@@@@@@@@@@@@@", time, expired->expires);
+			count--;
 		}
 	}
 
-	SAY("curtime: %llu", T.curtime);
+	SAY("%s curtime: %llu", (count == 0)? "OK" : "FAIL", T.curtime);
 
 	return 0;
 } /* main() */
