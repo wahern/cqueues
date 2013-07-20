@@ -45,7 +45,7 @@
 #include <sys/socket.h>	/* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 
 #if defined(AF_UNIX)
-#include <sys/un.h>	/* struct sockaddr_un */
+#include <sys/un.h>	/* struct sockaddr_un struct unpcbid */
 #endif
 
 #include <netinet/in.h>	/* struct sockaddr_in struct sockaddr_in6 */
@@ -2278,6 +2278,17 @@ static int so_loadcred(struct socket *so) {
 	so->cred.pid = uc.pid;
 	so->cred.uid = uc.uid;
 	so->cred.gid = uc.gid;
+
+	return 0;
+#elif defined LOCAL_PEEREID
+	struct unpcbid unp = { -1, -1, -1 };
+
+	if (0 != getsockopt(so->fd, 0, LOCAL_PEEREID, &unp, &(socklen_t){ sizeof unp }))
+		return errno;
+
+	so->cred.pid = unp.unp_pid;
+	so->cred.uid = unp.unp_euid;
+	so->cred.gid = unp.unp_egid;
 
 	return 0;
 #elif defined __sun
