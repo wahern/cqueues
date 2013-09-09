@@ -44,8 +44,8 @@ endif
 #
 OBJS_$(d) = cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o
 
-$$(d)/errno.c: $$(d)/errno.c.m4
-	cd $$(@D) && $$(M4) $$< > $$@
+$(d)/errno.c: $(d)/errno.c.m4
+	cd $(@D) && $(M4) $< > $@
 
 define BUILD_$(d)
 
