@@ -42,42 +42,45 @@ endif
 #
 # C O M P I L A T I O N  R U L E S
 #
-OBJS_$(d) := cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o
+OBJS_$(d) = cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o
 
-$(d)/5.1/cqueues.so: $(addprefix $(d)/5.1/, $(OBJS_$(d))) $(d)/lib/libnonlua.a
-	$(CC) -o $@ $^ $(SOFLAGS_$(abspath $(@D)/..)) $(SOFLAGS) $(LDFLAGS_$(abspath $(@D)/..)) $(LDFLAGS)
+$$(d)/errno.c: $$(d)/errno.c.m4
+	cd $$(@D) && $$(M4) $$< > $$@
 
-$(d)/5.2/cqueues.so: $(addprefix $(d)/5.2/, $(OBJS_$(d))) $(d)/lib/libnonlua.a
-	$(CC) -o $@ $^ $(SOFLAGS_$(abspath $(@D)/..)) $(SOFLAGS) $(LDFLAGS_$(abspath $(@D)/..)) $(LDFLAGS)
+define BUILD_$(d)
 
-$(d)/5.1/%.o $(d)/5.2/%.o: $(d)/%.c $(d)/cqueues.h
-	test "$(notdir $(@D))" = "$(call LUAPATH_$(<D), $(notdir $(@D)), version)"
-	$(MKDIR) -p $(@D)
-	$(CC) $(CFLAGS_$(<D)) $(CFLAGS) $(call LUAPATH_$(<D), $(notdir $(@D)), cppflags) $(CPPFLAGS_$(<D)) $(CPPFLAGS) -c -o $@ $<
+$$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnonlua.a
+	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
 
-$(d)/errno.c: $(d)/errno.c.m4
-	$(M4) $< > $@
+$$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h
+	test "$$(notdir $$(@D))" = "$$(call LUAPATH_$$(<D), $$(notdir $$(@D)), version)"
+	$$(MKDIR) -p $$(@D)
+	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(call LUAPATH_$$(<D), $$(notdir $$(@D)), cppflags) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
 
-$(d)/5.1/socket.o $(d)/5.2/socket.o: $(d)/lib/socket.h
+$$(d)/$(1)/socket.o: $$(d)/lib/socket.h
 
-$(d)/5.1/dns.o $(d)/5.2/dns.o: $(d)/lib/dns.h
+$$(d)/$(1)/dns.o: $$(d)/lib/dns.h
 
-$(d)/5.1/notify.o $(d)/5.2/notify.o: $(d)/lib/notify.h
+$$(d)/$(1)/notify.o: $$(d)/lib/notify.h
 
+.INTERMEDIATE: liblua$(1)-cqueues
 
-.INTERMEDIATE: liblua5.1-cqueues liblua5.2-cqueues cqueues
+liblua$(1)-cqueues: $$(d)/$(1)/cqueues.so
 
-liblua5.1-cqueues: $(d)/5.1/cqueues.so
+all cqueues: liblua$(1)-cqueues
 
-liblua5.2-cqueues: $(d)/5.2/cqueues.so
+endef # BUILD_$(d)
 
-all cqueues: liblua5.1-cqueues liblua5.2-cqueues
+$(eval $(call BUILD_$(d),5.1))
+
+$(eval $(call BUILD_$(d),5.2))
 
 
 #
 # I N S T A L L  &  U N I N S T A L L  R U L E S
 #
 define INSTALL_$(d)
+
 LUAC$(1)_$(d) = $$(or $$(call LUAPATH_$(d), $(1), luac), true)
 
 MODS$(1)_$(d) = \
@@ -121,9 +124,9 @@ $$(DESTDIR)$(3)/cqueues/dns/%.lua: $$(d)/dns.%.lua
 .PHONY: liblua$(1)-cqueues-uninstall
 
 liblua$(1)-cqueues-uninstall:
-	$(RM) -f $$(MODS$(1)_$(d))
-	-$(RMDIR) $$(DESTDIR)$(3)/cqueues/dns
-	-$(RMDIR) $$(DESTDIR)$(3)/cqueues
+	$$(RM) -f $$(MODS$(1)_$(d))
+	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues/dns
+	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues
 
 uninstall: liblua$(1)-cqueues-uninstall
 
