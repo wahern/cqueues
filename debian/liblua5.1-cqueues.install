@@ -1,2 +1,2 @@
-debian/tmp/usr/lib/lua/5.1/* usr/lib/lua/5.1
-debian/tmp/usr/share/lua/5.1/* usr/share/lua/5.1
+debian/tmp/usr/lib/lua/5.1/_cqueues.so usr/lib/lua/5.1
+debian/tmp/usr/share/lua/5.1/cqueues* usr/share/lua/5.1

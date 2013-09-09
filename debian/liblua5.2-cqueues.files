@@ -1,2 +1,2 @@
-usr/lib/lua/5.2/*
-usr/share/lua/5.2/*
+usr/lib/lua/5.2/_cqueues.so
+usr/share/lua/5.2/cqueues*

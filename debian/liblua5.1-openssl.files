@@ -1,2 +1,2 @@
-usr/lib/lua/5.1/*
-usr/share/lua/5.1/*
+usr/lib/lua/5.1/_openssl.so
+usr/share/lua/5.1/openssl*
