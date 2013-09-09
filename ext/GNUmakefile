@@ -1,163 +1,146 @@
-prefix = /usr/local
-bindir = $(prefix)/bin
-libdir = $(prefix)/lib
-datadir = $(prefix)/share
-includedir = $(prefix)/include
-luainclude =
-luapath =
-luacpath =
-LUAC =
+# non-recursive prologue
+sp := $(sp).x
+dirstack_$(sp) := $(d)
+d := $(abspath $(lastword $(MAKEFILE_LIST))/..)
 
-# backwards compatible install paths
-ifneq ($(origin lua52include), undefined)
-luainclude = $(lua52include)
+ifeq ($(origin GUARD_$(d)), undefined)
+GUARD_$(d) := 1
+
+
+#
+# E N V I R O N M E N T  C O N F I G U R A T I O N
+#
+include $(d)/../GNUmakefile
+
+
+#
+# C O M P I L A T I O N  F L A G S
+#
+OS_$(d) = $(shell $(d)/../mk/vendor.os)
+CC_$(d) = $(shell $(d)/../mk/vendor.cc)
+LUAPATH_$(d) = $(shell env CC="$(CC)" CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(<D)/../mk/lua.path -krxm3 -I$(DESTDIR)$(includedir) -I/usr/include -I/usr/local/include -P$(DESTDIR)$(bindir) -P$(bindir) -L$(DESTDIR)$(libdir) -L$(libdir) -v$(1) $(2))
+
+CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..))
+CFLAGS_$(d) = $(CFLAGS_$(abspath $(@D)/../..))
+LDFLAGS_$(d) = $(LDFLAGS_$(abspath $(@D)/../..))
+SOFLAGS_$(d) = $(SOFLAGS_$(abspath $(@D)/../..))
+
+ifeq ($(CC_$(d)), sunpro)
+CPPFLAGS_$(d) += -DOPENSSL_NO_EC
 endif
 
-ifneq ($(origin lua52path), undefined)
-luapath = $(lua52path)
-endif
+LDFLAGS_$(d) += -lssl -lcrypto
 
-ifneq ($(origin lua52cpath), undefined)
-luacpath = $(lua52cpath)
-endif
+#
+# C O M P I L A T I O N  R U L E S
+#
+#all: $(d)/openssl.so
 
+define BUILD_$(d)
 
-# call helper to derive our Lua paths
-ENV = CC CPPFLAGS prefix bindir libdir datadir includedir \
-      luainclude luapath luacpath LUAC
-$(shell env $(foreach V, $(ENV), $(V)="$(call $(V))") ../mk/lua.path make > .config)
-include .config
+.INTERMEDIATE: liblua$(1)-openssl
 
+$$(d)/$(1)/openssl.so: $$(d)/$(1)/openssl.o
+	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
 
-VENDOR.OS = $(shell ../mk/vendor.os)
-VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
+$$(d)/$(1)/openssl.o: $$(d)/openssl.c $$(d)/compat52.h
+	test "$$(notdir $$(@D))" = "$$(call LUAPATH_$$(<D), $$(notdir $$(@D)), version)"
+	$$(MKDIR) -p $$(@D)
+	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(call LUAPATH_$$(<D), $$(notdir $$(@D)), cppflags) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
 
-ifneq ($(luainclude),)
-CPPFLAGS = -I$(luainclude)
-endif
+liblua$(1)-openssl: $$(d)/$(1)/openssl.so
 
-ifeq ($(VENDOR.CC), sunpro)
-DFLAGS = -g
-CFLAGS = -xcode=pic13 $(DFLAGS)
-CPPFLAGS += -DOPENSSL_NO_EC
-else
-DFLAGS = -g -Wall -Wextra -Wno-deprecated-declarations -Wno-unused
-CFLAGS = -fPIC $(DFLAGS)
-endif
+all: liblua$(1)-openssl
 
-LDFLAGS = -lssl -lcrypto
+endef # BUILD_$(d)
 
-ifeq ($(VENDOR.OS), Darwin)
-SOFLAGS = -bundle -undefined dynamic_lookup
-else
-SOFLAGS = -shared
-endif
+$(eval $(call BUILD_$(d),5.1))
+
+$(eval $(call BUILD_$(d),5.2))
 
 
-all: openssl.so
+#
+# I N S T A L L  &  U N I N S T A L L  R U L E S
+#
+define INSTALL_$(d)
 
-openssl.so: openssl.o
-	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
+LUAC$(1)_$(d) = $$(or $$(call LUAPATH_$(d), $(1), luac), true)
 
-openssl.o: openssl.c compat52.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+MODS$(1)_$(d) = \
+	$$(DESTDIR)$(2)/_openssl.so \
+	$$(DESTDIR)$(3)/openssl/bignum.lua \
+	$$(DESTDIR)$(3)/openssl/pubkey.lua \
+	$$(DESTDIR)$(3)/openssl/x509.lua \
+	$$(DESTDIR)$(3)/openssl/x509/name.lua \
+	$$(DESTDIR)$(3)/openssl/x509/altname.lua \
+	$$(DESTDIR)$(3)/openssl/x509/chain.lua \
+	$$(DESTDIR)$(3)/openssl/x509/store.lua \
+	$$(DESTDIR)$(3)/openssl/ssl/context.lua \
+	$$(DESTDIR)$(3)/openssl/ssl.lua \
+	$$(DESTDIR)$(3)/openssl/digest.lua \
+	$$(DESTDIR)$(3)/openssl/hmac.lua \
+	$$(DESTDIR)$(3)/openssl/cipher.lua
 
+.INTERMEDIATE: liblua$(1)-openssl-install
 
-install: $(DESTDIR)$(luacpath)/_openssl.so \
-         $(DESTDIR)$(luapath)/openssl/bignum.lua \
-         $(DESTDIR)$(luapath)/openssl/pubkey.lua \
-         $(DESTDIR)$(luapath)/openssl/x509.lua \
-         $(DESTDIR)$(luapath)/openssl/x509/name.lua \
-         $(DESTDIR)$(luapath)/openssl/x509/altname.lua \
-         $(DESTDIR)$(luapath)/openssl/x509/chain.lua \
-         $(DESTDIR)$(luapath)/openssl/x509/store.lua \
-         $(DESTDIR)$(luapath)/openssl/ssl/context.lua \
-         $(DESTDIR)$(luapath)/openssl/ssl.lua \
-         $(DESTDIR)$(luapath)/openssl/digest.lua \
-         $(DESTDIR)$(luapath)/openssl/hmac.lua \
-         $(DESTDIR)$(luapath)/openssl/cipher.lua
+$$(DESTDIR)$(2)/_openssl.so: $$(d)/$(1)/openssl.so
+	$$(MKDIR) -p $$(@D)
+	$$(CP) -p $$< $$@
 
-$(DESTDIR)$(luacpath)/_openssl.so: openssl.so
-	mkdir -p $(@D)
-	cp -p $< $@
+$$(DESTDIR)$(3)/openssl/%.lua: $$(d)/openssl.%.lua
+	$$(MKDIR) -p $$(@D)
+	$$(CP) -p $$< $$@
 
-$(DESTDIR)$(luapath)/openssl/bignum.lua: openssl.bignum.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+$$(DESTDIR)$(3)/openssl/x509/%.lua: $$(d)/openssl.x509.%.lua
+	$$(MKDIR) -p $$(@D)
+	$$(CP) -p $$< $$@
 
-$(DESTDIR)$(luapath)/openssl/pubkey.lua: openssl.pubkey.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+$$(DESTDIR)$(3)/openssl/ssl/%.lua: $$(d)/openssl.ssl.%.lua
+	$$(MKDIR) -p $$(@D)
+	$$(CP) -p $$< $$@
 
-$(DESTDIR)$(luapath)/openssl/x509.lua: openssl.x509.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+$$(DESTDIR)$(3)/openssl/ssl/%.lua: $$(d)/openssl.ssl.%.lua
+	$$(MKDIR) -p $$(@D)
+	$$(CP) -p $$< $$@
 
-$(DESTDIR)$(luapath)/openssl/x509/name.lua: openssl.x509.name.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+liblua$(1)-openssl-install: $$(MODS$(1)_$$(d))
 
-$(DESTDIR)$(luapath)/openssl/x509/altname.lua: openssl.x509.altname.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+.PHONY: liblua$(1)-openssl-uninstall uninstall
 
-$(DESTDIR)$(luapath)/openssl/x509/chain.lua: openssl.x509.chain.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+liblua$(1)-openssl-uninstall:
+	$$(RM) -f $$(MODS$(1)_$(d))
+	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/x509
+	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/ssl
+	-$$(RMDIR) $$(DESTDIR)$(3)/openssl
 
-$(DESTDIR)$(luapath)/openssl/x509/store.lua: openssl.x509.store.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+uninstall: liblua$(1)-openssl-uninstall
 
-$(DESTDIR)$(luapath)/openssl/ssl/context.lua: openssl.ssl.context.lua
-	mkdir -p $(@D)
-	cp -p $< $@
-
-$(DESTDIR)$(luapath)/openssl/ssl.lua: openssl.ssl.lua
-	mkdir -p $(@D)
-	cp -p $< $@
-
-$(DESTDIR)$(luapath)/openssl/digest.lua: openssl.digest.lua
-	mkdir -p $(@D)
-	cp -p $< $@
-
-$(DESTDIR)$(luapath)/openssl/hmac.lua: openssl.hmac.lua
-	mkdir -p $(@D)
-	cp -p $< $@
-
-$(DESTDIR)$(luapath)/openssl/cipher.lua: openssl.cipher.lua
-	mkdir -p $(@D)
-	cp -p $< $@
+endef # INSTALL_$(d)
 
 
-.PHONY: clean clean~ help
+$(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 
-clean:
-	rm -f *.so *.o
-	rm -f .config
+$(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
 
-clean~: clean
-	rm -f *~
 
-help:
-	@echo "Available targets:"
-	@echo ""
-	@echo "       all - build all binary targets"
-	@echo "openssl.so - build openssl.so module"
-	@echo "   install - install openssl modules"
-	@echo "     clean - rm binary targets, object files, debugging symbols, etc"
-	@echo "    clean~ - clean + rm *~"
-	@echo "      help - echo this help message"
-	@echo ""
-	@echo "Some important Make variables:"
-	@echo ""
-	@echo "    prefix - path to install root"
-	@echo 'luainclude - path to Lua headers ($$(prefix)/include/lua/5.2)'
-	@echo '   luapath - install path for Lua modules ($$(prefix)/share/lua/5.2)'
-	@echo '  luacpath - install path for Lua C modules ($$(prefix)/lib/lua/5.2)'
-	@echo '      LUAC - path to luac utility ($$(bindir)/luac)'
-	@echo ""
-	@echo "(NOTE: all the common GNU-style paths are supported, including"
-	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"
-	@echo ""
-	@echo "Report bugs to <william@25thandClement.com>"
+#
+# C L E A N  R U L E S
+#
+.PHONY: $(d)/clean $(d)/clean~ clean clean~
+
+$(d)/clean:
+	$(RM) -fr $(@D)/*.so $(@D)/*.o $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2
+
+$(d)/clean~: $(d)/clean
+	$(RM) -f $(@D)/*~
+
+clean: $(d)/clean
+
+clean~: $(d)/clean~
+
+
+endif # include guard
+
+# non-recursive epilogue
+d := $(dirstack_$(sp))
+sp := $(basename $(sp))

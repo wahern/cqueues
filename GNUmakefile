@@ -29,6 +29,7 @@ AR ?= ar
 RANLIB ?= ranlib
 M4 ?= m4
 RM ?= rm
+CP ?= cp
 RMDIR ?= rmdir
 MKDIR ?= mkdir
 CHMOD ?= chmod
@@ -56,6 +57,7 @@ $(d)/config:
 	printf 'RANLIB ?= $(value RANLIB)'"\n" >> $(@D)/.config
 	printf 'M4 ?= $(value M4)'"\n" >> $(@D)/.config
 	printf 'RM ?= $(value RM)'"\n" >> $(@D)/.config
+	printf 'CP ?= $(value CP)'"\n" >> $(@D)/.config
 	printf 'RMDIR ?= $(value RMDIR)'"\n" >> $(@D)/.config
 	printf 'MKDIR ?= $(value MKDIR)'"\n" >> $(@D)/.config
 	printf 'CHMOD ?= $(value CHMOD)'"\n" >> $(@D)/.config
@@ -116,7 +118,18 @@ endif
 #
 include $(d)/src/GNUmakefile
 
-#include $(d)/ext/GNUmakefile
+include $(d)/ext/GNUmakefile
+
+
+#
+# C L E A N  R U L E S
+#
+.PHONY: $(d)/clean~ clean~
+
+$(d)/clean~:
+	$(RM) -f $(@D)/*~
+
+clean~: $(d)/clean~
 
 
 #
