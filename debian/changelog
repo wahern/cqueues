@@ -1,3 +1,11 @@
+lua-cqueues (20130909-0) unstable; urgency=low
+
+  * Refactor build to be non-recursive.
+  * Integrate luapath script from external fork.
+  * Follow Debian naming conventions for multi-version Lua modules.
+
+ -- William Ahern <william@25thandClement.com>  Mon, 09 Sep 2013 14:46:25 -0700
+
 lua-cqueues (20130129-0) unstable; urgency=low
 
   * Bind interface for acquiring DNS resolver statistics.
