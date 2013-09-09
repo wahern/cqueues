@@ -1835,7 +1835,7 @@ static _Bool scan(int *i, char **cp, int n, int signok) {
 
 static double timeutc(ASN1_TIME *time) {
 	char buf[32] = "", *cp;
-	struct tm tm;
+	struct tm tm = { 0 };
 	int gmtoff = 0, year, i;
 	double ts;
 
