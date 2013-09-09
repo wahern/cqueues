@@ -1,145 +1,646 @@
 #!/bin/sh
 #
-# Try to derive Lua compilation and installation paths. The following
-# environment variables are used for hinting
+# This script is used to derive compiler flags and filesystem paths
+# necessary to utilize Lua, LuaJIT, and particular versions thereof in both
+# simple and mixed installation environments.
 #
-# 	PATH CC CPPFLAGS PREFIX BINDIR LIBDIR DATADIR INCLUDEDIR
+# For usage help information use the -h switch.
 #
-# while these are presumed correct if set and not null
+# This script attempts to adhere strictly to POSIX shell specifications. The
+# known non-POSIX features used are the path of the shell at the very first
+# line of this script, the default compiler command name of `cc' instead of
+# `c99', and the use of /dev/urandom for generating a random sandbox
+# directory suffix. All of these can be override. For any other issues
+# please contact the author.
 #
-# 	LUAINCLUDE LUAPATH LUACPATH LUAC
+# WARNING: When searching for a Lua interpreter this script may execute
+# various utilities in an attempt to deduce their fitness and release
+# version. By default this script will search for and execute utilities
+# using the glob patterns luac* and lua*. But this script CANNOT GUARANTEE
+# that executing such utilities, or any other utilities, either wittingly or
+# unwittingly, will not result in your COMPUTER EXPLODING. You have been
+# warned.
 #
-# The script tries to ensure version consistency according to the detected
-# compilation environment.
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# 
+# Changelog:
 #
-# The first step is to find our lua.h header, if any, to determine our major
-# and minor Lua API version. Everything flows from the version number.
+# * 2013-08-02 - Published. Derived from an earlier script, lua.path,
+#   written for the cqueues project.
 #
-# The most recent Lua API version is preferred. If both LuaJIT and Lua are
-# detected, LuaJIT 2.x is preferred over Lua 5.2 and LuaJIT 1.x over Lua
-# 5.1.
+# * 2013-08-05 - Redirect stdin from /dev/null when probing so we don't
+#   	freeze if a utility tries to read from stdin.
 #
-# Run `./lua.path -h` for usage help.
+# 	chdir to a read-only directory by default to try to prevent creation
+# 	of temporary files. These features address the issues of LuaTeX
+# 	reading from stdin and creating a luatex.out file in the current
+# 	working directory. By default a directory with a random suffix
+# 	generated from /dev/urandom is placed in TMPDIR and removed on exit.
+#
+# 	If CPPFLAGS is empty and no -I options directly specified then set
+# 	INCDIRS to "/usr/include:/usr/local/include".
+#
+# * 2013-08-07 - Add pkg-config support and refactor header probing to delay
+# 	recursive searching.
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+# Copyright (C) 2012-2013 William Ahern
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
 #
 set -e # strict errors
 set -u # don't expand unbound variables
-\unalias -a # no surprises
+set -f # disable pathname expansion
+set -C # noclobber
+\unalias -a # no command surprises
+export LC_ALL=C # no locale headaches
+unset IFS # no field splitting surprises
+: ${TMPDIR:=/tmp} # sane TMPDIR
+: ${CC:=cc}
+
+MYVERSION=20130830
+MYVENDOR="william@25thandClement.com"
 
 
-getversion() {
-	printf "#include <$1>\n<<<<$2>>>>\n" \
+DEVRANDOM=/dev/urandom
+SANDBOX="${TMPDIR}/${0##*/}-"
+
+CPPDIRS=    # -I directories from CPPFLAGS
+INCDIRS=
+LIBDIRS=
+BINDIRS=
+RECURSE=no
+MAXDEPTH=   # full command switch, like "-maxdepth 3", if supported
+XDEV=       # do not cross device boundaries; i.e. "-xdev"
+SHORTEST=   # continue searching until shortest pathname found
+PKGCONFIG=  # path to pkg-config, found by `command -v` when -k option invoked
+
+API_MIN=500
+API_MAX=999
+API_VER=
+API_DIR=
+
+JIT_REQ=
+JIT_MIN=20000
+JIT_MAX=99999
+JIT_VER=
+JIT_DIR=
+
+LUAC_PATH=
+LUAC_VER=
+
+LUA_PATH=
+LUA_VER=
+
+
+#
+# parse CPPFLAGS -I directories
+#
+idirs() {
+	DIRS=
+
+	set -- ${1:-}
+
+	while [ $# -gt 0 ]; do 
+		case "${1}" in
+		-I)
+			shift
+
+			if [ -n "${1:-}" ]; then
+				DIRS="${DIRS}${DIRS:+:}${1}"
+			fi
+
+			;;
+		-I*)
+			if [ "${1}" != "-I" ]; then
+				DIRS="${DIRS}${DIRS:+:}${1#-I}"
+			fi
+
+			;;
+		esac
+
+		shift
+	done
+
+	printf -- "${DIRS}"
+}
+
+
+#
+# evalmacro PATH MACRO [REGEX] [SUBST]
+#
+# 	PATH   Header identifier--#include <PATH>
+# 	MACRO  Macro identifier
+# 	REGEX  Optional regex pattern to match macro evalutation result
+# 	SUBST  Optional replacement expression
+#
+evalmacro() {
+	printf "#include <$1>\n[===[$2]===]\n" \
 	| ${CC:-cc} ${CPPFLAGS:-} -E - 2>/dev/null \
-	| sed -ne '
-		s/^.*<<<< *\([0123456789]*\) *>>>>.*$/\1/
+	| sed -ne "
+		s/^.*\\[===\\[ *\\(${3:-.*}\\) *\\]===\\].*$/${4:-\\1}/
 		t Found
 		d
 		:Found
 		p
 		q
-	'
+	"
 }
 
 
 #
-# Deriving LUAINCLUDE is the most important, because module installation
-# paths and luac selection depend on the Lua implementation and version.
+# testsym PATH NAME
 #
-luainclude() {
-	LUA_D=
-	LUA_V=0
+# Test whether global symbol NAME exists in object file at PATH. Exits with
+# 0 (true) when found, non-0 (false) otherwise.
+#
+testsym() {
+	# NOTE: No -P for OpenBSD nm(1), but the default output format is
+	# close enough. Section types always have a leading and trailing
+	# space. U section type means undefined. On AIX [VWZ] are weak
+	# global symbols. Solaris and OS X have additional symbol types
+	# beyond the canonical POSIX/BSD types, all of which are uppercase
+	# and within [A-T].
+	(nm -Pg ${1} 2>/dev/null || nm -g 2>/dev/null) \
+	| sed -ne '/ [A-T] /p' \
+	| grep -qE "${2}"
+}
 
-	JIT_D=
-	JIT_V=0
 
-	V="$(getversion lua.h LUA_VERSION_NUM)"
+tryluainclude() {
+	V="$(evalmacro ${1} LUA_VERSION_NUM '[0123456789][0123456789]*')"
+	: ${V:=0}
 
-	if [ -n "$V" ]; then
-		LUA_V="$V"
-	fi
+	if [ "${1%/*}" != "${1}" ]; then
+		D="${1%/*}"
 
-	V="$(getversion luajit.h LUAJIT_VERSION_NUM)"
-
-	if [ -n "$V" ]; then
-		JIT_V="$V"
-	fi
-
-	for F in $(find "${INCLUDEDIR}" -name lua.h 2>/dev/null); do
-		V="$(getversion $F LUA_VERSION_NUM)"
-
-		if [ "${V:-0}" -gt "$LUA_V" ]; then
-			LUA_D="${F%%/lua.h}"
-			LUA_V="$V"
+		# cleanup after Solaris directory prune trick
+		if [ "${D##*/./}" != "${D}" ]; then
+			D="${D%%/./*}/${D##*/./}"
+		else
+			D="${D%/.}"
 		fi
-	done
-
-	for F in $(find "${INCLUDEDIR}" -name luajit.h 2>/dev/null); do
-		V="$(getversion $F LUAJIT_VERSION_NUM)"
-
-		if [ "${V:-0}" -gt "$JIT_V" ]; then
-			JIT_D="${F%%/luajit.h}"
-			JIT_V="$V"
-		fi
-	done
-
-	if [ "$JIT_V" -ge 20000 ]; then
-		echo "$JIT_D"
-	elif [ "$JIT_V" -gt 0 -a "$LUA_V" -le 501 ]; then
-		echo "$JIT_D"
 	else
-		echo "$LUA_D"
+		D=
 	fi
+
+	[ "$V" -gt 0 -a "$V" -ge "${API_VER:-0}" ] || return 0
+
+	[ "$V" -gt "${API_VER:-0}" -o "${#D}" -lt "${#API_DIR}" -o \( "${JIT_REQ}" = "yes" -a "${JIT_VER:-0}" -lt "${JIT_MAX}" \) ] || return 0
+
+	[ "$V" -ge "${API_MIN}" -a "$V" -le "${API_MAX}" ] || return 0
+
+	if [ -n "${JIT_REQ}" ]; then
+		J="$(evalmacro ${1%%lua.h}luajit.h LUAJIT_VERSION_NUM '[0123456789][0123456789]*')"
+		: ${J:=0}
+
+		if [ "${JIT_REQ}" = "skip" ]; then
+			[ "${J}" -eq 0 ] || return 0
+		elif [ "${JIT_REQ}" = "yes" ]; then
+			[ "$J" -ge "${JIT_VER:-0}" ] || return 0
+			[ "$J" -gt "${JIT_VER:-0}" -o "${#D}" -lt "${#JIT_DIR}" ] || return 0
+			[ "$J" -ge ${JIT_MIN} ] || return 0
+			[ "$J" -le "${JIT_MAX}" ] || return 0
+
+			JIT_VER="$J"
+			JIT_DIR="$D"
+		fi
+	fi
+
+	API_VER="$V"
+	API_DIR="$D"
 }
 
 
-luapath() {
-	echo "${DATADIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
+#
+# foundversion
+#
+# true if found the best (maximum) possible version, false otherwise
+#
+foundversion() {
+	if [ "${API_VER:-0}" -lt "${API_MAX}" ]; then
+		return 1
+	fi
+
+	if [ "${JIT_REQ}" = "yes" -a "${JIT_VER:-0}" -lt "${JIT_MAX}" ]; then
+		return 1
+	fi
+
+	if [ "${SHORTEST}" = "yes" ]; then
+		return 1
+	fi
+
+	return 0
 }
 
 
-luacpath() {
-	echo "${LIBDIR}/lua/${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
-}
+#
+# findversion
+#
+findversion() {
+	tryluainclude "lua.h"
+
+	if foundversion; then
+		return 0
+	fi
 
 
-_luac() {
-	for C in "${BINDIR}/luac" "$(command -v luac)"; do
-		if [ -x "$C" ]; then
-			V="$(${C} -v 2>/dev/null | sed -ne 's/^Lua \([0123456789]*\.[0123456789]*\).*/\1/p')"
-			: ${V:=0.0}
+	# iterate through CPPFLAGS to probe different precedence
+	if [ "${API_VER:-0}" -lt "${API_MAX}" ]; then
+		IFS=:
+		set -- ${CPPDIRS}
+		unset IFS
 
-			if [ "$LUA_VERSION_MAJOR" -eq "${V%%.*}" -a "$LUA_VERSION_MINOR" -eq "${V##*.}" ]; then
-				echo "${C}"
-				return
+		for D; do
+			tryluainclude "${D}/lua.h"
+
+			if foundversion; then
+				return 0
 			fi
+		done
+	fi
+
+
+	if [ -n "${PKGCONFIG}" ]; then
+		PKGFLAGS="$(${PKGCONFIG} --list-all </dev/null 2>/dev/null | sed -ne 's/^\(lua[^ 	]*\).*/\1/p' | xargs -- ${PKGCONFIG} --cflags 2>/dev/null | cat)"
+		PKGDIRS="$(idirs "${PKGFLAGS}")"
+
+		IFS=:
+		set -- ${PKGDIRS}
+		unset IFS
+
+		for D; do
+			tryluainclude "${D}/lua.h"
+
+			if foundversion; then
+				return 0
+			fi
+		done
+	fi
+
+
+	IFS=:
+	set -- ${INCDIRS}
+	unset IFS
+
+	for D; do
+		tryluainclude "${D}/lua.h"
+
+		if foundversion; then
+			return 0
 		fi
 	done
 
-	echo ":"
+
+	[ "${RECURSE}" = "yes" ] || return 0
+
+
+	# recurse into CPPDIRS
+	IFS=:
+	set -- ${CPPDIRS}
+	unset IFS
+
+	for D; do
+		for F in $(find ${D} ${MAXDEPTH} ${XDEV} -name lua.h -print 2>/dev/null); do
+			tryluainclude "${F}"
+
+			if foundversion; then
+				return 0
+			fi
+		done
+	done
+
+
+	# recurse into INCDIRS
+	IFS=:
+	set -- ${INCDIRS}
+	unset IFS
+
+	for D; do
+		for F in $(find ${D}/. ${MAXDEPTH} ${XDEV} -name lua.h -print 2>/dev/null); do
+			tryluainclude "${F}"
+
+			if foundversion; then
+				return 0
+			fi
+		done
+	done
+}
+
+
+findpath() {
+	NAME="$1"
+	WHERE="$3"
+
+	PRUNE=
+
+	if [ "${2}" = "no" ]; then
+		PRUNE="-name . -o -type d -prune -o"
+	fi
+
+	[ ${#WHERE} -gt 0 ] || return 0
+
+	IFS=:
+	set -- ${WHERE}
+	unset IFS
+
+	for D; do
+		find "${D}/." ${MAXDEPTH} ${XDEV} ${PRUNE} -name "${NAME}" -print 2>/dev/null | sed -e 's/\/\.//'
+	done
+}
+
+
+# check setuid and setgid mode
+safeperm() {
+	[ -f "$1" -a ! -u "$1" -a ! -g "$1" ]
+}
+
+
+findluac() {
+	while [ $# -gt 0 ]; do
+		for F in $(findpath "${1}" no "${PATH}"; findpath "${1}" "${RECURSE}" "${BINDIRS}"); do
+			[ -x "$F" ] && safeperm "$F" || continue
+
+			V="$($F -v </dev/null 2>&1 | head -n1 | sed -ne 's/^Lua \([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
+			: ${V:=0}
+			V="$((${V%%.*} * 100 + ${V##*.} % 100))"
+
+			[ "${V}" -gt 0 -a "${V}" -ge "${LUAC_VER:-0}" ] || continue
+
+			[ "${V}" -gt "${LUAC_VER:-0}" -o "${#F}" -lt "${#LUAC_PATH}" ] || continue
+
+			[ "${V}" -ge "${API_MIN}" -a "${V}" -le "${API_MAX}" ] || continue
+
+			printf "return true" | ${F} -p - </dev/null >/dev/null 2>&1 || continue
+
+			LUAC_PATH="$F"
+			LUAC_VER="$V"
+
+			[ "${SHORTEST}" = "yes" -o "${LUAC_VER}" -lt "${API_MAX}" ] || break 2
+		done
+
+		shift
+	done
+}
+
+
+checkints() {
+	while [ $# -gt 0 ]; do
+		I="${1}"
+		while [ "${#I}" -gt 0 ]; do
+			if [ "${I##[0123456789]}" = "${I}" ]; then
+				printf -- "${0##*/}: ${1}: not a number\n" >&2
+				exit 1
+			fi
+
+			I=${I##[0123456789]}
+		done
+
+		shift
+	done
+}
+
+
+lua2num() {
+	M=0
+	m="${2:-0}"
+
+	IFS=.
+	set -- ${1}
+	unset IFS
+
+	M=${1:-${M}}
+	m=${2:-${m}}
+
+	checkints $M $m
+
+	printf "$((${M} * 100 + ${m}))\n"
+}
+
+
+jit2num() {
+	M=0
+	m="${2:-0}"
+	p="${3:-0}"
+
+	IFS=.
+	set -- ${1}
+	unset IFS
+
+	M=${1:-${M}}
+	m=${2:-${m}}
+	p=${3:-${p}}
+
+	checkints $M $m $p
+
+	printf "$((${M} * 10000 + ${m} * 100 + ${p}))\n"
+}
+
+
+findlua() {
+	while [ $# -gt 0 ]; do
+		for F in $(findpath "${1}" no "${PATH}"; findpath "${1}" "${RECURSE}" "${BINDIRS}"); do
+			[ -x "$F" ] && safeperm "$F" || continue
+
+			V="$($F -e 'print(string.match(_VERSION, [[[%d.]+]]))' </dev/null 2>/dev/null | head -n1 | sed -ne 's/^\([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
+			: ${V:=0}
+			V="$((${V%%.*} * 100 + ${V##*.} % 100))"
+
+			[ "${V}" -gt 0 -a "${V}" -ge "${LUA_VER:-0}" ] || continue
+
+			[ "${V}" -gt "${LUA_VER:-0}" -o "${#F}" -lt "${#LUA_PATH}" ] || continue
+
+			[ "${V}" -ge "${API_MIN}" -a "${V}" -le "${API_MAX}" ] || continue
+
+			if [ -n "${JIT_REQ}" ]; then
+				J="$($F -v </dev/null 2>&1 | head -n1 | sed -ne 's/^LuaJIT \([0123456789][0123456789]*\.[0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
+				J="$(jit2num ${J:-0})"
+
+				if [ "${JIT_REQ}" = "skip" ]; then
+					[ "${J}" -eq 0 ] || continue
+				elif [ "${JIT_REQ}" = "yes" ]; then
+					[ "${J}" -gt 0 ] || continue
+					[ "${J}" -ge "${JIT_MIN}" ] || continue
+					[ "${J}" -le "${JIT_MAX}" ] || continue
+				fi
+			fi
+
+			LUA_PATH="$F"
+			LUA_VER="$V"
+
+			[ "${SHORTEST}" = "yes" -o "${LUA_VER}" -lt "${API_MAX}" ] || break 2
+		done
+
+		shift
+	done
 }
 
 
 usage() {
-	cat <<- EOF
-	usage: $(basename $0) [-p:h] include|path|cpath|luac|cppflags|version
-	  -p PATH  compilation and installation prefix path
-	  -h       print this usage message
+	cat <<-EOF
+	usage: ${0##*/} [-I:L:P:d:Dkrm:xsv:j:JVh] cppflags|ldflags|version|lua|luac
+	  -I PATH      additional search directory for includes
+	  -L PATH      additional search directory for libraries
+	  -P PATH      additional search directory for binaries
+	  -d PATH      use PATH as sandbox directory; a random 16 byte suffix is
+	               generated from /dev/urandom and the directory removed on exit
+	               unless a trailing "/" is present
+	               (default sandbox is \$TMPDIR/${0##*/}-XXXXXXXXXXXXXXXX)
+	  -D           do not create a sandbox
+	  -k           query pkg-config if available
+	  -r           recursively search directories
+	  -m MAXDEPTH  limit recursion to MAXDEPTH (only for GNU and BSD find)
+	  -x           do not cross device mounts when recursing
+	  -s           find shortest pathname, otherwise print first best match
+	  -v VERSION   require specific Lua version or range
+	               (e.g. "5.1" or "5.1-5.2")
+	  -j VERSION   require specific LuaJIT version or range
+	               (e.g. "2.0.1"; empty ranges like "-" force any LuaJIT version)
+	  -J           skip LuaJIT if encountered
+	  -V           print this script's version information
+	  -h           print this usage message
 
-	  include   preprocessor -I path to reach Lua headers (possibly empty)
-	  path      installation path of Lua modules
-	  cpath     installation path of Lua C modules
-	  luac      luac command path
-	  cppflags  CPPFLAGS plus lua.h include path, if not empty
-	  version   derived Lua API version
-	
+	  cppflags     print derived additional CPPFLAGS necessary
+	  ldflags      print derived additional LDFLAGS necessary (TODO)
+	  version      print derived Lua API version
+	  luac [GLOB]  print path to luac utility using optional glob patterns
+	               (e.g. "luac5.?"; default is "luac*")
+	  lua [GLOB]   print path to lua interpreter using optional glob patterns
+	               (e.g. "lua luajit"; default is "lua*")
+	  evalmacro    run internal macro evaluator for debugging
+	  testsym      run internal library symbol reader for debugging
+
+	This utility is used to derive compiler flags and filesystem paths
+	necessary to utilize Lua, LuaJIT, and particular versions thereof.
+	On success it prints the requested information and exits with 0,
+	otherwise it fails with an exit status of 1.
+
+	Note that cppflags may not print anything if no additional flags are
+	required to compile against the requested API version.
+
+	When searching, the highest Lua version is preferred. Searching
+	stops once the highest version in the allowable range is found
+	unless the -s flag is specified.
+
+	LuaJIT is treated like any other Lua installation. If an explicit
+	LuaJIT version or range is specified, then only LuaJIT installations
+	will match. To exclude LuaJIT entirely use the -J switch.
+
+	This utility processes the environment variables CC, CPPFLAGS,
+	LDFLAGS, and PATH if present. If recursion is requested, then
+	directories specified in CPPFLAGS, LDFLAGS, and PATH are also
+	recursed.
+
+	If the environment variable CPPFLAGS is empty and no -I options are
+	specified directly, then /usr/include and /usr/local/include are
+	used when probing for cppflags and API version.
+
 	Report bugs to <william@25thandClement.com>
 	EOF
 }
 
 
-while getopts p:h OPT; do
+version() {
+	cat <<-EOF
+	luapath $MYVERSION
+	vendor  $MYVENDOR
+	release $MYVERSION
+	EOF
+}
+
+
+while getopts I:L:P:d:Dkrm:xsv:j:JVh OPT; do
 	case "${OPT}" in
-	p)
-		PREFIX="$OPTARG"
+	I)
+		INCDIRS="${INCDIRS:-}${INCDIRS:+:}${OPTARG}"
+		;;
+	L)
+		LIBDIRS="${LIBDIRS:-}${LIBDIRS:+:}${OPTARG}"
+		;;
+	P)
+		BINDIRS="${BINDIRS:-}${BINDIRS:+:}${OPTARG}"
+		;;
+	d)
+		SANDBOX="${OPTARG}"
+		;;
+	D)
+		SANDBOX=
+		;;
+	k)
+		PKGCONFIG="$(command -v pkg-config || true)"
+		;;
+	r)
+		RECURSE=yes
+		;;
+	m)
+		if [ -n "${OPTARG##[0123456789]}" ]; then
+			printf -- "${0##*/}: ${OPTARG}: invalid maxdepth\n" >&2
+			exit 1
+		fi
+
+		if find "${TMPDIR:-/tmp}" -maxdepth ${OPTARG} -prune >/dev/null 2>&1; then
+			MAXDEPTH="-maxdepth ${OPTARG}"
+		else
+			printf -- "${0##*/}: $(command -v find): -maxdepth unsupported\n" >&2
+		fi
+
+		;;
+	x)
+		XDEV="-xdev"
+		;;
+	s)
+		SHORTEST=yes
+		;;
+	v)
+		MIN=${OPTARG%%[,:-]*}
+		MAX=${OPTARG##*[,:-]}
+
+		API_MIN="$(lua2num ${MIN:-0} 0)"
+		API_MAX="$(lua2num ${MAX:-99} 99)"
+
+		if [ "${API_MIN}" -gt "${API_MAX}" ]; then
+			printf -- "${0##*/}: ${OPTARG}: invalid version range\n" >&2
+			exit 1
+		fi
+
+		;;
+	j)
+		MIN=${OPTARG%%[,:-]*}
+		MAX=${OPTARG##*[,:-]}
+
+		JIT_MIN="$(jit2num ${MIN:-0} 0 0)"
+		JIT_MAX="$(jit2num ${MAX:-99} 99 99)"
+
+		if [ "${JIT_MIN}" -gt "${JIT_MAX}" ]; then
+			printf -- "${0##*/}: ${OPTARG}: invalid version range\n" >&2
+			exit 1
+		fi
+
+		JIT_REQ=yes
+		;;
+	J)
+		JIT_REQ=skip
+		;;
+	V)
+		version
+		exit 0
 		;;
 	h)
 		usage
@@ -155,51 +656,123 @@ done
 shift $(($OPTIND - 1))
 
 
-: ${PREFIX:=${prefix:-/usr}}
-: ${DATADIR:=${datadir:-${PREFIX}/share}}
-: ${LIBDIR:=${libdir:-${PREFIX}/lib}}
-: ${BINDIR:=${bindir:-${PREFIX}/bin}}
-: ${INCLUDEDIR:=${includedir:-${PREFIX}/include}}
-: ${LUAINCLUDE:=$(luainclude)}
-: ${LUA_VERSION_NUM:=$(getversion "${LUAINCLUDE:+${LUAINCLUDE}/}lua.h" LUA_VERSION_NUM)}
-: ${LUA_VERSION_NUM:=502}
-: ${LUA_VERSION_MAJOR:=$((${LUA_VERSION_NUM} / 100))}
-: ${LUA_VERSION_MINOR:=$((${LUA_VERSION_NUM} % 100))}
-
-
-while [ $# -ge 1 ]; do
-	case "$1" in
-	include)
-		echo "${LUAINCLUDE}"
-		;;
-	path)
-		echo "${LUAPATH:=$(luapath)}"
-		;;
-	cpath)
-		echo "${LUACPATH:=$(luacpath)}"
-		;;
-	luac)
-		echo "${LUAC:=$(_luac)}"
-		;;
-	cppflags)
-		echo "${CPPFLAGS:-}${LUAINCLUDE:+${CPPFLAGS:+ }-I${LUAINCLUDE}}"
-		;;
-	version)
-		echo "${LUA_VERSION_MAJOR}.${LUA_VERSION_MINOR}"
-		;;
-	make)
-		cat <<- EOF
-			luainclude=${LUAINCLUDE}
-			luapath=${LUAPATH:=$(luapath)}
-			luacpath=${LUACPATH:=$(luacpath)}
-			LUAC=${LUAC:=$(_luac)}
-		EOF
-		;;
-	*)
-		usage >&2
-		exit 1
-		;;
-	esac
-
-	shift
+for U in ${CC:-cc} find grep od rm rmdir sed xargs; do
+	if ! command -v ${U} >/dev/null 2>&1; then
+		printf -- "${0##*/}: ${U}: command not found\n" >&2
+	fi
 done
+
+
+if [ -n "${SANDBOX}" ]; then
+	if [ "${SANDBOX}" = "${SANDBOX%/}" ]; then
+		if [ ! -c "${DEVRANDOM}" ]; then
+			# TODO: expand DEVRANDOM into set of different possibilities to check
+			printf -- "${0##*/}: ${DEVRANDDOM}: no character random device available\n" >&2
+			exit 1
+		fi
+
+		TMP="${SANDBOX}$(od -An -N8 -tx1 < ${DEVRANDOM} 2>/dev/null | tr -d ' 	')"
+
+		if [ ${#TMP} -ne $((${#SANDBOX} + 16)) ]; then
+			printf -- "${0##*/}: ${SANDBOX}: unable to generate random suffix\n" >&2
+			exit 1
+		fi
+
+		SANDBOX="${TMP}"
+
+		trap "cd .. && rm -f -- ${SANDBOX}/* && rmdir -- ${SANDBOX}" EXIT
+	fi
+
+	if [ ! -d "${SANDBOX}" ]; then
+		OMASK="$(umask)"
+		umask 0777
+		mkdir -m0550 -- "${SANDBOX}" || exit 1
+		umask ${OMASK}
+	fi
+
+	cd ${SANDBOX}
+fi
+
+
+CPPDIRS="$(idirs "${CPPFLAGS:-}")"
+
+if [ -z "${CPPDIRS}" -a -z "${INCDIRS}" ]; then
+	INCDIRS="/usr/include:/usr/local/include"
+fi
+
+
+case "${1:-}" in
+cppflags)
+	findversion
+
+	[ "${API_VER:-0}" -gt 0 ] || exit 1
+
+	[ -z "${API_DIR:-}" ] || printf -- "-I${API_DIR}\n"
+
+	;;
+ldflags)
+	;;
+version)
+	findversion
+
+	[ "${API_VER:-0}" -gt 0 ] || exit 1
+
+	printf "$(((${API_VER} / 100) % 100)).$((($API_VER) % 100))\n"
+
+	;;
+luac)
+	shift
+
+	if [ $# -eq 0 ]; then
+		set -- luac\*
+	fi
+
+	findluac $*
+
+	[ -n "${LUAC_PATH}" ] || exit 1
+	
+	printf -- "${LUAC_PATH}\n"
+
+	;;
+lua)
+	shift
+
+	if [ $# -eq 0 ]; then
+		set -- lua\*
+	fi
+
+	findlua $*
+
+	[ -n "${LUA_PATH}" ] || exit 1
+	
+	printf -- "${LUA_PATH}\n"
+
+	;;
+evalmacro)
+	shift
+
+	evalmacro  $*
+	;;
+testsym)
+	shift
+
+	if testsym $*; then
+		printf "found\n"
+		exit 0
+	else
+		printf "not found\n"
+		exit 1
+	fi
+	;;
+*)
+	if [ -n "${1:-}" ]; then
+		printf -- "${0##*/}: ${1}: unknown command\n" >&2
+	else
+		printf -- "${0##*/}: no command specified\n" >&2
+	fi
+
+	exit 1
+	;;
+esac
+
+exit 0

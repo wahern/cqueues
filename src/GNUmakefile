@@ -1,241 +1,189 @@
-M4 = m4
+# non-recursive prologue
+sp := $(sp).x
+dirstack_$(sp) := $(d)
+d := $(abspath $(lastword $(MAKEFILE_LIST))/..)
 
-prefix = /usr/local
-bindir = $(prefix)/bin
-libdir = $(prefix)/lib
-datadir = $(prefix)/share
-includedir = $(prefix)/include
-luainclude =
-luapath =
-luacpath =
-LUAC =
-
-# backwards compatible install paths
-ifneq ($(origin lua52include), undefined)
-luainclude = $(lua52include)
-endif
-
-ifneq ($(origin lua52path), undefined)
-luapath = $(lua52path)
-endif
-
-ifneq ($(origin lua52cpath), undefined)
-luacpath = $(lua52cpath)
-endif
+ifeq ($(origin GUARD_$(d)), undefined)
+GUARD_$(d) := 1
 
 
-# call helper to derive our Lua paths
-ENV = CC CPPFLAGS prefix bindir libdir datadir includedir \
-      luainclude luapath luacpath LUAC
-$(shell env $(foreach V, $(ENV), $(V)="$(call $(V))") ../mk/lua.path make > .config)
-include .config
+#
+# E N V I R O N M E N T  C O N F I G U R A T I O N
+#
+include $(d)/../GNUmakefile
+
+include $(d)/lib/GNUmakefile
 
 
-VENDOR.OS = $(shell ../mk/vendor.os)
-VENDOR.CC = $(shell env CC="${CC}" ../mk/vendor.cc)
+#
+# C O M P I L A T I O N  F L A G S
+#
+OS_$(d) = $(shell $(d)/../mk/vendor.os)
+LUAPATH_$(d) = $(shell env CC="$(CC)" CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(<D)/../mk/lua.path -krxm3 -I$(DESTDIR)$(includedir) -I/usr/include -I/usr/local/include -P$(DESTDIR)$(bindir) -P$(bindir) -L$(DESTDIR)$(libdir) -L$(libdir) -v$(1) $(2))
 
-cc-option = $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
-            > /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi;)
+CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..))
+CPPFLAGS_$(d) += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
 
-all: cqueues.so
+CFLAGS_$(d) = $(CFLAGS_$(abspath $(@D)/../..))
+LDFLAGS_$(d) = $(LDFLAGS_$(abspath $(@D)/../..))
+SOFLAGS_$(d) = $(SOFLAGS_$(abspath $(@D)/../..))
 
-ifneq ($(luainclude),)
-CPPFLAGS = -I$(luainclude)
-endif
-
-CPPFLAGS += -D_REENTRANT -D_THREAD_SAFE
-CPPFLAGS += -D_GNU_SOURCE -DSOCKET_DEBUG
-CPPFLAGS += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
-
-ifeq ($(VENDOR.CC), gcc)
-DFLAGS = -Wall -Wextra $(call cc-option, -Wno-missing-field-initializers) $(call cc-option, -Wno-override-init) -Wno-unused -g
-CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
-endif
-
-ifeq ($(VENDOR.CC), clang)
-DFLAGS = -Wall -Wextra -Wno-missing-field-initializers -Wno-initializer-overrides -Wno-unused -g
-CFLAGS = -O2 -std=gnu99 -fPIC $(DFLAGS)
-endif
-
-ifeq ($(VENDOR.CC), sunpro)
-DFLAGS = -g
-CFLAGS = -xcode=pic13 $(DFLAGS)
-endif
-
-ifeq ($(VENDOR.OS), SunOS)
-CPPFLAGS += -Usun -D_XPG4_2 -D__EXTENSIONS__
-endif
-
-ifeq ($(VENDOR.OS), Darwin)
-DFLAGS += -Wno-deprecated-declarations
-endif
-
-ifeq ($(VENDOR.OS), $(filter $(VENDOR.OS), OpenBSD NetBSD FreeBSD Darwin))
-CPPFLAGS += -DDNS_RANDOM=arc4random
+ifeq ($(OS_$(d)), Linux)
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lrt -lm -pthread
 else
-CPPFLAGS += -DDNS_RANDOM=RAND_bytes
-endif
-
-ifeq ($(VENDOR.OS), Linux)
-LDFLAGS = -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lrt -lm -pthread
+ifeq ($(OS_$(d)), SunOS)
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
 else
-ifeq ($(VENDOR.OS), SunOS)
-LDFLAGS = -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
-else
-LDFLAGS = -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
 endif
 endif
 
-ifeq ($(VENDOR.OS), Darwin)
-SOFLAGS = -bundle -undefined dynamic_lookup
-else
-SOFLAGS = -shared
-endif
+
+#
+# C O M P I L A T I O N  R U L E S
+#
+OBJS_$(d) := cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o
+
+$(d)/5.1/cqueues.so: $(addprefix $(d)/5.1/, $(OBJS_$(d))) $(d)/lib/libnonlua.a
+	$(CC) -o $@ $^ $(SOFLAGS_$(abspath $(@D)/..)) $(SOFLAGS) $(LDFLAGS_$(abspath $(@D)/..)) $(LDFLAGS)
+
+$(d)/5.2/cqueues.so: $(addprefix $(d)/5.2/, $(OBJS_$(d))) $(d)/lib/libnonlua.a
+	$(CC) -o $@ $^ $(SOFLAGS_$(abspath $(@D)/..)) $(SOFLAGS) $(LDFLAGS_$(abspath $(@D)/..)) $(LDFLAGS)
+
+$(d)/5.1/%.o $(d)/5.2/%.o: $(d)/%.c $(d)/cqueues.h
+	test "$(notdir $(@D))" = "$(call LUAPATH_$(<D), $(notdir $(@D)), version)"
+	$(MKDIR) -p $(@D)
+	$(CC) $(CFLAGS_$(<D)) $(CFLAGS) $(call LUAPATH_$(<D), $(notdir $(@D)), cppflags) $(CPPFLAGS_$(<D)) $(CPPFLAGS) -c -o $@ $<
+
+$(d)/errno.c: $(d)/errno.c.m4
+	$(M4) $< > $@
+
+$(d)/5.1/socket.o $(d)/5.2/socket.o: $(d)/lib/socket.h
+
+$(d)/5.1/dns.o $(d)/5.2/dns.o: $(d)/lib/dns.h
+
+$(d)/5.1/notify.o $(d)/5.2/notify.o: $(d)/lib/notify.h
 
 
-cqueues.so: cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o lib/socket.o lib/dns.o lib/notify.o
-	$(CC) -o $@ $^ $(SOFLAGS) $(LDFLAGS)
+.INTERMEDIATE: liblua5.1-cqueues liblua5.2-cqueues cqueues
 
-cqueues.o: cqueues.c cqueues.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+liblua5.1-cqueues: $(d)/5.1/cqueues.so
 
-socket.o: socket.c cqueues.h lib/socket.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+liblua5.2-cqueues: $(d)/5.2/cqueues.so
 
-errno.o: errno.c cqueues.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-errno.c: errno.c.m4
-	$(M4) $^ > $@
-
-signal.o: signal.c cqueues.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-thread.o: thread.c cqueues.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-notify.o: notify.c cqueues.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-dns.o: dns.c cqueues.h lib/dns.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-lib/socket.o: lib/socket.c lib/socket.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-lib/dns.o: lib/dns.c lib/dns.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-lib/notify.o: lib/notify.c lib/notify.h
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+all cqueues: liblua5.1-cqueues liblua5.2-cqueues
 
 
-install: $(DESTDIR)$(luacpath)/_cqueues.so \
-         $(DESTDIR)$(luapath)/cqueues.lua \
-         $(DESTDIR)$(luapath)/cqueues/socket.lua \
-         $(DESTDIR)$(luapath)/cqueues/errno.lua \
-         $(DESTDIR)$(luapath)/cqueues/signal.lua \
-         $(DESTDIR)$(luapath)/cqueues/thread.lua \
-         $(DESTDIR)$(luapath)/cqueues/notify.lua \
-         $(DESTDIR)$(luapath)/cqueues/dns/resolver.lua \
-         $(DESTDIR)$(luapath)/cqueues/dns/config.lua \
-         $(DESTDIR)$(luapath)/cqueues/dns/hosts.lua \
-         $(DESTDIR)$(luapath)/cqueues/dns/hints.lua \
-         $(DESTDIR)$(luapath)/cqueues/dns/record.lua \
-         $(DESTDIR)$(luapath)/cqueues/dns/packet.lua
+#
+# I N S T A L L  &  U N I N S T A L L  R U L E S
+#
+define INSTALL_$(d)
+LUAC$(1)_$(d) = $$(or $$(call LUAPATH_$(d), $(1), luac), true)
 
-$(DESTDIR)$(luacpath)/_cqueues.so: cqueues.so
-	mkdir -p $(@D)
-	cp -p $< $@
+MODS$(1)_$(d) = \
+	$$(DESTDIR)$(2)/_cqueues.so \
+	$$(DESTDIR)$(3)/cqueues.lua \
+	$$(DESTDIR)$(3)/cqueues/socket.lua \
+	$$(DESTDIR)$(3)/cqueues/errno.lua \
+	$$(DESTDIR)$(3)/cqueues/signal.lua \
+	$$(DESTDIR)$(3)/cqueues/thread.lua \
+	$$(DESTDIR)$(3)/cqueues/notify.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/resolver.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/config.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/hosts.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/hints.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/record.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/packet.lua
 
-$(DESTDIR)$(luapath)/cqueues.lua: cqueues.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+.INTERMEDIATE: liblua$(1)-cqueues-install
 
-$(DESTDIR)$(luapath)/cqueues/socket.lua: socket.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+install liblua$(1)-cqueues-install: $$(MODS$(1)_$$(d))
 
-$(DESTDIR)$(luapath)/cqueues/errno.lua: errno.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+$$(DESTDIR)$(2)/_cqueues.so: $$(d)/$(1)/cqueues.so
+	$$(MKDIR) -p $$(@D)
+	cp -p $$< $$@
 
-$(DESTDIR)$(luapath)/cqueues/signal.lua: signal.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+$$(DESTDIR)$(3)/%.lua: $$(d)/%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
+	$$(MKDIR) -p $$(@D)
+	cp -p $$< $$@
 
-$(DESTDIR)$(luapath)/cqueues/thread.lua: thread.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+$$(DESTDIR)$(3)/cqueues/%.lua: $$(d)/%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
+	$$(MKDIR) -p $$(@D)
+	cp -p $$< $$@
 
-$(DESTDIR)$(luapath)/cqueues/notify.lua: notify.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+$$(DESTDIR)$(3)/cqueues/dns/%.lua: $$(d)/dns.%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
+	$$(MKDIR) -p $$(@D)
+	cp -p $$< $$@
 
-$(DESTDIR)$(luapath)/cqueues/dns/resolver.lua: dns.resolver.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+.PHONY: liblua$(1)-cqueues-uninstall
 
-$(DESTDIR)$(luapath)/cqueues/dns/config.lua: dns.config.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+liblua$(1)-cqueues-uninstall:
+	$(RM) -f $$(MODS$(1)_$(d))
+	-$(RMDIR) $$(DESTDIR)$(3)/cqueues/dns
+	-$(RMDIR) $$(DESTDIR)$(3)/cqueues
 
-$(DESTDIR)$(luapath)/cqueues/dns/hosts.lua: dns.hosts.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+uninstall: liblua$(1)-cqueues-uninstall
 
-$(DESTDIR)$(luapath)/cqueues/dns/hints.lua: dns.hints.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+endef # INSTALL_$(d)
 
-$(DESTDIR)$(luapath)/cqueues/dns/record.lua: dns.record.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+$(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 
-$(DESTDIR)$(luapath)/cqueues/dns/packet.lua: dns.packet.lua
-	mkdir -p $(@D)
-	$(LUAC) -p $<
-	cp -p $< $@
+$(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
 
-.PHONY: clean clean~
 
-clean:
-	rm -rf errno.c *.so *.o lib/*.o *.dSYM
-	rm -f .config
+#
+# C L E A N  R U L E S
+#
+.PHONY: $(d)/clean $(d)/clean~ clean clean~
 
-clean~: clean
-	rm -f *~ lib/*~
+$(d)/clean:
+	rm -rf $(@D)/errno.c $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2
 
-help:
+$(d)/clean~: $(d)/clean
+	rm -f $(@D)/*~
+
+clean: $(d)/clean
+
+clean~: $(d)/clean~
+
+
+#
+# H E L P  R U L E S
+#
+.PHONY: $(d)/help help
+
+$(d)/help:
 	@echo "Available targets:"
 	@echo ""
-	@echo "       all - build all binary targets"
-	@echo "cqueues.so - build cqueues.so module"
-	@echo "   install - install cqueues modules"
-	@echo "     clean - rm binary targets, object files, debugging symbols, etc"
-	@echo "    clean~ - clean + rm *~"
-	@echo "      help - echo this help message"
+	@echo "    all   - build all binary targets"
+	@echo "cqueues   - build 5.1/cqueues.so and 5.2/cqueues.so modules"
+	@echo "install   - install cqueues Lua 5.1 and 5.2 modules"
+	@echo "uninstall - install cqueues Lua 5.1 and 5.2 modules"
+	@echo "  clean   - rm binary targets, object files, debugging symbols, etc"
+	@echo " clean~   - clean + rm *~"
+	@echo "   help   - echo this help message"
 	@echo ""
 	@echo "Some important Make variables:"
 	@echo ""
 	@echo "    prefix - path to install root"
-	@echo 'luainclude - path to Lua headers ($$(prefix)/include/lua/5.2)'
-	@echo '   luapath - install path for Lua modules ($$(prefix)/share/lua/5.2)'
-	@echo '  luacpath - install path for Lua C modules ($$(prefix)/lib/lua/5.2)'
-	@echo '      LUAC - path to luac utility ($$(bindir)/luac)'
+	@echo ' lua51path - install path for Lua 5.1 modules ($$(lua51path))'
+	@echo 'lua51cpath - install path for Lua 5.1 C modules ($$(lua51cpath))'
+	@echo ' lua52path - install path for Lua 5.1 modules ($$(lua51path))'
+	@echo 'lua52cpath - install path for Lua 5.1 C modules ($$(lua51cpath))'
 	@echo ""
 	@echo "(NOTE: all the common GNU-style paths are supported, including"
 	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"
 	@echo ""
 	@echo "Report bugs to <william@25thandClement.com>"
+
+help: $(d)/help
+
+
+endif # include guard
+
+# non-recursive epilogue
+d := $(dirstack_$(sp))
+sp := $(basename $(sp))
