@@ -20,13 +20,18 @@ include $(d)/lib/GNUmakefile
 #
 OS_$(d) = $(shell $(d)/../mk/vendor.os)
 LUAPATH_$(d) = $(shell env CC="$(CC)" CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(<D)/../mk/lua.path -krxm3 -I$(DESTDIR)$(includedir) -I/usr/include -I/usr/local/include -P$(DESTDIR)$(bindir) -P$(bindir) -L$(DESTDIR)$(libdir) -L$(libdir) -v$(1) $(2))
+VENDOR_$(d) = $(or $(CQUEUES_VENDOR),$(shell $(<D)/../mk/changelog author))
+VERSION_$(d) = $(or $(CQUEUES_VERSION),$(shell $(<D)/../mk/changelog version))
+COMMIT_$(d) = $(shell $(<D)/../mk/changelog commit)
 
 CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..))
-CPPFLAGS_$(d) += -DCQUEUES_COMMIT='"$(shell git show --pretty='%H' HEAD 2>/dev/null | sed -n '1p')"'
-
 CFLAGS_$(d) = $(CFLAGS_$(abspath $(@D)/../..))
 LDFLAGS_$(d) = $(LDFLAGS_$(abspath $(@D)/../..))
 SOFLAGS_$(d) = $(SOFLAGS_$(abspath $(@D)/../..))
+
+CPPFLAGS_$(d) += $(and $(VENDOR_$(<D)),-DCQUEUES_VENDOR='"$(VENDOR_$(<D))"')
+CPPFLAGS_$(d) += $(and $(VERSION_$(<D)),-DCQUEUES_VERSION=$(VERSION_$(<D))L)
+CPPFLAGS_$(d) += $(and $(COMMIT_$(<D)),-DCQUEUES_COMMIT='"$(COMMIT_$(<D))"')
 
 ifeq ($(OS_$(d)), Linux)
 LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lrt -lm -pthread

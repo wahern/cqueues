@@ -1,0 +1,92 @@
+#!/bin/sh
+set -e # strict errors
+set -u # don't expand unbound variables
+set -f # disable pathname expansion
+set -C # noclobber
+\unalias -a # no command surprises
+export LC_ALL=C # no locale headaches
+unset IFS # no field splitting surprises
+
+
+RELPATH=${0%/*}
+: RELPATH=${RELPATH:-.}
+
+CHANGELOG=${RELPATH}/../debian/changelog
+ROOTDIR=${RELPATH}/..
+
+GIT="$(command -v git)"
+
+
+changelog() {
+	if [ ! -f ${CHANGELOG} ]; then
+		printf -- "${CHANGELOG}: No such file\n" >&2
+		exit 1
+	fi
+
+	cat ${CHANGELOG}
+}
+
+
+usage() {
+	cat <<-EOF
+	usage: ${0##*/} [-h] version|author|commit
+	  -h  print this usage message
+
+	version  most recent package version number
+	author   author of most recent log message
+	commit   Git hash of most recent commit
+
+	Report bugs to <william@25thandClement.com>
+	EOF
+}
+
+while getopts h OPT; do
+	case "${OPT}" in
+	h)
+		usage
+		exit 0
+		;;
+	*)
+		usage >&2
+		exit 1
+		;;
+	esac
+done
+
+shift $(($OPTIND - 1))
+
+
+case "${1:-version}" in
+version)
+	changelog | sed -ne '
+		s/.*(\([1-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\).*).*/\1/
+		t Found
+		d
+		:Found
+		p
+		q
+	'
+	;;
+author)
+	changelog | sed -ne '
+		s/.*<\([^>]*@[^>]*\)>.*/\1/
+		t Found
+		d
+		:Found
+		p
+		q
+	'
+	;;
+commit)
+	test -n "${GIT}" -a -d ${ROOTDIR}/.git || exit 1
+
+	cd ${ROOTDIR}
+	${GIT} show --pretty='%H' HEAD 2>/dev/null | sed -n '1p'
+	;;
+*)
+	usage >&2
+	exit 1
+	;;
+esac
+
+exit 0

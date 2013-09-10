@@ -169,6 +169,23 @@ redhat-clean rpm-clean: $(d)/redhat-clean
 endif # redhat guard
 
 
+#
+# R E L E A S E  T A R B A L L  R U L E S
+#
+ifneq "$(filter $(abspath $(d))/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+
+CQUEUES_VERSION := $(shell $(d)/mk/changelog version)
+
+.PHONY: $(d)/cqueues-$(CQUEUES_VERSION).tgz release
+
+$(d)/cqueues-$(CQUEUES_VERSION).tgz:
+	cd $(@D) && git archive --format=tar --prefix=$(basename $(@F))/ HEAD | gzip -c > $@
+
+release: $(d)/cqueues-$(CQUEUES_VERSION).tgz
+
+endif # release guard
+
+
 endif # include guard
 
 # non-recursive epilogue
