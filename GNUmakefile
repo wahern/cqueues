@@ -81,7 +81,9 @@ cc-option ?= $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 VENDOR_OS_$(d) := $(shell $(d)/mk/vendor.os)
 VENDOR_CC_$(d) := $(shell env CC="$(CC)" $(d)/mk/vendor.cc)
 
+ifneq ($(VENDOR_OS_$(d)), OpenBSD)
 CPPFLAGS_$(d) += -D_REENTRANT -D_THREAD_SAFE -D_GNU_SOURCE
+endif
 
 ifeq ($(VENDOR_OS_$(d)), SunOS)
 CPPFLAGS_$(d) += -Usun -D_XPG4_2 -D__EXTENSIONS__
