@@ -1020,10 +1020,11 @@ static int pk_toPEM(lua_State *L) {
 			"public", "PublicKey",
 			"private", "PrivateKey",
 //			"params", "Parameters",
+			NULL,
 		};
 
 		switch (checkoption(L, i, NULL, opts)) {
-		case 0: case 1:
+		case 0: case 1: /* public, PublicKey */
 			if (!PEM_write_bio_PUBKEY(bio, key))
 				return throwssl(L, "pubkey:__tostring");
 
@@ -1032,7 +1033,7 @@ static int pk_toPEM(lua_State *L) {
 
 			BIO_reset(bio);
 			break;
-		case 2: case 3:
+		case 2: case 3: /* private, PrivateKey */
 			if (!PEM_write_bio_PrivateKey(bio, key, 0, 0, 0, 0, 0))
 				throwssl(L, "pubkey:__tostring");
 
@@ -1040,7 +1041,8 @@ static int pk_toPEM(lua_State *L) {
 			lua_pushlstring(L, pem, len);
 
 			break;
-		case 4: case 5:
+#if 0
+		case 4: case 5: /* params, Parameters */
 			/* EVP_PKEY_base_id not in OS X */
 			switch (EVP_PKEY_type(key->type)) {
 			case EVP_PKEY_RSA:
@@ -1093,6 +1095,7 @@ static int pk_toPEM(lua_State *L) {
 			BIO_reset(bio);
 
 			break;
+#endif
 		default:
 			lua_pushnil(L);
 
@@ -2164,7 +2167,7 @@ static int xc_getBasicConstraint(lua_State *L) {
 		int n = 0, i, top;
 
 		for (i = 2, top = lua_gettop(L); i <= top; i++) {
-			switch (checkoption(L, i, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
+			switch (checkoption(L, i, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", NULL })) {
 			case 0:
 				lua_pushboolean(L, CA);
 				n++;
@@ -2220,7 +2223,7 @@ static int xc_setBasicConstraint(lua_State *L) {
 	} else {
 		lua_settop(L, 3);
 
-		switch (checkoption(L, 2, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", 0 })) {
+		switch (checkoption(L, 2, 0, (const char *[]){ "CA", "pathLen", "pathLenConstraint", NULL })) {
 		case 0:
 			luaL_checktype(L, 3, LUA_TBOOLEAN);
 			CA = lua_toboolean(L, 3);
@@ -2385,7 +2388,7 @@ static int xc_sign(lua_State *L) {
 
 static int xc__tostring(lua_State *L) {
 	X509 *crt = checksimple(L, 1, X509_CERT_CLASS);
-	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
+	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", NULL });
 	BIO *bio = getbio(L);
 	char *pem;
 	long len;
@@ -2598,7 +2601,7 @@ static int xr_sign(lua_State *L) {
 
 static int xr__tostring(lua_State *L) {
 	X509_REQ *csr = checksimple(L, 1, X509_CSR_CLASS);
-	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", 0 });
+	int fmt = checkoption(L, 2, "pem", (const char *[]){ "pem", NULL });
 	BIO *bio = getbio(L);
 	char *pem;
 	long len;
