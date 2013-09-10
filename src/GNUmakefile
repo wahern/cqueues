@@ -67,13 +67,19 @@ $$(d)/$(1)/notify.o: $$(d)/lib/notify.h
 
 liblua$(1)-cqueues: $$(d)/$(1)/cqueues.so
 
-all cqueues: liblua$(1)-cqueues
+cqueues: liblua$(1)-cqueues
 
 endef # BUILD_$(d)
 
 $(eval $(call BUILD_$(d),5.1))
 
 $(eval $(call BUILD_$(d),5.2))
+
+ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+
+all: liblua5.1-cqueues liblua5.2-cqueues
+
+endif
 
 
 #
@@ -100,7 +106,7 @@ MODS$(1)_$(d) = \
 
 .INTERMEDIATE: liblua$(1)-cqueues-install
 
-install liblua$(1)-cqueues-install: $$(MODS$(1)_$$(d))
+liblua$(1)-cqueues-install: $$(MODS$(1)_$$(d))
 
 $$(DESTDIR)$(2)/_cqueues.so: $$(d)/$(1)/cqueues.so
 	$$(MKDIR) -p $$(@D)
@@ -128,13 +134,19 @@ liblua$(1)-cqueues-uninstall:
 	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues/dns
 	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues
 
-uninstall: liblua$(1)-cqueues-uninstall
-
 endef # INSTALL_$(d)
 
 $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
+
+ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+
+install: liblua5.1-cqueues-install liblua5.2-cqueues-install
+
+uninstall: liblua5.1-cqueues-uninstall liblua5.2-cqueues-uninstall
+
+endif
 
 
 #

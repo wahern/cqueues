@@ -34,7 +34,6 @@ LDFLAGS_$(d) += -lssl -lcrypto
 #
 # C O M P I L A T I O N  R U L E S
 #
-#all: $(d)/openssl.so
 
 define BUILD_$(d)
 
@@ -50,13 +49,17 @@ $$(d)/$(1)/openssl.o: $$(d)/openssl.c $$(d)/compat52.h
 
 liblua$(1)-openssl: $$(d)/$(1)/openssl.so
 
-all: liblua$(1)-openssl
-
 endef # BUILD_$(d)
 
 $(eval $(call BUILD_$(d),5.1))
 
 $(eval $(call BUILD_$(d),5.2))
+
+ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+
+all: liblua5.1-openssl liblua5.2-openssl
+
+endif
 
 
 #
@@ -88,18 +91,22 @@ $$(DESTDIR)$(2)/_openssl.so: $$(d)/$(1)/openssl.so
 	$$(CP) -p $$< $$@
 
 $$(DESTDIR)$(3)/openssl/%.lua: $$(d)/openssl.%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
 	$$(MKDIR) -p $$(@D)
 	$$(CP) -p $$< $$@
 
 $$(DESTDIR)$(3)/openssl/x509/%.lua: $$(d)/openssl.x509.%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
 	$$(MKDIR) -p $$(@D)
 	$$(CP) -p $$< $$@
 
 $$(DESTDIR)$(3)/openssl/ssl/%.lua: $$(d)/openssl.ssl.%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
 	$$(MKDIR) -p $$(@D)
 	$$(CP) -p $$< $$@
 
 $$(DESTDIR)$(3)/openssl/ssl/%.lua: $$(d)/openssl.ssl.%.lua
+	$$(LUAC$(1)_$(d)) -p $$<
 	$$(MKDIR) -p $$(@D)
 	$$(CP) -p $$< $$@
 
@@ -113,14 +120,19 @@ liblua$(1)-openssl-uninstall:
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/ssl
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl
 
-uninstall: liblua$(1)-openssl-uninstall
-
 endef # INSTALL_$(d)
-
 
 $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
+
+ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+
+install: liblua5.1-openssl-install liblua5.2-openssl-install
+
+uninstall: liblua5.1-openssl-uninstall liblua5.2-openssl-uninstall
+
+endif
 
 
 #
