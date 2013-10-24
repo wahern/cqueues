@@ -29,8 +29,16 @@ local loader = function(loader, ...)
 
 	local start = thread.start; thread.start = function(enter, ...)
 		local function init(self, pipe, nloaders, ...)
+			local function loadblob(chunk, source, ...)
+				if _VERSION == "Lua 5.1" then
+					return loadstring(chunk, source)
+				else
+					return load(chunk, source, ...)
+				end
+			end
+
 			local function preload(name, code)
-				local loader = load(code, nil, "bt", _ENV)
+				local loader = loadblob(code, nil, "bt", _ENV)
 				package.loaded[name] = loader(loader, name)
 			end
 
@@ -48,7 +56,7 @@ local loader = function(loader, ...)
 
 			local enter = unpack(nloaders, ...)
 
-			return load(enter)(pipe, select(nloaders * 2 + 2, ...))
+			return loadblob(enter)(pipe, select(nloaders * 2 + 2, ...))
 		end
 
 		local function pack(i, enter, ...)
