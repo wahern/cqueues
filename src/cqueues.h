@@ -184,7 +184,7 @@ static inline int cqs_setfd(int fd, int flags) {
 	}
 
 	if (flags & O_CLOEXEC) {
-		if (-1 == fcntl(fd, F_SETFL, 1))
+		if (-1 == fcntl(fd, F_SETFD, FD_CLOEXEC))
 			return errno;
 	}
 
