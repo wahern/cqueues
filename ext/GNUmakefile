@@ -153,6 +153,45 @@ clean: $(d)/clean
 clean~: $(d)/clean~
 
 
+#
+# H E L P  R U L E S
+#
+.PHONY: $(d)/help help
+
+$(d)/help:
+	@echo
+	@echo "ext/ targets:"
+	@echo ""
+	@echo "    all      - build all binary targets"
+	@echo "openssl      - invokes openssl5.1 and openssl5.2"
+	@echo "openssl5.1   - build 5.1/openssl.so"
+	@echo "openssl5.2   - build 5.2/openssl.so"
+	@echo "install      - invokes install5.1 and install5.2"
+	@echo "install5.1   - install openssl Lua 5.1 modules"
+	@echo "install5.2   - install openssl Lua 5.2 modules"
+	@echo "uninstall    - invokes uninstall5.1 and uninstall5.2"
+	@echo "uninstall5.1 - uninstall openssl Lua 5.1 modules"
+	@echo "uninstall5.2 - uninstall openssl Lua 5.2 modules"
+	@echo "  clean      - rm binary targets, object files, debugging symbols, etc"
+	@echo " clean~      - clean + rm *~"
+	@echo "   help      - echo this help message"
+	@echo ""
+	@echo "Some important Make variables:"
+	@echo ""
+	@echo "    prefix - path to install root"
+	@echo ' lua51path - install path for Lua 5.1 modules ($$(lua51path))'
+	@echo 'lua51cpath - install path for Lua 5.1 C modules ($$(lua51cpath))'
+	@echo ' lua52path - install path for Lua 5.1 modules ($$(lua51path))'
+	@echo 'lua52cpath - install path for Lua 5.1 C modules ($$(lua51cpath))'
+	@echo ""
+	@echo "(NOTE: all the common GNU-style paths are supported, including"
+	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"
+	@echo ""
+	@echo "Report bugs to <william@25thandClement.com>"
+
+help: $(d)/help
+
+
 endif # include guard
 
 # non-recursive epilogue

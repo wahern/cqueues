@@ -1,25 +1,14 @@
-== WARNING ==
+== API DOCUMENTATION ==
 
-This document is likely out-of-date. Please refer to the PDF available at
+Please refer to the PDF available at
 
 	http://25thandclement.com/~william/projects/cqueues.pdf
 
-== DEPENDENCIES ==
+
+== BUILD DEPENDENCIES ==
 
 The Makefile requires GNU Make. The source code should build with recent
 GCC, clang, or Solaris SunPro compilers.
-
-The Makefile expects Lua 5.2 headers to exist in $(includedir)/lua/5.2. This
-is unfortunately not the default install location for Lua headers, although
-it quite obviously ought to be. To source the usual location, try something
-like
-
-	make luainclude=/opt/lua52/include
-
-Other important Make variables to consider: luapath, luacpath, and LUAC.
-They default to $(prefix)/share/lua/5.2, $(prefix)/lib/lua/5.2, and
-$(prefix)/bin/luac respectively. `make help' will emit additional usage
-information.
 
 If you use your own Makefile, note that GCC and especially clang may emit
 copious warnings about initializers and unused parameters. These warnings
@@ -32,447 +21,141 @@ POSIX-compatible shell script. By default it processes GCC's -dM macro list
 (clang also supports this option). For SunPro it uses a slightly cruder
 method.
 
+Because the location of Lua 5.2 and LuaJIT include headers are completely
+random across systems, the build system relies on mk/lua.path to locate the
+correct headers, including selecting the correct headers at compile-time
+when conflicting headers are encountered. mk/lua.path uses various POSIX
+utilities. For more information, see
+
+	http://25thandclement.com/~william/projects/luapath.html
+
 cqueues should work (plus or minus a few tweaks) on recent versions of
 Linux, OS X, Solaris, NetBSD, FreeBSD, OpenBSD, and derivatives. The only
 other possible candidate is AIX, if and when support for AIX's pollset
 interface is added to the embedded "kpoll" library.
 
-cqueues principally targets Lua 5.2. It's not fully portable to Lua 5.1
-because cqueues relies on ephemeron tables to prevent coroutine/controller
-reference cycles, and because Lua 5.1 does not support yielding from
-metamethods and iterators. LuaJIT removes the latter of these handicaps, and
-so cqueues targets LuaJIT secondarily. In lieu of ephemeron tables,
-application code must be sure not to hold a reference to a parent controller
-in an upvalue of the coroutine. Instead, use cqueues.running to temporarily
-acquire a reference.
-
-== USAGE ==
-
-cqueues works through a simple protocol. When a coroutine yields to its
-parent cqueues controller, it can pass 1 or more objects. These objects are
-introspected for 3 methods: :pollfd(), :events(), and :timeout(). These
-methods specify the parameters for installing descriptor and timeout events.
-When one of these events fires, cqueues will resume the coroutine, passing
-the relevant object(s) which were interested in the triggered event. It's
-analogous to calling poll(2).
-
-:pollfd() returns a descriptor integer or nil. This descriptor must remain
-in existence until the owner object is garbage collected, cqueues.cancel is
-used, the coroutine executes one additional yield/resume cycle (so the old
-descriptor is expired from the descriptor queue), or until after the
-coroutine exits. If the descriptor is closed prematurely, the kernel will
-remove it from the internal descriptor queue, bringing it out of sync with
-the controller, and probably causing cqueues:step() to return EBADF or
-ENOENT errors.
-
-:events() returns a string or nil. cqueues searches the string for the
-characters 'r' (POLLIN) or 'w' (POLLOUT). These are events to associate with
-the descriptor.
-
-:timeout() returns a number or nil. This specifies an independent timeout
-event. To effect a simple 1 second timeout, you can do
-
-	coroutine.yield({ timeout = function() return 1.0 end })
-
-Instantiated cqueues and socket objects implement all three methods. In
-particular, this means that you can stack cqueues, or poll on a cqueues
-object using some other event loop library. Each cqueues object is entirely
-self-contained, without any global state.
-
-
-== API ==
-== "cqueues" Module ==
-
-cqueues.VENDOR
-	String describing the vendor. Default: "william@25thandClement.com".
 
-cqueues.VERSION
-	Number describing the latest release version. Formatted as YYYYMMDD.
+== BUILD OVERVIEW ==
 
-cqueues.COMMIT
-	Git commit hash string of HEAD.
+There is no separate ./configure step. System introspection occurs during
+compile-time. However, the `configure' Make target can be used to cache the
+build environment.
 
-cqueues.interpose(name, function)
-	Add or interpose a cqueues class method. Returns the previous
-	method, if any.
-
-cqueues.monotime()
-	Return the system's monotonic clock time, usually
-	clock_gettime(CLOCK_MONOTONIC).
-
-cqueues.cancel(fd)
-	Cancels the specified descriptor for all controllers. This ensures
-	safe early closure of descriptors. However, the complexity is
-	approximately M 2 log N, where M is the number of controllers, and N
-	the number of descriptors per controller (presuming they're equal).
-	For most purposes this is entirely inconsequential. By contrast,
-	however, implicit cancellation through GC or yield/resume cycling is
-	O(1).
 
-	Any Lua thread polling on the canceled descriptor is placed on it's
-	controller's pending queue.
+== BUILD ENVIRONMENT ==
 
-cqueues.new()
-	Create a new cqueues object
+All the common GNU-style installation path variables are supported,
+including prefix, bindir, libdir, datadir, includedir, and DESTDIR. These
+additional path variables are also allowed:
 
-cqueue:attach(coroutine)
-	Attach and manage the specified coroutine.
+lua51path  - install path for Lua 5.1 modules, e.g. $(prefix)/share/lua/5.1
+lua51cpath - install path for Lua 5.1 C modules, e.g. $(prefix)/lib/lua/5.1
+lua52path  - install path for Lua 5.2 modules, e.g. $(prefix)/share/lua/5.2
+lua52cpath - install path for Lua 5.2 C modules, e.g. $(prefix)/lib/lua/5.2
 
-cqueue:wrap(function)
-	Execute function inside a new coroutine managed by the controller.
+All the common GNU-style compiler variables are supported, including CC,
+CPPFLAGS, CFLAGS, LDFLAGS, and SOFLAGS. Note that you can specify the path
+to both Lua 5.1 and Lua 5.2 include headers at the same time in CPPFLAGS;
+the build system will work things out to ensure the correct headers are
+loaded at compile-time.
 
-cqueue:step([timeout])
-	Step once through the event queue. If no timeout is provided, it
-	blocks indefinitely until a descriptor event or timeout fires.
+Invoking the `configure' target will cache the Make environment and reload
+the variable values on subsequent invocations. Variables can be modified on
+an individual basis after this.
 
-	Returns true or false. If false, then a second return value holds
-	the error message. :step() can be called again after errors, for
-	example if a coroutine threw an error. [However, at the moment the
-	controller cannot recover from synchronization errors with the
-	kernel queue. In the future, internal, unrecoverable errors should
-	be thrown and only coroutine errors returned directly.]
 
-cqueue:empty()
-	Returns true if there are no more descriptor or timeout events
-	queued, false otherwise.
+== BUILD TARGETS ==
 
-cqueue:count()
-	Returns a count of managed coroutines.
+cqueues targets both the Lua 5.2 and Lua 5.1 (LuaJIT) API. For various
+reasons the build system is capable of building both 5.1 and 5.2 modules
+simultaneously in a single Make invocation. Therefore, there are many
+seemingly superfluous target names, either out of necessity or for
+convenience.
 
-cqueue:cancel(fd)
-	Cancel the specified descriptor for that controller. See
-	cqueues.cancel.
+liblua5.1-cqueues
+	Build Lua 5.1 cqueues modules 
 
-cqueue:pause([signal ...])
-	A wrapper around pselect which suspends execution until the
-	controller polls ready or a signal is delivered. This interface is
-	provided as a very basic least common denominator for simple slave
-	process controller loops and similar scenarios, where immediate
-	response to signal delivery is required on platforms like Solaris
-	without a proper signal polling primitive. (cqueues.signal.listen on
-	Solaris merely periodically queries the pending set.)
+liblua5.2-cqueues
+	Build Lua 5.2 cqueues modules
 
-	Much better alternatives are possible for Solaris, but require
-	global process state or an LWP thread helper.
+liblua5.1-cqueues-install
+	Install Lua 5.1 cqueues modules
 
+liblua5.2-cqueues-install
+	Install Lua 5.2 cqueues modules
 
-== "cqueues.socket" Module ==
+liblua5.1-cqueues-uninstall
+	Uninstall Lua 5.1 cqueues modules
 
-socket.interpose(name, function)
-	Add or interpose a socket class method. Returns the previous
-	method, if any.
+liblua5.2-cqueues-uninstall
+	Uninstall Lua 5.2 cqueues modules
 
-socket.connect(host, port, [mode])
-	Return a new socket immediately ready for reading or writing. DNS
-	lookup and TCP connection handling are handled transparently.
+liblua5.1-openssl
+	Build Lua 5.1 openssl modules
 
-	`mode' is a string containing 1 or more of the following flags
+liblua5.2-openssl
+	Build Lua 5.2 openssl modules
 
-		"t" - text mode; input and output undergo LF<->CRLF
-		      translation
-		"b" - binary mode; no LF/CRLF translation
+liblua5.1-openssl-install
+	Install Lua 5.1 openssl modules
 
-		"n" - no output buffering
-		"l" - line buffered output
-		"f" - fully buffered output
+liblua5.2-openssl-install
+	Install Lua 5.2 openssl modules
 
-	At present the default mode is "tl", text translation and line
-	buffering. This may change depending on how much confusion it
-	creates, perhaps to "tn".
+liblua5.1-openssl-uninstall
+	Uninstall Lua 5.1 openssl modules
 
-socket.connect{ ... }
-	Like socket.connect, but takes a table of options:
+liblua5.2-openssl-uninstall
+	Uninstall Lua 5.2 openssl modules
 
-	.host = IP address or host domain name (string)
+cqueues5.1
+	Synonym for liblua5.1-cqueues
 
-	.port = host port (string or number)
+cqueues5.2
+	Synonym for liblua5.2-cqueues
 
-	.path = UNIX domain socket path (string)
+cqueues
+	Invokes cqueues5.1 and cqueues5.2
 
-	.mode = fchmod or chmod socket after creating UNIX domain socket
-	        (string or number, default:nil). NOTE: There's a race
-	        between bind and the following chmod. fchmod is attempted
-	        before the bind, however it fails on BSD derivatives. Not
-	        all platforms obey UNIX domain socket permissions (e.g.
-	        Solaris). Check peer credentials, instead, to be portable.
+openssl5.1
+	Synonym for liblua5.1-openssl
 
-	.mask = Set and restore umask when binding UNIX domain sockets
-	        (string or number, default:nil). NOTE: Not all platforms
-		obey UNIX domain socket permissions. Check peer credentials,
-		instead, to be portable.
+openssl5.2
+	Synonym for liblua5.2-openssl
 
-	.unlink = unlink socket path before binding (boolean, default:false)
+openssl
+	Invokes openssl5.1 and openssl5.2
 
-	.reuseaddr = enable SO_REUSEADDDR (boolean, default:true)
+install5.1
+	Invokes liblua5.1-cqueues-install and liblua5.1-openssl-install
 
-	.nodelay = enable TCP_NODELAY (boolean, default:false)
+install5.2
+	Invokes liblua5.2-cqueues-install and liblua5.2-openssl-install
 
-	.nopush = enable TCP_NOPUSH, TCP_CORK, or equivalent (boolean,
-	          default:false)
+uninstall5.1
+	Invokes liblua5.1-cqueues-uninstall and liblua5.1-openssl-uninstall
 
-	.nonblock = enable O_NONBLOCK (boolean, default:true)
+uninstall5.2
+	Invokes liblua5.2-cqueues-uninstall and liblua5.2-openssl-uninstall
 
-	.cloexec = enable O_CLOEXEC (boolean, default:true)
+install
+	Invokes install5.1 and install5.2
 
-	.nosigpipe = enable O_NOSIGPIPE, SO_NOSIGPIPE, MSG_NOSIGNAL,
-	             or equivalent (boolean, default:true)
+uninstall
+	Invokes uninstall5.1 and uninstall5.2
 
-	.verify = require SSL certificate verification (boolean,
-	          default:false, UNFINISHED)
+all
+	Build all binary targets (the default)
 
-	.time = track elapsed time for statistics (boolean, default:true)
+clean
+	rm binary targets, object files, debugging symbols, etc
 
-socket.listen(host, port)
-	Return a new socket immediately ready for accepting connections.
+clean~
+	clean + rm *~
 
-socket.listen{ ... }
-	Like socket.listen. See socket.connect{}.
+debian
+	Build debian packages liblua5.1-cqueues, liblua5.2-cqueues,
+	liblua5.1-openssl and liblua5.2-openssl using the dpkg-buildpackage
+	utility. The Make variables DPKG_BUILDPACKAGE and
+	DPKG_BUILDPACKAGE_OPTIONS can be used to manipulate this process.
 
-socket.pair([type])
-	Return two bound sockets. Type is either "stream" or "dgram", and
-	defaults to "stream".
-
-socket.setvbuf(mode [, size])
-	Set the default output buffering. See socket:setvbuf.
-
-socket.setmode([input], [output])
-	Set the default I/O mode. See socket:setmode.
-
-socket.onerror([function])
-	Set the default error handler. See socket:onerror.
-
-socket:connect()
-	Wait for connection establishment to succeed. [UNFINISHED]
-
-socket:listen()
-	Wait for socket binding to complete, which may have been delayed if
-	the specified host required DNS resolution. [UNFINISHED]
-
-socket:accept([timeout])
-	Wait for and return an incoming client socket on a listening object.
-
-socket:clients([timeout])
-	Iterator over socket:accept: for con in srv:clients() do ... end.
-
-socket:certify(certificate)
-	Associate a certificate for subsequent :starttls operation.
-	[UNFINISHED]
-
-socket:starttls()
-	Place socket into TLS mode. Returns immediately. [FUTURE: take
-	parameter to return immediately or wait for channel establishment.]
-
-socket:setvbuf(mode [, size])
-	Same as Lua file:setvbuf. Analagous to "n", "l", and "f" mode flags.
-
-socket:setmode([input], [output])
-	See socket.connect for mode flags. One or both modes can be nil,
-	in which case the mode is left unchanged.
-
-	Returns the previous input and output modes as fixed-sized strings.
-	At present the first character is one of "t" or "b", and the second
-	character one of "n", "l", "f", or "-" (for in the input mode).
-
-socket:onerror([function])
-	Set the error handler. The error handler is passed the tuple
-	socket-object, method-string, error-number, and is expected to
-	either throw an error or return an error-number--to be returned to
-	the caller as part of the documented return interface.
-
-	The default error handler returns EPIPE and ETIMEDOUT directly, and
-	throws everything else. EAGAIN is handled internally for blocking
-	calls.
-
-	Returns the previous error handler, if any.
-
-socket:read(...)
-	Same as Lua file:read, except for addition of limit and header
-	formats. See socket:recv. [UNFINISHED: Does not yet implement "*a"
-	or "*n".]
-
-socket:write(...)
-	Same as Lua file:write.
-
-socket:flush([mode])
-	Flushes output buffer. Mode is one of the "nlf" flags described in
-	socket.connect. A nil mode implies "n", i.e. no buffering and thus
-	effects a full flush. An empty string mode resolves to the existing
-	configured output buffering mode.
-
-socket:uncork()
-	Disables TCP_NOPUSH, TCP_CORK, or equivalent socket option.
-
-socket:recv(format, [mode])
-	Similar to file:read, except takes only a single format and returns
-	immediately. On success returns the string or number. On failure
-	returns nil and a numeric error code--usually errno.EAGAIN or
-	errno.EPIPE. Does not use error handler.
-
-	In addition to the Lua file:read formats, also supports limit block
-	reads. That is, whereas :recv(1024) returns nil or a 1024 byte
-	string, :recv(-1024) returns nil or a string with length in the
-	range 1 to 1024 bytes.
-
-	Also adds "*h" and "*H" modes, for reading MIME compliant headers,
-	including folded headers. *h will strip all CRLF, while *H returns
-	the complete header with CRLFs intact--unless the input is in text
-	mode, then CRs are stripped. Returns nil when a compliant header
-	cannot be read from the beginning of the buffer.
-
-	Mode is as described in socket.connect. Defaults to configured
-	input mode.
-
-socket:send(string, i, j, [mode])
-	Write out the slice string[i,j]. Similar to passing string:sub(i, j)
-	without instantiating a new string object. Immediately returns 2
-	values: count of bytes written (0 to j-i+1), and numerical error
-	code, if any (usually errno.EAGAIN or errno.EPIPE).
-
-
-socket:recvfd([prepbufsiz])
-	Receive an ancillary socket message with accompanying descriptor.
-	prepbufsiz specifies the maximum message size to expect.
-
-	This routine bypasses I/O buffering.
-
-	Returns message-string, socket-object on success; nil, nil,
-	error-integer on failure. On success socket-object may still be nil.
-	Message truncation is treated as an error condition.
-
-socket:sendfd(msg, socket)
-	Send an ancillary socket message with accompanying descriptor. msg
-	should be a non-zero-length string, which some platforms require.
-	socket should be a Lua file handle, cqueues socket, integer
-	descriptor, or nil.
-
-	This routine bypasses I/O buffering.
-
-	Returns true on sucess; false, error-integer on failure.
-
-socket:shutdown(how)
-	Simple binding to shutdown(2). `how' is a string containing one or
-	both of the flags 'r' or 'w'.
-
-		"r" - analagous to shutdown(SHUT_RD)
-		"w" - analagous to shutdown(SHUT_WR)
-
-socket:eof()
-	Returns 2 boolean values representing whether EOF has been received
-	on the input channel, and whether the output channel has signaled
-	closure (e.g. EPIPE).
-
-socket:close()
-	Explicitly and immediately close all internal descriptors. This
-	routine ensures all descriptors are properly cancelled.
-
-
-== "cqueues.errno" Module ==
-
-errno[]
-	A table mapping all system error string macros to numerical error
-	codes, and all numerical error codes to system error string macros.
-	Thus, errno.EAGAIN evaluates to a numeric error code, and
-	errno[errno.EAGAIN] evaluates to the string "EAGAIN".
-
-errno.strerror(code)
-	Returns string returned by strerror(3). [FUTURE: Will also handle
-	embedded socket.c and dns.c library error codes.]
-
-
-== "cqueues.signal Module ==
-
-signal[]
-	A table mapping signal string macros to numerical signal codes.
-	Example: cqueues.signal.SIGKILL likely evaluates to the number 9.
-
-signal.strsignal(code)
-	Returns string returned by strsignal(3).
-
-signal.ignore(signal [, signal ...])
-	Set the signal handler to SIG_IGN for the specified signals.
-
-signal.default(signal [, signal ...])
-	Set the signal handler to SIG_DFL for the specified signals.
-
-signal.discard(signal [, signal ...])
-	Set the signal handler to a builtin "noop" handler for the specified
-	signals. Use this is you want signals to interrupt syscalls.
-
-signal.block(signal [, signal ...])
-	Block the specified signals.
-
-signal.unblock(signal [, signal ...])
-	Unblock the specified signals.
-
-signal.raise(signal [, signal ...])
-	raise(3) the specified signals.
-
-signal.interpose(name, function)
-	Add or interpose a signal listener class method. Returns the
-	previous method, if any.
-
-signal.listen(signal [, signal ...])
-	Returns a signal listener object for the specified signals.
-	Semantics differ between platforms:
-
-	o BSD kqueue provides the most intuitive and desirable behavior. All
-	listeners will detect a signal sent to the process irrespective of
-	whether the signal is ignored, blocked, or delivered. However,
-	EVFILT_SIGNAL is edge-triggered, which means no notification of
-	subsequent delivery of a pending signal which has been unblocked.
-
-	o Linux signalfd will not detect ignored or delivered signals, and
-	only one signalfd object will poll ready per signal.
-
-	o Solaris provides no signal polling kernel primitive. Instead, the
-	pending set is periodically queried using sigtimedwait. See
-	signal:settimeout. Like Linux, only one listener can notify per
-	interrupt.
-
-	To be portable the application must block the relevant signals. See
-	signal.block. Otherwise, neither Linux nor Solaris will be able to
-	detect the interrupt. Any signal should be assigned to one listener
-	only, although any listener may query multiple signals.
-
-	Alternatively, applications may start a dedicated thread to field
-	incoming signals, and send notifications over a socket. In the
-	future this may be provided as an optional listener implementation.
-
-	See also cqueue:pause for another, if crude, alternative.
-
-signal:wait([timeout])
-	Polls for the signal set passed to the constructor. Returns the
-	signal number, or nil on timeout.
-
-signal:settimeout(timeout)
-	Set the polling period for implementations such as Solaris which
-	lack a signal polling kernel primitive. On such systems signal:wait
-	merely queries the pending set every `timeout' seconds.
-
-
-== "cqueues.thread" Module [IN PROGRESS] ==
-
-thread.self()
-	Returns the Lua VM thread context. Lua instances not started via
-	thread.start return nil.
-
-thread.start(function [, string [, string ...]])
-	Generates a socket pair, starts a POSIX LWP thread, initializes a
-	new Lua VM instance, preloads the cqueues library, and loads and
-	executes the specified function from the new LWP thread and Lua
-	instance. The function receives as the first parameter one end of
-	the socket pair--instantiated as a cqueues.socket object--followed
-	by the string parameters passed to thread.start.
-
-	Returns a thread object and a socket object--the other end of the
-	socket pair. On error returns two nils and an error code.
-
-thread:join([timeout])
-	Wait for the thread to terminate. Calling the equivalent of
-	thread.self():join() is disallowed.
-
-	Returns a boolean and error value. If false, error value is an error
-	code describing a local error, usually EAGAIN or ETIMEDOUT.  If
-	true, error value is 1) an error code describing a system error
-	which the thread encountered, 2) an error message string returned by
-	the new Lua instance, or 3) nil if completed successfully.
