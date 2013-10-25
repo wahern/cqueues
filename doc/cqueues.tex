@@ -162,25 +162,25 @@ For other warnings or errors, patches are welcome.
 
 \section{Makefile}
 
-The Makefile requires GNU Make, usually installed as gmake on platforms other than Linux or OS X.
+The Makefile requires GNU Make, usually installed as gmake on platforms other than Linux or OS X. The actual \texttt{Makefile} proxies to \texttt{GNUmakefile}. As long as \texttt{gmake} is installed on non-GNU systems you can invoke your system's \texttt{make}.
 
-The Makefile expects Lua headers to exist in \$(includedir)/lua/5.2. This is unfortunately not the default install location for Lua headers, although it quite obviously ought to be. To source the usual location, try something like
+There is no separate \texttt{./configure} step. System introspection occurs during compile-time. However, the ``configure'' make target can be used to cache the build environment.
 
-\begin{code}{sh}
-make prefix=/opt/lua52 luainclude=/opt/lua52/include
-\end{code}
+All the common GNU-style installation path variables are supported, including \texttt{prefix}, \texttt{bindir}, \texttt{libdir}, \texttt{datadir}, \texttt{includedir}, and \texttt{DESTDIR}. These additional path variables are also allowed:
 
-Other important Make variables to consider include luapath, luacpath, and LUAC. They default to \$(prefix)/share/lua/5.2, \$(prefix)/lib/lua/5.2, and \$(prefix)/bin/luac, respectively. The install target can build the library from scratch, so there's no need to `make depends' or `make all'. `make help' will emit additional usage information.
+\begin{description}
 
-%\begin{code}{sh}
-%make prefix=/opt/luajit \
-%     lua52include=/opt/luajit/include/luajit-2.0 \
-%     lua52cpath=/opt/luajit/lib/lua/5.1 \
-%     lua52path=/opt/luajit/share/lua/5.1 \
-%     LUAC=/usr/bin/true
-%\end{code}
+\item[\texttt{lua51path}] install path for Lua 5.1 modules, e.g. \texttt{\$(prefix)/share/lua/5.1}
+\item[\texttt{lua51cpath}] install path for Lua 5.1 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.1}
+\item[\texttt{lua52path}] install path for Lua 5.2 modules, e.g. \texttt{\$(prefix)/share/lua/5.2}
+\item[\texttt{lua52cpath}] install path for Lua 5.2 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.2}
 
-\key{M4} and \key{awk} are required to generate errno.c, which also relies on mk/errno.ls and mk/macros.ls to enumerate the system error macro names.
+\end{description}
+
+All the common GNU-style compiler variables are supported, including \texttt{CC}, \texttt{CPPFLAGS}, \texttt{CFLAGS}, \texttt{LDFLAGS}, and \texttt{SOFLAGS}. Note that you can specify the path to both Lua 5.1 and Lua 5.2 include headers at the same time in CPPFLAGS; the build system will work things out to ensure the correct headers are loaded at compile-time.
+
+
+
 
 \chapter{Usage}
 
@@ -292,39 +292,21 @@ Attach and manage the specified coroutine.
         Execute function inside a new coroutine managed by the controller.
 
 \subsubsection[\routine{cqueues:step}]{\routine{cqueue:step([timeout])}}
-Step once through the event queue. If no timeout is provided, \emph{it suspends the process indefinitely} until a descriptor event or timeout fires.
+Step once through the event queue. Unless the timeout is explicitly specified as \texttt{0}, or unless the current thread of execution is a \cqueues managed coroutine, \emph{it suspends the process indefinitely or for the specified timeout} until a descriptor event or timeout fires.
 
 Returns true or false. If false---i.e. a coroutine exited abnormally---then a second return value holds the error message. :step can be called again after errors.
 
-For a controller running from the main Lua thread and which may suspend the process, the convention is to loop like
-
-\begin{code}{lua}
-while not cq:empty() do
-	local okay, why = cq:step()
-
-	if not okay then
-		-- handle error described by `why'
-	end
-end
-\end{code}
-
-For a controller in a coroutine managed by another controller, something like this might be more appropriate
-
-\begin{code}{lua}
-while not cq:empty() do
-	cqueues.poll(cq)
-
-	local okay, why = cq:step(0.0)
-
-	if not okay then
-		--- handle error
-	end
-end
-\end{code}
-
-A controller is a pollable object, and the descriptor returned by the :pollfd method can be used with third-party event libraries, whether written in Lua, C, or some other language. Don't forget to also schedule a timeout using the value from :timeout.
+If embedding \cqueues within an existing application, the top-level :step invocation should always specify a 0 timeout. A controller is a pollable object, and the descriptor returned by the :pollfd method can be used with third-party event libraries, whether written in Lua, C, or some other language. Don't forget to also schedule a timeout using the value from :timeout.
 
 %[However, at the moment the controller cannot recover from synchronization errors with the kernel queue. In the future, internal, unrecoverable errors should be thrown and only coroutine errors returned directly.]
+
+\subsubsection[\routine{cqueues:loop}]{\routine{cqueue:loop([timeout])}}
+
+Invoke \method{cqueues:step} in a loop, exiting on error, timeout, or if the event queue is empty. Returns true if no error occurred, or false and an error string from \method{cqueues:step}.
+
+\subsubsection[\routine{cqueues:errors}]{\routine{cqueue:errors([timeout])}}
+
+Returns an iterator function over errors returned from \routine{cqueues:loop}. If \routine{cqueues:loop} returns successfully because of an empty event queue, or if the timeout expires, returns nothing, which terminates any for-loop. `timeout' is cumulative over the entire iteration, not simply passed as-is to each invocation of \routine{cqueues:loop}.
 
 \subsubsection[\routine{cqueues:empty}]{\routine{cqueue:empty()}}
 Returns true if there are no more descriptor or timeout events queued, false otherwise.
