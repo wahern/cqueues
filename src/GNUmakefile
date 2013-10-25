@@ -74,6 +74,8 @@ liblua$(1)-cqueues: $$(d)/$(1)/cqueues.so
 
 cqueues: liblua$(1)-cqueues
 
+cqueues$(1): liblua$(1)-cqueues
+
 endef # BUILD_$(d)
 
 $(eval $(call BUILD_$(d),5.1))
@@ -109,9 +111,9 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/cqueues/dns/record.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/packet.lua
 
-.INTERMEDIATE: liblua$(1)-cqueues-install
+.INTERMEDIATE: liblua$(1)-cqueues-install install$(1)
 
-liblua$(1)-cqueues-install: $$(MODS$(1)_$$(d))
+liblua$(1)-cqueues-install install$(1): $$(MODS$(1)_$$(d))
 
 $$(DESTDIR)$(2)/_cqueues.so: $$(d)/$(1)/cqueues.so
 	$$(MKDIR) -p $$(@D)
@@ -132,12 +134,14 @@ $$(DESTDIR)$(3)/cqueues/dns/%.lua: $$(d)/dns.%.lua
 	$$(MKDIR) -p $$(@D)
 	cp -p $$< $$@
 
-.PHONY: liblua$(1)-cqueues-uninstall
+.PHONY: liblua$(1)-cqueues-uninstall uninstall$(1)
 
 liblua$(1)-cqueues-uninstall:
 	$$(RM) -f $$(MODS$(1)_$(d))
 	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues/dns
 	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues
+
+uninstall$(1): liblua$(1)-cqueues-uninstall
 
 endef # INSTALL_$(d)
 
@@ -178,13 +182,19 @@ clean~: $(d)/clean~
 $(d)/help:
 	@echo "Available targets:"
 	@echo ""
-	@echo "    all   - build all binary targets"
-	@echo "cqueues   - build 5.1/cqueues.so and 5.2/cqueues.so modules"
-	@echo "install   - install cqueues Lua 5.1 and 5.2 modules"
-	@echo "uninstall - install cqueues Lua 5.1 and 5.2 modules"
-	@echo "  clean   - rm binary targets, object files, debugging symbols, etc"
-	@echo " clean~   - clean + rm *~"
-	@echo "   help   - echo this help message"
+	@echo "    all      - build all binary targets"
+	@echo "cqueues      - build 5.1/cqueues.so and 5.2/cqueues.so modules"
+	@echo "cqueues5.1   - build 5.1/cqueues.so"
+	@echo "cqueues5.2   - build 5.2/cqueues.so"
+	@echo "install      - install cqueues Lua 5.1 and 5.2 modules"
+	@echo "install5.1   - install cqueues Lua 5.1 modules"
+	@echo "install5.2   - install cqueues Lua 5.2 modules"
+	@echo "uninstall    - install cqueues Lua 5.1 and 5.2 modules"
+	@echo "uninstall5.1 - install cqueues Lua 5.1 modules"
+	@echo "uninstall5.2 - install cqueues Lua 5.2 modules"
+	@echo "  clean      - rm binary targets, object files, debugging symbols, etc"
+	@echo " clean~      - clean + rm *~"
+	@echo "   help      - echo this help message"
 	@echo ""
 	@echo "Some important Make variables:"
 	@echo ""

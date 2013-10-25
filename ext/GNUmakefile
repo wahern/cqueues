@@ -37,7 +37,7 @@ LDFLAGS_$(d) += -lssl -lcrypto
 
 define BUILD_$(d)
 
-.INTERMEDIATE: liblua$(1)-openssl
+.INTERMEDIATE: liblua$(1)-openssl openssl$(1)
 
 $$(d)/$(1)/openssl.so: $$(d)/$(1)/openssl.o
 	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
@@ -47,7 +47,7 @@ $$(d)/$(1)/openssl.o: $$(d)/openssl.c $$(d)/compat52.h
 	$$(MKDIR) -p $$(@D)
 	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(call LUAPATH_$$(<D), $$(notdir $$(@D)), cppflags) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
 
-liblua$(1)-openssl: $$(d)/$(1)/openssl.so
+liblua$(1)-openssl openssl$(1): $$(d)/$(1)/openssl.so
 
 endef # BUILD_$(d)
 
@@ -84,7 +84,7 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/openssl/hmac.lua \
 	$$(DESTDIR)$(3)/openssl/cipher.lua
 
-.INTERMEDIATE: liblua$(1)-openssl-install
+.INTERMEDIATE: liblua$(1)-openssl-install install$(1)
 
 $$(DESTDIR)$(2)/_openssl.so: $$(d)/$(1)/openssl.so
 	$$(MKDIR) -p $$(@D)
@@ -110,15 +110,17 @@ $$(DESTDIR)$(3)/openssl/ssl/%.lua: $$(d)/openssl.ssl.%.lua
 	$$(MKDIR) -p $$(@D)
 	$$(CP) -p $$< $$@
 
-liblua$(1)-openssl-install: $$(MODS$(1)_$$(d))
+liblua$(1)-openssl-install install$(1): $$(MODS$(1)_$$(d))
 
-.PHONY: liblua$(1)-openssl-uninstall uninstall
+.PHONY: liblua$(1)-openssl-uninstall uninstall$(1) uninstall
 
 liblua$(1)-openssl-uninstall:
 	$$(RM) -f $$(MODS$(1)_$(d))
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/x509
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/ssl
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl
+
+uninstall$(1): liblua$(1)-openssl-uninstall
 
 endef # INSTALL_$(d)
 
