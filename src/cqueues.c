@@ -66,8 +66,8 @@
 #define CQUEUES_VENDOR "william@25thandClement.com"
 #endif
 
-#ifndef CQUEUES_VENDOR
-#define CQUEUES_VERSION 20130909L
+#ifndef CQUEUES_VERSION
+#define CQUEUES_VERSION 20131023L
 #endif
 
 

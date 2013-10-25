@@ -1,3 +1,10 @@
+liblua-cqueues (20131023-0) unstable; urgency=low
+
+  * Fix bug which cleared O_NONBLOCK flag on thread descriptors.
+  * Fix thread entry function loading for Lua 5.1/LuaJIT.
+
+ -- William Ahern <william@25thandClement.com>  Wed, 23 Oct 2013 19:36:06 -0700
+
 liblua-cqueues (20130909-0) unstable; urgency=low
 
   * Refactor build to be non-recursive.
