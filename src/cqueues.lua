@@ -10,7 +10,7 @@ local loader = function(loader, ...)
 		core.poll(timeout)
 	end -- core.sleep
 
-	local step = core.interpose("step", function (self, timeout)
+	local step; step = core.interpose("step", function (self, timeout)
 		if core.running() then
 			core.poll(self, timeout)
 
