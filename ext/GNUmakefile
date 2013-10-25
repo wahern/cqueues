@@ -37,7 +37,7 @@ LDFLAGS_$(d) += -lssl -lcrypto
 
 define BUILD_$(d)
 
-.INTERMEDIATE: liblua$(1)-openssl openssl$(1)
+.SECONDARY: liblua$(1)-openssl openssl$(1)
 
 $$(d)/$(1)/openssl.so: $$(d)/$(1)/openssl.o
 	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
@@ -56,8 +56,13 @@ $(eval $(call BUILD_$(d),5.1))
 $(eval $(call BUILD_$(d),5.2))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+.SECONDARY: all5.1 all5.2 all
 
-all: liblua5.1-openssl liblua5.2-openssl
+all5.1: liblua5.1-openssl
+
+all5.2: liblua5.2-openssl
+
+all: all5.1 all5.2
 
 endif
 
@@ -84,7 +89,7 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/openssl/hmac.lua \
 	$$(DESTDIR)$(3)/openssl/cipher.lua
 
-.INTERMEDIATE: liblua$(1)-openssl-install install$(1)
+.SECONDARY: liblua$(1)-openssl-install openssl$(1)-install
 
 $$(DESTDIR)$(2)/_openssl.so: $$(d)/$(1)/openssl.so
 	$$(MKDIR) -p $$(@D)
@@ -110,17 +115,15 @@ $$(DESTDIR)$(3)/openssl/ssl/%.lua: $$(d)/openssl.ssl.%.lua
 	$$(MKDIR) -p $$(@D)
 	$$(CP) -p $$< $$@
 
-liblua$(1)-openssl-install install$(1): $$(MODS$(1)_$$(d))
+liblua$(1)-openssl-install openssl$(1)-install: $$(MODS$(1)_$$(d))
 
-.PHONY: liblua$(1)-openssl-uninstall uninstall$(1) uninstall
+.PHONY: liblua$(1)-openssl-uninstall openssl$(1)-uninstall
 
-liblua$(1)-openssl-uninstall:
+liblua$(1)-openssl-uninstall openssl$(1)-uninstall:
 	$$(RM) -f $$(MODS$(1)_$(d))
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/x509
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl/ssl
 	-$$(RMDIR) $$(DESTDIR)$(3)/openssl
-
-uninstall$(1): liblua$(1)-openssl-uninstall
 
 endef # INSTALL_$(d)
 
@@ -129,10 +132,21 @@ $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+.SECONDARY: install5.1 install5.2 install
 
-install: liblua5.1-openssl-install liblua5.2-openssl-install
+install5.1: liblua5.1-openssl-install
 
-uninstall: liblua5.1-openssl-uninstall liblua5.2-openssl-uninstall
+install5.2: liblua5.2-openssl-install
+
+install: install5.1 install5.2
+
+.PHONY: uninstall5.1 uninstall5.2 uninstall
+
+uninstall5.1: liblua5.1-openssl-uninstall
+
+uninstall5.2: liblua5.2-openssl-uninstall
+
+uninstall: uninstall5.1 uninstall5.2
 
 endif
 

@@ -144,6 +144,12 @@ install
 uninstall
 	Invokes uninstall5.1 and uninstall5.2
 
+all5.1:
+	Build all Lua 5.1 binary targets
+
+all5.2:
+	Build all Lua 5.2 binary targets
+
 all
 	Build all binary targets (the default)
 

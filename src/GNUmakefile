@@ -68,13 +68,9 @@ $$(d)/$(1)/dns.o: $$(d)/lib/dns.h
 
 $$(d)/$(1)/notify.o: $$(d)/lib/notify.h
 
-.INTERMEDIATE: liblua$(1)-cqueues
+.SECONDARY: liblua$(1)-cqueues cqueues$(1) cqueues
 
-liblua$(1)-cqueues: $$(d)/$(1)/cqueues.so
-
-cqueues: liblua$(1)-cqueues
-
-cqueues$(1): liblua$(1)-cqueues
+liblua$(1)-cqueues cqueues$(1) cqueues: $$(d)/$(1)/cqueues.so
 
 endef # BUILD_$(d)
 
@@ -83,8 +79,13 @@ $(eval $(call BUILD_$(d),5.1))
 $(eval $(call BUILD_$(d),5.2))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+.SECONDARY: all all5.1 all5.2
 
-all: liblua5.1-cqueues liblua5.2-cqueues
+all5.1: liblua5.1-cqueues
+
+all5.2: liblua5.2-cqueues
+
+all: all5.1 all5.2
 
 endif
 
@@ -111,9 +112,9 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/cqueues/dns/record.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/packet.lua
 
-.INTERMEDIATE: liblua$(1)-cqueues-install install$(1)
+.SECONDARY: liblua$(1)-cqueues-install cqueues$(1)-install
 
-liblua$(1)-cqueues-install install$(1): $$(MODS$(1)_$$(d))
+liblua$(1)-cqueues-install cqueues$(1)-install: $$(MODS$(1)_$$(d))
 
 $$(DESTDIR)$(2)/_cqueues.so: $$(d)/$(1)/cqueues.so
 	$$(MKDIR) -p $$(@D)
@@ -134,14 +135,12 @@ $$(DESTDIR)$(3)/cqueues/dns/%.lua: $$(d)/dns.%.lua
 	$$(MKDIR) -p $$(@D)
 	cp -p $$< $$@
 
-.PHONY: liblua$(1)-cqueues-uninstall uninstall$(1)
+.PHONY: liblua$(1)-cqueues-uninstall cqueues$(1)-uninstall
 
-liblua$(1)-cqueues-uninstall:
+liblua$(1)-cqueues-uninstall cqueues$(1)-uninstall:
 	$$(RM) -f $$(MODS$(1)_$(d))
 	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues/dns
 	-$$(RMDIR) $$(DESTDIR)$(3)/cqueues
-
-uninstall$(1): liblua$(1)-cqueues-uninstall
 
 endef # INSTALL_$(d)
 
@@ -150,10 +149,21 @@ $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+.SECONDARY: install5.1 install5.2 install
 
-install: liblua5.1-cqueues-install liblua5.2-cqueues-install
+install5.1: liblua5.1-cqueues-install
 
-uninstall: liblua5.1-cqueues-uninstall liblua5.2-cqueues-uninstall
+install5.2: liblua5.2-cqueues-install
+
+install: install5.1 install5.2
+
+.PHONY: uninstall5.1 uninstall5.2 uninstall
+
+uninstall5.1: liblua5.1-cqueues-uninstall
+
+uninstall5.2: liblua5.2-cqueues-uninstall
+
+uninstall: uninstall5.1 uninstall5.2
 
 endif
 
