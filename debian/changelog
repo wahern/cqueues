@@ -1,3 +1,9 @@
+liblua-cqueues (20131201-0) unstable; urgency=low
+
+  * Obey SOCK_DGRAM sematics in input byte buffering code.
+
+ -- William Ahern <william@25thandClement.com>  Sun, 01 Dec 2013 20:39:15 -0800
+
 liblua-cqueues (20131023-0) unstable; urgency=low
 
   * Fix bug which cleared O_NONBLOCK flag on thread descriptors.
