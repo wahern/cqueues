@@ -1,8 +1,9 @@
-liblua-cqueues (20131201-0) unstable; urgency=low
+liblua-cqueues (20131204-0) unstable; urgency=low
 
   * Obey SOCK_DGRAM sematics in input byte buffering code.
+  * Implement slurp operation.
 
- -- William Ahern <william@25thandClement.com>  Sun, 01 Dec 2013 20:39:15 -0800
+ -- William Ahern <william@25thandClement.com>  Sun, 04 Dec 2013 11:41:39 -0800
 
 liblua-cqueues (20131023-0) unstable; urgency=low
 

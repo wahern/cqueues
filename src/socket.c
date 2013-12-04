@@ -1138,7 +1138,24 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	case LSO_NUMBER:
 		return luaL_argerror(L, op.index, "*n not implemented yet");
 	case LSO_SLURP:
-		return luaL_argerror(L, op.index, "*a not implemented yet");
+		error = lso_fill(S, (size_t)-1);
+
+		if (!(S->ibuf.eom || S->ibuf.eof))
+			goto error;
+
+		fifo_rvec(&S->ibuf.fifo, &iov, 1);
+
+		if ((count = iov.iov_len)) {
+			if (op.mode & LSO_TEXT)
+				iov_trimcr(&iov);
+
+			lua_pushlstring(L, iov.iov_base, iov.iov_len);
+			fifo_discard(&S->ibuf.fifo, count);
+		} else {
+			lua_pushnil(L);
+		}
+
+		break;
 	case LSO_CHOMP:
 		if ((error = lso_getline(S, &iov)))
 			goto error;
@@ -1235,7 +1252,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	return 1;
 error:
 	lua_pushnil(L);
-	lua_pushinteger(L, error);
+	lua_pushinteger(L, lso_asserterror(error));
 
 	return 2;
 } /* lso_recv3() */
