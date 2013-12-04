@@ -48,6 +48,7 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/hmac.h>
+#include <openssl/rand.h>
 
 #include <lua.h>
 #include <lualib.h>
@@ -3752,6 +3753,56 @@ int luaopen__openssl_cipher(lua_State *L) {
 
 	return 1;
 } /* luaopen__openssl_cipher() */
+
+
+/*
+ * Rand - openssl.rand
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int rand_bytes(lua_State *L) {
+	int size = luaL_checkint(L, 1);
+	luaL_Buffer B;
+	int count = 0, n;
+
+	luaL_buffinit(L, &B);
+
+	while (count < size) {
+		n = MIN((size - count), LUAL_BUFFERSIZE);
+
+		if (!RAND_bytes((void *)luaL_prepbuffer(&B), n))
+			return throwssl(L, "rand.bytes");
+
+		luaL_addsize(&B, n);
+		count += n;
+	}
+
+	luaL_pushresult(&B);
+
+	return 1;
+} /* rand_bytes() */
+
+
+static int rand_ready(lua_State *L) {
+	lua_pushboolean(L, RAND_status() == 1);
+
+	return 1;
+} /* rand_ready() */
+
+
+static const luaL_Reg rand_globals[] = {
+	{ "bytes", &rand_bytes },
+	{ "ready", &rand_ready },
+	{ NULL,    NULL },
+};
+
+int luaopen__openssl_rand(lua_State *L) {
+	initall(L);
+
+	luaL_newlib(L, rand_globals);
+
+	return 1;
+} /* luaopen__openssl_rand() */
 
 
 static void initall(lua_State *L) {

@@ -87,7 +87,8 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/openssl/ssl.lua \
 	$$(DESTDIR)$(3)/openssl/digest.lua \
 	$$(DESTDIR)$(3)/openssl/hmac.lua \
-	$$(DESTDIR)$(3)/openssl/cipher.lua
+	$$(DESTDIR)$(3)/openssl/cipher.lua \
+	$$(DESTDIR)$(3)/openssl/rand.lua
 
 .SECONDARY: liblua$(1)-openssl-install openssl$(1)-install
 
