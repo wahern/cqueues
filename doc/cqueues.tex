@@ -454,14 +454,14 @@ These are not hard limits for SOCK\_STREAM sockets. The input buffer argument si
 
 For SOCK\_DGRAM sockets, the input buffer sets a hard limit on the size of datagram messages. Any message over this size will be truncated, unless a previous block- or line-buffered read operation forced the buffer to be reallocated to a larger size.
 
-Returns the previous and input and output buffer sizes, or throws an error if the buffers could not be reallocated.
+Returns the previous input and output buffer sizes, or throws an error if the buffers could not be reallocated.
 
 \subsubsection[\fn{socket:setmaxline}]{\fn{socket:setmaxline([input] [, output])}}
 Sets the maximum input and output length for line-buffered operations. Either size can be nil or none, in which case the size is left unchanged.
 
 These are hard limits. For line-buffered input operations, if a \lf character is not found within this limit then the data is processed as-if EOF was reached at this boundary. For line-buffered output, a chunk is always flushed at this boundary.
 
-Returns the previous and input and output sizes.
+Returns the previous input and output sizes.
 
 \subsubsection[\fn{socket:onerror}]{\fn{socket:onerror([function])}}
 Set the error handler. The error handler is passed the tuple socket-object, method-string, error-number, and is expected to either throw an error or return an error code---to be returned to the caller as part of the documented return interface.
