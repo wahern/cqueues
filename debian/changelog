@@ -1,10 +1,11 @@
-liblua-cqueues (20131204-0) unstable; urgency=low
+liblua-cqueues (20131205-0) unstable; urgency=low
 
   * Obey SOCK_DGRAM sematics in input byte buffering code.
   * Implement slurp operation.
   * Add openssl.rand module.
+  * Add :setbufsiz and :setmaxline.
 
- -- William Ahern <william@25thandClement.com>  Sun, 04 Dec 2013 14:55:47 -0800
+ -- William Ahern <william@25thandClement.com>  Sun, 05 Dec 2013 17:30:58 -0800
 
 liblua-cqueues (20131023-0) unstable; urgency=low
 

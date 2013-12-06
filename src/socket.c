@@ -383,26 +383,37 @@ static int lso_imode(const char *str, int init) {
 } /* lso_imode() */
 
 
-static void lso_pushmode(lua_State *L, int mode) {
-	char flag[8];
+static void lso_pushmode(lua_State *L, int mode, _Bool libc) {
+	if (libc) {
+		if (mode & LSO_NOBUF)
+			lua_pushstring(L, "no");
+		else if (mode & LSO_LINEBUF)
+			lua_pushstring(L, "line");
+		else if (mode & LSO_FULLBUF)
+			lua_pushstring(L, "full");
+		else
+			lua_pushnil(L); /* XXX: shouldn't happen */
+	} else {
+		char flag[8];
 
-	if (mode & LSO_TEXT)
-		flag[0] = 't';
-	else if (mode & LSO_BINARY)
-		flag[0] = 'b';
-	else
-		flag[0] = '-';
+		if (mode & LSO_TEXT)
+			flag[0] = 't';
+		else if (mode & LSO_BINARY)
+			flag[0] = 'b';
+		else
+			flag[0] = '-';
 
-	if (mode & LSO_NOBUF)
-		flag[1] = 'n';
-	else if (mode & LSO_LINEBUF)
-		flag[1] = 'l';
-	else if (mode & LSO_FULLBUF)
-		flag[1] = 'f';
-	else
-		flag[1] = '-';
+		if (mode & LSO_NOBUF)
+			flag[1] = 'n';
+		else if (mode & LSO_LINEBUF)
+			flag[1] = 'l';
+		else if (mode & LSO_FULLBUF)
+			flag[1] = 'f';
+		else
+			flag[1] = '-';
 
-	lua_pushlstring(L, flag, 2);
+		lua_pushlstring(L, flag, 2);
+	}
 } /* lso_pushmode() */
 
 
@@ -463,7 +474,7 @@ static struct luasocket *lso_newsocket(lua_State *L, int family, int type) {
 } /* lso_newsocket() */
 
 
-static lso_error_t lso_prepsocket(struct luasocket *S) {
+static lso_error_t lso_adjbufs(struct luasocket *S) {
 	int error;
 
 	if ((error = fifo_realloc(&S->ibuf.fifo, S->ibuf.bufsiz)))
@@ -473,6 +484,11 @@ static lso_error_t lso_prepsocket(struct luasocket *S) {
 		return error;
 
 	return 0;
+} /* lso_adjbufs() */
+
+
+static lso_error_t lso_prepsocket(struct luasocket *S) {
+	return lso_adjbufs(S);
 } /* lso_prepsocket() */
 
 
@@ -848,28 +864,35 @@ static int lso_checkvbuf(struct lua_State *L, int index) {
 
 
 static lso_nargs_t lso_setvbuf_(struct lua_State *L, struct luasocket *S, int modeidx, int bufidx) {
+	lso_pushmode(L, S->obuf.mode, 1);
+	lua_pushnumber(L, S->obuf.bufsiz);
+
 	S->obuf.mode = lso_checkvbuf(L, modeidx) | (S->obuf.mode & ~LSO_ALLBUF);
 
 	if (S->obuf.mode & (LSO_LINEBUF|LSO_FULLBUF))
 		S->obuf.bufsiz = lso_optsize(L, bufidx, LSO_BUFSIZ);
 
-	return 0;
+	return 2;
 } /* lso_setvbuf_() */
 
 
 static lso_nargs_t lso_setvbuf2(struct lua_State *L) {
+	lua_settop(L, 2);
+
 	return lso_setvbuf_(L, lso_prototype(L), 1, 2);
 } /* lso_setvbuf2() */
 
 
 static lso_nargs_t lso_setvbuf3(struct lua_State *L) {
+	lua_settop(L, 3);
+
 	return lso_setvbuf_(L, lso_checkself(L, 1), 2, 3);
 } /* lso_setvbuf3() */
 
 
 static lso_nargs_t lso_setmode_(struct lua_State *L, struct luasocket *S, int ridx, int widx) {
-	lso_pushmode(L, S->ibuf.mode);
-	lso_pushmode(L, S->obuf.mode);
+	lso_pushmode(L, S->ibuf.mode, 0);
+	lso_pushmode(L, S->obuf.mode, 0);
 
 	if (!lua_isnil(L, ridx))
 		S->ibuf.mode = LSO_RDMASK(lso_imode(luaL_checkstring(L, ridx), LSO_INITMODE));
@@ -893,6 +916,70 @@ static lso_nargs_t lso_setmode3(struct lua_State *L) {
 
 	return lso_setmode_(L, lso_checkself(L, 1), 2, 3);
 } /* lso_setmode3() */
+
+
+static lso_nargs_t lso_setbufsiz_(struct lua_State *L, struct luasocket *S, int ridx, int widx) {
+	lua_pushnumber(L, S->ibuf.bufsiz);
+	lua_pushnumber(L, S->obuf.bufsiz);
+
+	S->ibuf.bufsiz = lso_optsize(L, ridx, S->ibuf.bufsiz);
+	S->obuf.bufsiz = lso_optsize(L, widx, S->obuf.bufsiz);
+
+	return 2;
+} /* lso_setbufsiz_() */
+
+
+static lso_nargs_t lso_setbufsiz2(struct lua_State *L) {
+	lua_settop(L, 2);
+
+	return lso_setbufsiz_(L, lso_prototype(L), 1, 2);
+} /* lso_setbufsiz2() */
+
+
+static lso_nargs_t lso_setbufsiz3(struct lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	int n, error;
+
+	lua_settop(L, 3);
+
+	n = lso_setbufsiz_(L, S, 2, 3);
+
+	if ((error = lso_adjbufs(S)))
+		goto error;
+
+	return n;
+error:
+	lua_pushnil(L);
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 3;
+} /* lso_setbufsiz3() */
+
+
+static lso_nargs_t lso_setmaxline_(struct lua_State *L, struct luasocket *S, int ridx, int widx) {
+	lua_pushnumber(L, S->ibuf.maxline);
+	lua_pushnumber(L, S->obuf.maxline);
+
+	S->ibuf.maxline = lso_optsize(L, ridx, S->ibuf.maxline);
+	S->obuf.maxline = lso_optsize(L, widx, S->obuf.maxline);
+
+	return 2;
+} /* lso_setmaxline_() */
+
+
+static lso_nargs_t lso_setmaxline2(struct lua_State *L) {
+	lua_settop(L, 2);
+
+	return lso_setmaxline_(L, lso_prototype(L), 1, 2);
+} /* lso_setmaxline2() */
+
+
+static lso_nargs_t lso_setmaxline3(struct lua_State *L) {
+	lua_settop(L, 3);
+
+	return lso_setmaxline_(L, lso_checkself(L, 1), 2, 3);
+} /* lso_setmaxline3() */
 
 
 static lso_nargs_t lso_onerror_(struct lua_State *L, struct luasocket *S, int fidx) {
@@ -1138,7 +1225,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	case LSO_NUMBER:
 		return luaL_argerror(L, op.index, "*n not implemented yet");
 	case LSO_SLURP:
-		error = lso_fill(S, (size_t)-1);
+		error = lso_fill(S, S->ibuf.bufsiz);
 
 		if (!(S->ibuf.eom || S->ibuf.eof))
 			goto error;
@@ -1863,34 +1950,36 @@ static int lso_interpose(lua_State *L) {
 
 
 static luaL_Reg lso_methods[] = {
-	{ "connect",   &lso_connect1 },
-	{ "listen",    &lso_listen1 },
-	{ "starttls",  &lso_starttls },
-	{ "checktls",  &lso_checktls },
-	{ "setvbuf",   &lso_setvbuf3 },
-	{ "setmode",   &lso_setmode3 },
-	{ "onerror",   &lso_onerror2 },
-	{ "recv",      &lso_recv3 },
-	{ "unget",     &lso_unget2 },
-	{ "send",      &lso_send5 },
-	{ "flush",     &lso_flush },
-	{ "uncork",    &lso_uncork },
-	{ "pending",   &lso_pending },
-	{ "sendfd",    &lso_sendfd3 },
-	{ "recvfd",    &lso_recvfd2 },
-	{ "pack",      &lso_pack4 },
-	{ "unpack",    &lso_unpack2 },
-	{ "fill",      &lso_fill2 },
-	{ "clear",     &lso_clear },
-	{ "pollfd",    &lso_pollfd },
-	{ "events",    &lso_events },
-	{ "shutdown",  &lso_shutdown },
-	{ "eof",       &lso_eof },
-	{ "accept",    &lso_accept },
-	{ "peername",  &lso_peername },
-	{ "localname", &lso_localname },
-	{ "stat",      &lso_stat },
-	{ "close",     &lso_close },
+	{ "connect",    &lso_connect1 },
+	{ "listen",     &lso_listen1 },
+	{ "starttls",   &lso_starttls },
+	{ "checktls",   &lso_checktls },
+	{ "setvbuf",    &lso_setvbuf3 },
+	{ "setmode",    &lso_setmode3 },
+	{ "setbufsiz",  &lso_setbufsiz3 },
+	{ "setmaxline", &lso_setmaxline3 },
+	{ "onerror",    &lso_onerror2 },
+	{ "recv",       &lso_recv3 },
+	{ "unget",      &lso_unget2 },
+	{ "send",       &lso_send5 },
+	{ "flush",      &lso_flush },
+	{ "uncork",     &lso_uncork },
+	{ "pending",    &lso_pending },
+	{ "sendfd",     &lso_sendfd3 },
+	{ "recvfd",     &lso_recvfd2 },
+	{ "pack",       &lso_pack4 },
+	{ "unpack",     &lso_unpack2 },
+	{ "fill",       &lso_fill2 },
+	{ "clear",      &lso_clear },
+	{ "pollfd",     &lso_pollfd },
+	{ "events",     &lso_events },
+	{ "shutdown",   &lso_shutdown },
+	{ "eof",        &lso_eof },
+	{ "accept",     &lso_accept },
+	{ "peername",   &lso_peername },
+	{ "localname",  &lso_localname },
+	{ "stat",       &lso_stat },
+	{ "close",      &lso_close },
 	{ 0, 0 }
 }; /* lso_methods[] */
 
@@ -1902,14 +1991,16 @@ static luaL_Reg lso_metamethods[] = {
 
 
 static luaL_Reg lso_globals[] = {
-	{ "connect",   &lso_connect2 },
-	{ "listen",    &lso_listen2 },
-	{ "fdopen",    &lso_fdopen },
-	{ "pair",      &lso_pair },
-	{ "interpose", &lso_interpose },
-	{ "setvbuf",   &lso_setvbuf2 },
-	{ "setmode",   &lso_setmode2 },
-	{ "onerror",   &lso_onerror1 },
+	{ "connect",    &lso_connect2 },
+	{ "listen",     &lso_listen2 },
+	{ "fdopen",     &lso_fdopen },
+	{ "pair",       &lso_pair },
+	{ "interpose",  &lso_interpose },
+	{ "setvbuf",    &lso_setvbuf2 },
+	{ "setmode",    &lso_setmode2 },
+	{ "setbufsiz",  &lso_setbufsiz2 },
+	{ "setmaxline", &lso_setmaxline2 },
+	{ "onerror",    &lso_onerror1 },
 	{ 0, 0 }
 }; /* lso_globals[] */
 
