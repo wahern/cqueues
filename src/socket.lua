@@ -49,6 +49,20 @@ end
 
 
 --
+-- Throwable socket:setbufsiz
+--
+local setbufsiz; setbufsiz = socket.interpose("setbufsiz", function(self, input, output)
+	local input, output, why = setbufsiz(self, input, output)
+
+	if not input then
+		return nil, nil, oops(self, "setbufsiz", why)
+	end
+
+	return input, output
+end)
+
+
+--
 -- Yielding socket:accept
 --
 local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
