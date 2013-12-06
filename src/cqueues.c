@@ -1293,6 +1293,9 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 	switch (status) {
 	case LUA_YIELD:
 		for (index = 1; index <= lua_gettop(T->L); index++) {
+			if (lua_isnil(L, index))
+				continue;
+
 			if (LUA_OK != (status = event_add(L, Q, T, index)))
 				goto error;
 		}
