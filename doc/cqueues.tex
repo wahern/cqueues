@@ -1504,7 +1504,7 @@ Update the cipher with the specified strings. Returns the final output string on
 
 Binds OpenSSL's random number interfaces.
 
-OpenSSL will automatically attempt to seed itself from the system. The only time this could theoretically fail is if /dev/random (or similar) were not visible or could not be opened. This might happen if within a chroot jail, or if a file descriptor limit were reached.
+OpenSSL will automatically attempt to seed itself from the system. The only time this could theoretically fail is if /dev/urandom (or similar) were not visible or could not be opened. This might happen if within a chroot jail, or if a file descriptor limit were reached.
 
 \subsubsection[\fn{rand.bytes}]{\fn{rand.bytes(count)}}
 
