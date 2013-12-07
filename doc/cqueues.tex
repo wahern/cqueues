@@ -1516,6 +1516,12 @@ Returns a boolean describing whether the CSPRNG has been properly seeded.
 
 In the default CSPRNG engine this routine will also attempt to seed the system if not already. Because seeding only needs to happen once per process to ensure a successful RAND\_bytes invocation\footnote{At least this appeared to be the case when examining the source code of OpenSSL 1.0.1. See md\_rand.c near line 407---``Once we've had enough initial seeding we don't bother to adjust the entropy count, though, because we're not ambitious to provide *information-theoretic* randomness.''}, it may be prudent to assert on rand:ready() at application startup.
 
+\subsubsection[\fn{rand.uniform}]{\fn{rand.uniform([n])}}
+
+Returns a cryptographically strong uniform random integer in the interval $[0, n-1]$. If `n' is omitted, the interval is $[0, 2^{64}-1]$.
+
+The routine operates internally on 64-bit unsigned integers.\footnote{Actually, \texttt{unsigned long long}.} Because neither Lua 5.1 nor 5.2 support 64-bit integers, it's probably best to generate numbers that fit the integral range of your Lua implementation. Lua 5.3 is expected to add a new arithmetic type for 64-bit signed integers in two's-complement representation. This new arithmetic type will be used for return values when available.
+
 \end{Module}
 
 
