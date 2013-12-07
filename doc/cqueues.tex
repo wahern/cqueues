@@ -1560,13 +1560,7 @@ cq:wrap(function()
 	http:close()
 end)
 
-while not cq:empty() do
-	local ok, why = cq:step()
-
-	if not ok then
-		error("cqueue: " .. why)
-	end
-end
+assert(cq:loop())
 \end{example}
 
 
@@ -1594,10 +1588,7 @@ cq:wrap(function()
 	end
 end)
 
-while not cq:empty() do
-	local ok, err = cq:step()
-	if not ok then error("step: " .. err) end
-end
+assert(cq:loop())
 \end{example}
 
 \clearpage
@@ -1622,10 +1613,7 @@ local thr, con = thread.start(function(con, i, j)
 		end
 	end)
 
-	while not cq:empty() do
-		local ok, why = cq:step()
-		if not ok then error(why) end
-	end
+	assert(cq:loop())
 end, 0, 9)
 
 
@@ -1645,10 +1633,7 @@ cq:wrap(function()
 	end
 end)
 
-while not cq:empty() do
-	local ok, err = cq:step()
-	if err then print(err) end
-end
+assert(cq:loop())
 \end{example}
 
 
