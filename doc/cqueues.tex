@@ -1233,9 +1233,9 @@ Returns the public key component as an \module{openssl.pubkey} object.
 
 Sets the public key component referenced by the \module{openssl.pubkey} object `key'.
 
-\subsubsection[\fn{x509:sign}]{\fn{x509:sign(key)}}
+\subsubsection[\fn{x509:sign}]{\fn{x509:sign(key [, type])}}
 
-Signs the instance certificate using the \module{openssl.pubkey} `key'.
+Signs and updates the instance certificate using the \module{openssl.pubkey} `key'. `type' is an optional string describing the digest type. See \module{pubkey:sign}, regarding which types of digests are valid. If `type' is omitted than a default type is used---``sha1'' for RSA keys, ``dss1'' for DSA keys, and ``ecdsa-with-SHA1'' for EC keys.
 
 \subsubsection[\fn{x509:\_\_tostring}]{\fn{x509:\_\_tostring}}
 
