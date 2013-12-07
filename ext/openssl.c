@@ -3790,10 +3790,112 @@ static int rand_ready(lua_State *L) {
 } /* rand_ready() */
 
 
+static unsigned long long rand_llu(lua_State *L) {
+	unsigned long long llu;
+
+	if (!RAND_bytes((void *)&llu, sizeof llu))
+		throwssl(L, "rand.uniform");
+
+	return llu;
+} /* rand_llu() */
+
+/*
+ * The following algorithm for rand_uniform() is taken from OpenBSD's
+ * arc4random_uniform, written by Otto Moerbeek, with subsequent
+ * simplification by Jorden Verwer. Otto's source code comment reads
+ * 
+ *   Uniformity is achieved by generating new random numbers until the one
+ *   returned is outside the range [0, 2**32 % upper_bound). This guarantees
+ *   the selected random number will be inside [2**32 % upper_bound, 2**32)
+ *   which maps back to [0, upper_bound) after reduction modulo upper_bound.
+ *
+ * --
+ * A more bit-efficient approach by the eminent statistician Herman Rubin
+ * can be found in this sci.crypt Usenet post.
+ *
+ *   From: hrubin@odds.stat.purdue.edu (Herman Rubin)
+ *   Newsgroups: sci.crypt
+ *   Subject: Re: Generating a random number between 0 and N-1
+ *   Date: 14 Nov 2002 11:20:37 -0500
+ *   Organization: Purdue University Statistics Department
+ *   Lines: 40
+ *   Message-ID: <ar0igl$1ak2@odds.stat.purdue.edu>
+ *   References: <yO%y9.19646$RO1.373975@weber.videotron.net> <3DCD8D75.40408@nospam.com>
+ *   NNTP-Posting-Host: odds.stat.purdue.edu
+ *   X-Trace: mozo.cc.purdue.edu 1037290837 9316 128.210.141.13 (14 Nov 2002 16:20:37 GMT)
+ *   X-Complaints-To: ne...@news.purdue.edu
+ *   NNTP-Posting-Date: Thu, 14 Nov 2002 16:20:37 +0000 (UTC)
+ *   Xref: archiver1.google.com sci.crypt:78935
+ *   
+ *   In article <3DCD8D7...@nospam.com>,
+ *   Michael Amling  <nos...@nospam.com> wrote:
+ *   >Carlos Moreno wrote:
+ *   
+ *   I have already posted on this, but a repeat might be
+ *   in order.
+ *   
+ *   If one can trust random bits, the most bitwise efficient
+ *   manner to get a single random integer between 0 and N-1
+ *   can be obtained as follows; the code can be made more
+ *   computationally efficient.  I believe it is easier to
+ *   understand with gotos.  I am assuming N>1.
+ *   
+ *   	i = 0;	j = 1;
+ *   
+ *   loop:	j=2*j; i=2*i+RANBIT;
+ *   	if (j < N) goto loop;
+ *   	if (i >= N) {
+ *   		i = i - N;
+ *   		j = j - N;
+ *   		goto loop:}
+ *   	else return (i);
+ *   
+ *   The algorithm works because at each stage i is uniform
+ *   between 0 and j-1.
+ *   
+ *   Another possibility is to generate k bits, where 2^k >= N.
+ *   If 2^k = c*N + remainder, generate the appropriate value
+ *   if a k-bit random number is less than c*N.
+ *   
+ *   For N = 17 (numbers just larger than powers of 2 are "bad"),
+ *   the amount of information is about 4.09 bits, the best
+ *   algorithm to generate one random number takes about 5.765
+ *   bits, taking k = 5 uses 9.412 bits, taking k = 6 or 7 uses
+ *   7.529 bits.  These are averages, but the tails are not bad.
+ *
+ * (https://groups.google.com/forum/message/raw?msg=sci.crypt/DMslf6tSrD8/rv9rk6oP3r4J)
+ */
+static int rand_uniform(lua_State *L) {
+	if (lua_isnoneornil(L, 1)) {
+		unsigned long long r = rand_llu(L);
+
+		lua_pushnumber(L, r);
+
+		return 1;
+	} else {
+		unsigned long long N = luaL_checknumber(L, 1);
+		unsigned long long r, m;
+
+		luaL_argcheck(L, N > 1, 1, lua_pushfstring(L, "[0, %d): interval is empty", (int)N));
+
+		m = -N % N;
+
+		do {
+			r = rand_llu(L);
+		} while (r < m);
+
+		lua_pushnumber(L, (r % N));
+
+		return 1;
+	}
+} /* rand_uniform() */
+
+
 static const luaL_Reg rand_globals[] = {
-	{ "bytes", &rand_bytes },
-	{ "ready", &rand_ready },
-	{ NULL,    NULL },
+	{ "bytes",   &rand_bytes },
+	{ "ready",   &rand_ready },
+	{ "uniform", &rand_uniform },
+	{ NULL,      NULL },
 };
 
 int luaopen__openssl_rand(lua_State *L) {
