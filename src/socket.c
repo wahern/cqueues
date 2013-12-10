@@ -1225,7 +1225,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	case LSO_NUMBER:
 		return luaL_argerror(L, op.index, "*n not implemented yet");
 	case LSO_SLURP:
-		error = lso_fill(S, S->ibuf.bufsiz);
+		error = lso_fill(S, (size_t)-1);
 
 		if (!(S->ibuf.eom || S->ibuf.eof))
 			goto error;
