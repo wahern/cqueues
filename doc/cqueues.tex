@@ -328,6 +328,10 @@ Much better alternatives are possible for Solaris, but require global process st
 
 \begin{Module}{cqueues.socket}
 
+The socket bindings provide built-in DNS, SSL/TLS, buffering, and line translation. DNS happens transparently, and SSL/TLS can be initiated with the \method{socket:starttls} method.
+
+The default I/O mode is ``tl''---text translation and line buffering. This makes sockets work intuitively with the most common protocols on the Internet, like SMTP and HTTP, which require CRLF and use line delimited framing.
+
 \subsubsection[\fn{socket[]}]{\fn{socket[]}}
 
 A table mapping socket related system identifier names to number codes, including AF\_UNSPEC, AF\_INET, AF\_INET6, AF\_UNIX, SOCK\_STREAM, and SOCK\_DGRAM.
@@ -335,20 +339,8 @@ A table mapping socket related system identifier names to number codes, includin
 \subsubsection[\fn{socket.interpose}]{\fn{socket.interpose(name, function)}}
 Add or interpose a socket class method. Returns the previous method, if any.
 
-\subsubsection[\fn{socket.connect}]{\fn{socket.connect(host, port [, mode])}}
+\subsubsection[\fn{socket.connect}]{\fn{socket.connect(host, port [, family] [, type])}}
 Return a new socket immediately ready for reading or writing. DNS lookup and TCP connection handling are handled transparently.
-
-`mode' is a string containing one or more of the following flags
-
-\begin{ctabular}{c | p{6in}}
-flag & description \\\hline
-t & text mode; input and output undergo LF/CRLF translation \\
-b & binary mode; no LF/CRLF translation \\
-n & no output buffering \\
-l & line buffered output \\ 
-f & fully buffered output \\
-\end{ctabular}
-The default mode is ``tl''---text translation and line buffering. This makes sockets work intuitively with the most common protocols on the Internet, like SMTP and HTTP, which require CRLF and use line delimited framing.
 
 \subsubsection[\fn{socket.connect}]{\fn{socket.connect\{ $\ldots$ \}}}
 Like \fn{socket.connect}, but takes a table of options:
@@ -443,9 +435,21 @@ If in TLS mode, returns an \module{openssl.ssl} object, otherwise nil. If the op
 Same as Lua \fn{file:setvbuf}. Analogous to ``n'', ``l'', and ``f'' mode flags. Returns the previous output mode and output buffer size.
 
 \subsubsection[\fn{socket:setmode}]{\fn{socket:setmode([input] [, output])}}
-See \fn{socket.connect} for mode flags. Either mode can be nil or none, in which case the mode is left unchanged.
+Sets the the input and output buffering and translation modes. Either mode can be nil or none, in which case the mode is left unchanged.
+
+A mode is specified as a string containing one or more of the following flags
+
+\begin{ctabular}{c | p{6in}}
+flag & description \\\hline
+t & text mode; input or output undergoes LF/CRLF translation \\
+b & binary mode; no LF/CRLF translation \\
+n & no output buffering \\
+l & line buffered output \\ 
+f & fully buffered output \\
+\end{ctabular}
 
 Returns the previous input and output modes as fixed-sized strings. At present the first character is one of ``t'' or ``b'', and the second character one of ``n'', ``l'', ``f'', or ``-'' (for in the input mode).
+
 
 \subsubsection[\fn{socket:setbufsiz}]{\fn{socket:setbufsiz([input] [, output])}}
 Sets the input and output buffer size. Either size can be nil or none, in which case the size is left unchanged.
