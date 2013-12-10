@@ -41,7 +41,7 @@
 #include <lauxlib.h>
 
 #if LUA_VERSION_NUM < 502
-#include "../ext/compat52.h"
+#include "compat52.h"
 #endif
 
 
