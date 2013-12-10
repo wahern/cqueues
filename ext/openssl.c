@@ -58,21 +58,20 @@
 #include "compat52.h"
 #endif
 
-#define BIGNUM_CLASS     "OpenSSL Bignum"
-#define PUBKEY_CLASS     "OpenSSL Pubkey"
-#define X509_NAME_CLASS  "OpenSSL X.509 Name"
-#define X509_GENS_CLASS  "OpenSSL X.509 AltName"
-#define X509_CERT_CLASS  "OpenSSL X.509"
-#define X509_CHAIN_CLASS "OpenSSL X.509 Chain"
-#define X509_CSR_CLASS   "OpenSSL X.509 Request"
-#define X509_CHAIN_CLASS "OpenSSL X.509 Chain"
-#define X509_STORE_CLASS "OpenSSL X.509 Store"
-#define X509_STCTX_CLASS "OpenSSL X.509 Store Context"
-#define SSL_CTX_CLASS    "OpenSSL SSL Context"
-#define SSL_CLASS        "OpenSSL SSL"
-#define DIGEST_CLASS     "OpenSSL Digest"
-#define HMAC_CLASS       "OpenSSL HMAC"
-#define CIPHER_CLASS     "OpenSSL Cipher"
+#define BIGNUM_CLASS     "BIGNUM*"
+#define PUBKEY_CLASS     "EVP_PKEY*"
+#define X509_NAME_CLASS  "X509_NAME*"
+#define X509_GENS_CLASS  "GENERAL_NAMES*"
+#define X509_CERT_CLASS  "X509*"
+#define X509_CHAIN_CLASS "STACK_OF(X509)*"
+#define X509_CSR_CLASS   "X509_REQ*"
+#define X509_STORE_CLASS "X509_STORE*"
+#define X509_STCTX_CLASS "X509_STORE_CTX*"
+#define SSL_CTX_CLASS    "SSL_CTX*"
+#define SSL_CLASS        "SSL*"
+#define DIGEST_CLASS     "EVP_MD_CTX"     /* not a pointer */
+#define HMAC_CLASS       "HMAC_CTX"       /* not a pointer */
+#define CIPHER_CLASS     "EVP_CIPHER_CTX" /* not a pointer */
 
 
 #define countof(a) (sizeof (a) / sizeof *(a))
