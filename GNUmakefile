@@ -120,8 +120,6 @@ endif
 #
 include $(d)/src/GNUmakefile
 
-include $(d)/ext/GNUmakefile
-
 
 #
 # C L E A N  R U L E S
