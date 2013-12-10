@@ -1,3 +1,10 @@
+liblua-cqueues (20131209-0) unstable; urgency=low
+
+  * Fix slurp operation.
+  * Split openssl module into its own repository.
+
+ -- William Ahern <william@25thandClement.com>  Sun, 09 Dec 2013 19:21:57 -0800
+
 liblua-cqueues (20131205-1) unstable; urgency=low
 
   * Obey SOCK_DGRAM sematics in input byte buffering code.

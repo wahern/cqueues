@@ -1,2 +1,0 @@
-debian/tmp/usr/lib/lua/5.1/_openssl.so usr/lib/lua/5.1
-debian/tmp/usr/share/lua/5.1/openssl* usr/share/lua/5.1

@@ -4,7 +4,7 @@ CFLAGS := -O3 -g -fstack-protector --param=ssp-buffer-size=4
 
 DESTDIR=debian/tmp
 prefix=/usr
-build=liblua5.1-cqueues liblua5.2-cqueues liblua5.1-openssl liblua5.2-openssl
+build=liblua5.1-cqueues liblua5.2-cqueues
 install=$(addsuffix -install,$(build))
 
 %:
