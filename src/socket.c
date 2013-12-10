@@ -670,7 +670,7 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
-	SSL_CTX **ctx = luaL_testudata(L, 2, "OpenSSL SSL Context");
+	SSL_CTX **ctx = luaL_testudata(L, 2, "SSL_CTX*");
 	int error;
 
 	so_clear(S->socket);
@@ -698,7 +698,7 @@ static lso_nargs_t lso_checktls(lua_State *L) {
 	if (!(*ssl = so_checktls(S->socket)))
 		return 0;
 
-	luaL_getmetatable(L, "OpenSSL SSL");
+	luaL_getmetatable(L, "SSL*");
 
 	if (lua_isnil(L, -1))
 		return 0;
