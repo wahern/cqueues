@@ -107,7 +107,7 @@ ifeq ($(VENDOR_CC_$(d)), sunpro)
 CFLAGS_$(d) += -xcode=pic13
 CFLAGS_$(d) += -g
 #
-# Solaris Studio has a brain-dead functiona call analyzer which counts
+# Solaris Studio has a brain-dead function call analyzer which counts
 # arguments before preprocessor expansion.
 #
 CFLAGS_$(d) += -erroff=E_ARGUEMENT_MISMATCH
