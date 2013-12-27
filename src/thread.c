@@ -596,7 +596,7 @@ static int ct_protectssl(void) {
 	if (bound && !openssl.dlref) {
 		Dl_info info;
 
-		if (!dladdr(&luaopen__cqueues_thread, &info)) {
+		if (!dladdr((void *)&luaopen__cqueues_thread, &info)) {
 			error = -1;
 			goto leave;
 		}

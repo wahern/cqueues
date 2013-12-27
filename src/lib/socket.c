@@ -1464,7 +1464,7 @@ error:
 
 
 static struct socket *so_init(struct socket *so, const struct so_options *opts) {
-	static const struct socket so_initializer = { .fd = -1, .cred = { -1, -1, -1, } };
+	static const struct socket so_initializer = { .fd = -1, .cred = { (pid_t)-1, (uid_t)-1, (gid_t)-1, } };
 
 	if (!so)
 		return 0;
