@@ -420,11 +420,111 @@ static const luaL_Reg ct_globals[] = {
 	{ NULL,        NULL }
 };
 
+
+static int ct_protectssl(void);
+
 int luaopen__cqueues_thread(lua_State *L) {
+	int error;
+
+	if ((error = ct_protectssl())) {
+		char why[256];
+
+		if (0 != strerror_r(error, why, sizeof why) || *why == '\0')
+			return luaL_error(L, "Unknown error: %d", error);
+
+		return luaL_error(L, "%s", why);
+	}
+
 	cqs_addclass(L, CQS_THREAD, ct_methods, ct_metamethods);
 
 	luaL_newlib(L, ct_globals);
 
 	return 1;
 } /* luaopen__cqueues_thread() */
+
+
+/*
+ * OpenSSL is not thread-safe without explicit locking handlers installed.
+ */
+#include <openssl/crypto.h>
+
+static struct {
+	pthread_mutex_t *lock;
+	int count;
+} openssl;
+
+static void ct_lockssl(int mode, int type, const char *file, int line) {
+	if (mode & CRYPTO_LOCK)
+		pthread_mutex_lock(&openssl.lock[type]);
+	else
+		pthread_mutex_unlock(&openssl.lock[type]);
+} /* ct_lockssl() */
+
+
+/*
+ * Sources include Google and especially the Wine Project. See get_unix_tid
+ * at http://source.winehq.org/git/wine.git/?a=blob;f=dlls/ntdll/server.c.
+ */
+#if __FreeBSD__
+#include <sys/thr.h> /* thr_self(2) */
+#elif __NetBSD__
+#include <lwp.h> /* _lwp_self(2) */
+#endif
+
+static unsigned long ct_selfid(void) {
+#if __APPLE__
+	pthread_mach_thread_np(pthread_self())
+#elif __DragonFly__
+	return lwp_gettid();
+#elif  __FreeBSD__
+	long id;
+
+	thr_self(&id);
+
+	return id;
+#elif __NetBSD__
+	return _lwp_self();
+#else
+	/*
+	 * pthread_t is an integer on Solaris and Linux, and a unique pointer
+	 * on OpenBSD.
+	 */
+	return (unsigned long)pthread_self();
+#endif
+} /* ct_selfid() */
+
+static int ct_protectssl(void) {
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	int error = 0;
+
+	pthread_mutex_lock(&mutex);
+
+	if (!CRYPTO_get_id_callback()) {
+		CRYPTO_set_id_callback(&ct_selfid);
+	}
+
+	if (!CRYPTO_get_locking_callback()) {
+		if (!openssl.lock) {
+			int i;
+
+			openssl.count = CRYPTO_num_locks();
+		
+			if (!(openssl.lock = malloc(openssl.count * sizeof *openssl.lock))) {
+				error = errno;
+				goto leave;
+			}
+
+			for (i = 0; i < openssl.count; i++) {
+				pthread_mutex_init(&openssl.lock[i], NULL);
+			}
+		}
+
+		CRYPTO_set_locking_callback(&ct_lockssl);
+	}
+
+leave:
+	pthread_mutex_unlock(&mutex);
+
+	return error;
+} /* ct_protectssl() */
 
