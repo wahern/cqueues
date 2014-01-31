@@ -453,7 +453,7 @@ static struct {
 	int count;
 } openssl;
 
-static void ct_lockssl(int mode, int type, const char *file, int line) {
+static void ct_lockssl(int mode, int type, const char *file NOTUSED, int line NOTUSED) {
 	if (mode & CRYPTO_LOCK)
 		pthread_mutex_lock(&openssl.lock[type]);
 	else
@@ -473,7 +473,7 @@ static void ct_lockssl(int mode, int type, const char *file, int line) {
 
 static unsigned long ct_selfid(void) {
 #if __APPLE__
-	pthread_mach_thread_np(pthread_self())
+	return pthread_mach_thread_np(pthread_self());
 #elif __DragonFly__
 	return lwp_gettid();
 #elif  __FreeBSD__
