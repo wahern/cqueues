@@ -34,12 +34,12 @@ CPPFLAGS_$(d) += $(and $(VERSION_$(<D)),-DCQUEUES_VERSION=$(VERSION_$(<D))L)
 CPPFLAGS_$(d) += $(and $(COMMIT_$(<D)),-DCQUEUES_COMMIT='"$(COMMIT_$(<D))"')
 
 ifeq ($(OS_$(d)), Linux)
-LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lrt -lm -pthread
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -ldl -lrt -lm -pthread
 else
 ifeq ($(OS_$(d)), SunOS)
-LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -ldl -lpthread
 else
-LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -ldl -lpthread
 endif
 endif
 

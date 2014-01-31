@@ -34,6 +34,8 @@
 
 #include <pthread.h>
 
+#include <dlfcn.h>
+
 #include "cqueues.h"
 
 
@@ -427,12 +429,16 @@ int luaopen__cqueues_thread(lua_State *L) {
 	int error;
 
 	if ((error = ct_protectssl())) {
-		char why[256];
+		if (error == -1) {
+			return luaL_error(L, "%s", dlerror());
+		} else {
+			char why[256];
 
-		if (0 != strerror_r(error, why, sizeof why) || *why == '\0')
-			return luaL_error(L, "Unknown error: %d", error);
+			if (0 != strerror_r(error, why, sizeof why) || *why == '\0')
+				return luaL_error(L, "Unknown error: %d", error);
 
-		return luaL_error(L, "%s", why);
+			return luaL_error(L, "%s", why);
+		}
 	}
 
 	cqs_addclass(L, CQS_THREAD, ct_methods, ct_metamethods);
@@ -451,6 +457,7 @@ int luaopen__cqueues_thread(lua_State *L) {
 static struct {
 	pthread_mutex_t *lock;
 	int count;
+	void *dlref;
 } openssl;
 
 static void ct_lockssl(int mode, int type, const char *file NOTUSED, int line NOTUSED) {
@@ -493,15 +500,12 @@ static unsigned long ct_selfid(void) {
 #endif
 } /* ct_selfid() */
 
+
 static int ct_protectssl(void) {
 	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	int error = 0;
+	int bound = 0, error = 0;
 
 	pthread_mutex_lock(&mutex);
-
-	if (!CRYPTO_get_id_callback()) {
-		CRYPTO_set_id_callback(&ct_selfid);
-	}
 
 	if (!CRYPTO_get_locking_callback()) {
 		if (!openssl.lock) {
@@ -520,6 +524,30 @@ static int ct_protectssl(void) {
 		}
 
 		CRYPTO_set_locking_callback(&ct_lockssl);
+		bound = 1;
+	}
+
+	if (!CRYPTO_get_id_callback()) {
+		CRYPTO_set_id_callback(&ct_selfid);
+		bound = 1;
+	}
+
+	/*
+	 * Prevent loader from unlinking us if we've registered a callback
+	 * with OpenSSL.
+	 */
+	if (bound && !openssl.dlref) {
+		Dl_info info;
+
+		if (!dladdr(&luaopen__cqueues_thread, &info)) {
+			error = -1;
+			goto leave;
+		}
+
+		if (!(openssl.dlref = dlopen(info.dli_fname, RTLD_NOW|RTLD_LOCAL))) {
+			error = -1;
+			goto leave;
+		}
 	}
 
 leave:
