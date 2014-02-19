@@ -1,3 +1,9 @@
+liblua-cqueues (20140130-0) unstable; urgency=low
+
+  * Install OpenSSL mutexes when loading thread module.
+
+ -- William Ahern <william@25thandClement.com>  Thu, 30 Jan 2014 16:22:56 -0800
+
 liblua-cqueues (20131209-0) unstable; urgency=low
 
   * Fix slurp operation.
