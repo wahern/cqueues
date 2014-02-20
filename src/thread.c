@@ -1,7 +1,7 @@
 /* ==========================================================================
  * thread.c - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012  William Ahern
+ * Copyright (c) 2012, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -39,6 +39,18 @@
 #include "cqueues.h"
 
 
+struct cthread_arg {
+	int type;
+
+	union {
+		struct iovec string;
+		lua_Number number;
+		_Bool boolean;
+		void *pointer;
+	} v;
+}; /* struct cthread_arg */
+
+
 struct cthread {
 	int refs, error, status;
 	char *msg;
@@ -53,7 +65,7 @@ struct cthread {
 	int pipe[2];
 
 	struct {
-		struct iovec arg[32];
+		struct cthread_arg *arg;
 		unsigned argc;
 		int fd[2];
 	} tmp;
@@ -113,6 +125,10 @@ static void ct_release(struct cthread *ct) {
 	cqs_closefd(&ct->tmp.fd[0]);
 	cqs_closefd(&ct->tmp.fd[1]);
 
+	free(ct->tmp.arg);
+	ct->tmp.arg = NULL;
+	ct->tmp.argc = 0;
+
 	free(ct->msg);
 	free(ct);
 } /* ct_release() */
@@ -167,7 +183,7 @@ static void *ct_enter(void *arg) {
 	luaL_openlibs(L);
 	cqs_openlibs(L);
 
-	luaL_loadbuffer(L, ct->tmp.arg[0].iov_base, ct->tmp.arg[0].iov_len, "[thread enter]");
+	luaL_loadbuffer(L, ct->tmp.arg[0].v.string.iov_base, ct->tmp.arg[0].v.string.iov_len, "[thread enter]");
 
 	ud = lua_newuserdata(L, sizeof *ud);
 	*ud = NULL;
@@ -186,8 +202,29 @@ static void *ct_enter(void *arg) {
 
 	ct->tmp.fd[1] = -1;
 
-	for (struct iovec *arg = &ct->tmp.arg[1]; arg < &ct->tmp.arg[ct->tmp.argc]; arg++)
-		lua_pushlstring(L, arg->iov_base, arg->iov_len);
+	for (struct cthread_arg *arg = &ct->tmp.arg[1]; arg < &ct->tmp.arg[ct->tmp.argc]; arg++) {
+		switch (arg->type) {
+		case LUA_TNUMBER:
+			lua_pushnumber(L, arg->v.number);
+			break;
+		case LUA_TBOOLEAN:
+			lua_pushboolean(L, arg->v.boolean);
+			break;
+		case LUA_TLIGHTUSERDATA:
+			lua_pushlightuserdata(L, arg->v.pointer);
+			break;
+		case LUA_TSTRING:
+			lua_pushlstring(L, arg->v.string.iov_base, arg->v.string.iov_len);
+			break;
+		default:
+			lua_pushnil(L);
+			break;
+		}
+	}
+
+	free(ct->tmp.arg);
+	ct->tmp.arg = NULL;
+	ct->tmp.argc = 0;
 
 	pthread_mutex_unlock(&ct->mutex);
 	pthread_cond_signal(&ct->cond);
@@ -272,15 +309,37 @@ static int ct_start(lua_State *L) {
 			goto error;
 	}
 
-	for (int index = 1, top = lua_gettop(L) - 1; index <= top; index++) {
-		struct iovec *arg = &ct->tmp.arg[ct->tmp.argc];
+	luaL_checktype(L, 1, LUA_TSTRING); /* must be serialized function */
 
-		if (arg >= endof(ct->tmp.arg)) {
-			error = E2BIG;
-			goto error;
+	if (!(ct->tmp.arg = calloc(sizeof *ct->tmp.arg, top)))
+		goto syerr;
+
+	for (int index = 1; index <= top; index++) {
+		struct cthread_arg *arg = &ct->tmp.arg[ct->tmp.argc];
+
+		switch (lua_type(L, index)) {
+		case LUA_TNIL:
+			arg->type = LUA_TNIL;
+			break;
+		case LUA_TNUMBER:
+			arg->v.number = lua_tonumber(L, index);
+			arg->type = LUA_TNUMBER;
+			break;
+		case LUA_TBOOLEAN:
+			arg->v.boolean = lua_toboolean(L, index);
+			arg->type = LUA_TBOOLEAN;
+			break;
+		case LUA_TLIGHTUSERDATA:
+			arg->v.pointer = lua_touserdata(L, index);
+			arg->type = LUA_TLIGHTUSERDATA;
+			break;
+		default:
+			/* FALL THROUGH (maybe has __tostring metamethod) */ 
+		case LUA_TSTRING:
+			arg->v.string.iov_base = (char *)luaL_checklstring(L, index, &arg->v.string.iov_len);
+			arg->type = LUA_TSTRING;
+			break;
 		}
-
-		arg->iov_base = (char *)luaL_checklstring(L, index, &arg->iov_len);
 
 		ct->tmp.argc++;
 	}
