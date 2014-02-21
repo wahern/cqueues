@@ -126,8 +126,6 @@ static void ct_release(struct cthread *ct) {
 	cqs_closefd(&ct->tmp.fd[1]);
 
 	free(ct->tmp.arg);
-	ct->tmp.arg = NULL;
-	ct->tmp.argc = 0;
 
 	free(ct->msg);
 	free(ct);
@@ -234,7 +232,7 @@ static void *ct_enter(void *arg) {
 		goto close;
 	}
 
-	ct->status = lua_pcall(L, 2 + ct->tmp.argc - 1, 0, 0);
+	ct->status = lua_pcall(L, lua_gettop(L) - 1, 0, 0);
 
 	if (ct->status != LUA_OK && lua_isstring(L, -1)) {
 		if (!(ct->msg = strdup(lua_tostring(L, -1)))) {
