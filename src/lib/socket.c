@@ -2279,7 +2279,7 @@ static int so_loadcred(struct socket *so) {
 	so->cred.uid = uc.uid;
 	so->cred.gid = uc.gid;
 
-	return 0
+	return 0;
 #elif defined __sun
 	ucred_t *uc = NULL;
 
