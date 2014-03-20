@@ -1,7 +1,7 @@
 /* ==========================================================================
  * cqueues.c - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012  William Ahern
+ * Copyright (c) 2012-2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -36,7 +36,7 @@
 
 #include <errno.h>	/* errno */
 
-#include <sys/queue.h>	/* LIST */
+#include <sys/queue.h>	/* LIST TAILQ */
 #include <sys/time.h>	/* struct timeval */
 #include <sys/select.h>	/* pselect(3) */
 
@@ -597,6 +597,80 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 
 
 /*
+ * C O N D I T I O N  V A R I A B L E  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define CONDITION_CLASS "Condition Variable"
+
+#define wakecb_init(cb, ...) wakecb_init4((cb), __VA_ARGS__, NULL, NULL)
+#define wakecb_init4(cb, _fn, a, b, ...) do { \
+	(cb)->cv = NULL; \
+	(cb)->fn = (_fn); \
+	(cb)->arg[0] = (a); \
+	(cb)->arg[1] = (b); \
+} while (0)
+
+
+struct wakecb {
+	struct condition *cv;
+
+	int (*fn)(struct wakecb *);
+	void *arg[3];
+
+	TAILQ_ENTRY(wakecb) tqe;
+}; /* struct wakecb */
+
+
+struct condition {
+	_Bool lifo;
+
+	TAILQ_HEAD(, wakecb) waiting;
+}; /* struct condition */
+
+
+static void wakecb_del(struct wakecb *cb) {
+	if (cb->cv) {
+		TAILQ_REMOVE(&cb->cv->waiting, cb, tqe);
+		cb->cv = NULL;
+	}
+} /* wakecb_del() */
+
+
+static void wakecb_add(struct wakecb *cb, struct condition *cv) {
+	if (cv->lifo) {
+		TAILQ_INSERT_HEAD(&cv->waiting, cb, tqe);
+		cb->cv = cv;
+	} else {
+		TAILQ_INSERT_TAIL(&cv->waiting, cb, tqe);
+		cb->cv = cv;
+	}
+} /* wakecb_add() */
+
+
+static void cond_init(struct condition *cv, _Bool lifo) {
+	cv->lifo = lifo;
+	TAILQ_INIT(&cv->waiting);
+} /* cond_init() */
+
+
+static int cond_signal(struct condition *cv, unsigned n) {
+	struct wakecb *cb;
+	int error;
+
+	while (n-- > 0 && !TAILQ_EMPTY(&cv->waiting)) {
+		cb = TAILQ_FIRST(&cv->waiting);
+		wakecb_del(cb);
+
+		if ((error = cb->fn(cb)))
+			return error;
+	}
+
+	return 0;
+} /* cond_signal() */
+
+
+/*
  * C O N T I N U A T I O N  Q U E U E  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -625,6 +699,8 @@ struct event {
 
 	struct fileno *fileno;
 	LIST_ENTRY(event) fle;
+
+	struct wakecb *wakecb;
 }; /* struct event */
 
 
@@ -676,7 +752,7 @@ struct cqueue {
 	} fileno;
 
 	struct {
-		struct pool fileno, thread, event;
+		struct pool wakecb, fileno, thread, event;
 	} pool;
 
 	struct {
@@ -754,6 +830,7 @@ static void cqueue_preinit(struct cqueue *Q) {
 
 	Q->registry = LUA_NOREF;
 
+	pool_init(&Q->pool.wakecb, sizeof (struct wakecb));
 	pool_init(&Q->pool.fileno, sizeof (struct fileno));
 	pool_init(&Q->pool.thread, sizeof (struct thread));
 	pool_init(&Q->pool.event, sizeof (struct event));
@@ -821,9 +898,10 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 
 	kpoll_destroy(&Q->kp);
 
-	pool_destroy(&Q->pool.fileno);
-	pool_destroy(&Q->pool.thread);
 	pool_destroy(&Q->pool.event);
+	pool_destroy(&Q->pool.thread);
+	pool_destroy(&Q->pool.fileno);
+	pool_destroy(&Q->pool.wakecb);
 
 	luaL_unref(L, LUA_REGISTRYINDEX, Q->registry);
 	Q->registry = LUA_NOREF;
@@ -958,6 +1036,17 @@ static int fileno_del(struct cqueue *Q, struct fileno *fileno, _Bool update) {
 } /* fileno_del() */
 
 
+static int wakecb_wakeup(struct wakecb *cb) {
+	struct cqueue *Q = cb->arg[0];
+	struct event *event = cb->arg[1];
+
+	event->pending = 1;
+	thread_move(event->thread, &Q->thread.pending);
+
+	return 0;
+} /* wakecb_wakeup() */
+
+
 static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
 	int status;
 
@@ -987,13 +1076,31 @@ static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
 } /* object_pcall() */
 
 
-static int object_getinfo(lua_State *L, struct thread *T, int index, struct event *event) {
+static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int index, struct event *event) {
 	int status;
 	const char *mode;
 
 	/* optimize simple timeout */
 	if (lua_isnumber(T->L, index)) {
 		event->timeout = abstimeout(lua_tonumber(T->L, index));
+
+		return LUA_OK;
+	}
+
+	/* check for conditional variable */
+	if (luaL_testudata(T->L, index, CONDITION_CLASS)) {
+		struct condition *cv = lua_touserdata(T->L, index);
+		int error;
+
+		if (!(event->wakecb = pool_get(&Q->pool.wakecb, &error))) {
+			lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+			status = LUA_ERRRUN;
+
+			goto error;
+		}
+
+		wakecb_init(event->wakecb, &wakecb_wakeup, Q, event);
+		wakecb_add(event->wakecb, cv);
 
 		return LUA_OK;
 	}
@@ -1006,6 +1113,7 @@ static int object_getinfo(lua_State *L, struct thread *T, int index, struct even
 		goto error;
 
 	event->fd = luaL_optinteger(L, -1, -1);
+	event->fd = MAX(event->fd, -1);
 
 	lua_pop(L, 1); /* pop fd */
 
@@ -1063,10 +1171,10 @@ static int event_add(lua_State *L, struct cqueue *Q, struct thread *T, int index
 
 	event_init(event, T, index);
 
-	if (LUA_OK != (status = object_getinfo(L, T, index, event)))
+	if (LUA_OK != (status = object_getinfo(L, Q, T, index, event)))
 		return status;
 
-	if (event->fd != -1 && event->events) {
+	if (event->fd >= 0 && event->events) {
 		if (!(fileno = fileno_get(Q, event->fd, &error)))
 			goto error;
 
@@ -1086,6 +1194,11 @@ error:
 
 
 static void event_del(struct cqueue *Q, struct event *event) {
+	if (event->wakecb) {
+		wakecb_del(event->wakecb);
+		pool_put(&Q->pool.wakecb, event->wakecb);
+	}
+
 	if (event->fileno) {
 		LIST_REMOVE(event->fileno, le);
 		LIST_INSERT_HEAD(&Q->fileno.outstanding, event->fileno, le);
@@ -1888,7 +2001,7 @@ static int cstack_running(lua_State *L) {
 
 
 /*
- * M O D U L E  L I N K A G E
+ * C Q U E U E S  M O D U L E  L I N K A G E
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
