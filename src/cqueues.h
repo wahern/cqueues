@@ -85,6 +85,8 @@
 
 cqs_nargs_t luaopen__cqueues(lua_State *);
 
+cqs_nargs_t luaopen__cqueues_errno(lua_State *);
+
 cqs_nargs_t luaopen__cqueues_socket(lua_State *);
 
 cqs_nargs_t luaopen__cqueues_signal(lua_State *);
@@ -92,6 +94,22 @@ cqs_nargs_t luaopen__cqueues_signal(lua_State *);
 cqs_nargs_t luaopen__cqueues_thread(lua_State *);
 
 cqs_nargs_t luaopen__cqueues_notify(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_condition(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns_record(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns_packet(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns_config(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns_hosts(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns_hints(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns_resolver(lua_State *);
+
+cqs_nargs_t luaopen__cqueues_dns(lua_State *);
 
 
 void cqs_cancelfd(lua_State *, int);
@@ -106,9 +124,21 @@ static void cqs_openlibs(lua_State *L) {
 	int top = lua_gettop(L);
 
 	luaL_requiref(L, "_cqueues", &luaopen__cqueues, 0);
+	luaL_requiref(L, "_cqueues.errno", &luaopen__cqueues_errno, 0);
 	luaL_requiref(L, "_cqueues.socket", &luaopen__cqueues_socket, 0);
 	luaL_requiref(L, "_cqueues.signal", &luaopen__cqueues_signal, 0);
 	luaL_requiref(L, "_cqueues.thread", &luaopen__cqueues_thread, 0);
+	luaL_requiref(L, "_cqueues.notify", &luaopen__cqueues_notify, 0);
+#if 0 /* Make optional? */
+	luaL_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
+	luaL_requiref(L, "_cqueues.dns.record", &luaopen__cqueues_dns_record, 0);
+	luaL_requiref(L, "_cqueues.dns.packet", &luaopen__cqueues_dns_packet, 0);
+	luaL_requiref(L, "_cqueues.dns.config", &luaopen__cqueues_dns_config, 0);
+	luaL_requiref(L, "_cqueues.dns.hosts", &luaopen__cqueues_dns_hosts, 0);
+	luaL_requiref(L, "_cqueues.dns.hints", &luaopen__cqueues_dns_hints, 0);
+	luaL_requiref(L, "_cqueues.dns.resolver", &luaopen__cqueues_dns_resolver, 0);
+	luaL_requiref(L, "_cqueues.dns", &luaopen__cqueues_dns, 0);
+#endif
 
 	lua_settop(L, top);
 } /* cqs_openlibs() */
