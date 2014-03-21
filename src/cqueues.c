@@ -824,7 +824,7 @@ struct event {
 	int index;
 
 	struct thread *thread;
-	LIST_ENTRY(event) tle;
+	TAILQ_ENTRY(event) tqe;
 
 	struct fileno *fileno;
 	LIST_ENTRY(event) fle;
@@ -856,7 +856,7 @@ struct thread {
 	luaref_t ref;
 	lua_State *L; /* only for coroutines */
 
-	LIST_HEAD(, event) events;
+	TAILQ_HEAD(, event) events;
 	unsigned count;
 
 	struct threads *threads;
@@ -1285,7 +1285,7 @@ static void event_init(struct event *event, struct thread *T, int index) {
 
 	event->index = index;
 
-	LIST_INSERT_HEAD(&T->events, event, tle);
+	TAILQ_INSERT_TAIL(&T->events, event, tqe);
 	event->thread = T;
 } /* event_init() */
 
@@ -1335,8 +1335,7 @@ static void event_del(struct cqueue *Q, struct event *event) {
 		LIST_REMOVE(event, fle);
 	}
 
-	LIST_REMOVE(event, tle);
-
+	TAILQ_REMOVE(&event->thread->events, event, tqe);
 	pool_put(&Q->pool.event, event);
 } /* event_del() */
 
@@ -1373,7 +1372,7 @@ static double thread_timeout(struct thread *T) {
 	double timeout = NAN;
 	struct event *event;
 
-	LIST_FOREACH(event, &T->events, tle) {
+	TAILQ_FOREACH(event, &T->events, tqe) {
 		timeout = mintimeout(timeout, event->timeout);
 	}
 
@@ -1393,7 +1392,7 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 	memset(T, 0, sizeof *T);
 
 	T->ref = LUA_NOREF;
-	LIST_INIT(&T->events);
+	TAILQ_INIT(&T->events);
 
 	timer_init(&T->timer);
 
@@ -1409,7 +1408,7 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
 	struct event *event;
 
-	while ((event = LIST_FIRST(&T->events))) {
+	while ((event = TAILQ_FIRST(&T->events))) {
 		event_del(Q, event);
 	}
 
@@ -1514,7 +1513,7 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 	nargs = 0;
 
-	while((event = LIST_FIRST(&T->events))) {
+	while((event = TAILQ_FIRST(&T->events))) {
 		if (event->pending) {
 			lua_pushvalue(T->L, event->index);
 			nargs++;
@@ -1547,7 +1546,7 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 		timer_add(Q, &T->timer, thread_timeout(T));
 
-		if (!LIST_EMPTY(&T->events) || isfinite(T->timer.timeout))
+		if (!TAILQ_EMPTY(&T->events) || isfinite(T->timer.timeout))
 			thread_move(T, &Q->thread.polling);
 
 		break;
@@ -1601,7 +1600,7 @@ static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 
 		T = timer2thread(timer);
 
-		LIST_FOREACH(event, &T->events, tle) {
+		TAILQ_FOREACH(event, &T->events, tqe) {
 			if (islessequal(event->timeout, curtime))
 				event->pending = 1;
 		}
