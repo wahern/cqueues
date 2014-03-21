@@ -67,7 +67,7 @@
 #endif
 
 #ifndef CQUEUES_VERSION
-#define CQUEUES_VERSION 20131205L
+#define CQUEUES_VERSION 20140320L
 #endif
 
 
@@ -601,8 +601,6 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define CONDITION_CLASS "Condition Variable"
-
 #define wakecb_init(cb, ...) wakecb_init4((cb), __VA_ARGS__, NULL, NULL)
 #define wakecb_init4(cb, _fn, a, b, ...) do { \
 	(cb)->cv = NULL; \
@@ -648,26 +646,134 @@ static void wakecb_add(struct wakecb *cb, struct condition *cv) {
 } /* wakecb_add() */
 
 
-static void cond_init(struct condition *cv, _Bool lifo) {
+static struct condition *cond_checkself(lua_State *L, int index) {
+	struct condition *cv = lua_touserdata(L, index);
+	int eq;
+
+	if (!cv || !lua_getmetatable(L, index))
+		goto nope;
+
+	eq = lua_rawequal(L, -1, lua_upvalueindex(1));
+	lua_pop(L, 1);
+
+	if (!eq)
+		goto nope;
+
+	return cv;
+nope:
+	index = lua_absindex(L, index);
+
+	luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", CQS_CONDITION, luaL_typename(L, index)));
+
+	NOTREACHED;
+
+	return NULL;
+} /* cond_checkself() */
+
+
+static int cond_new(lua_State *L) {
+	_Bool lifo = lua_toboolean(L, 1);
+	struct condition *cv;
+
+	cv = lua_newuserdata(L, sizeof *cv);
 	cv->lifo = lifo;
 	TAILQ_INIT(&cv->waiting);
-} /* cond_init() */
+	luaL_setmetatable(L, CQS_CONDITION);
+
+	return 1;
+} /* cond_new() */
 
 
-static int cond_signal(struct condition *cv, unsigned n) {
+static int cond__gc(lua_State *L) {
+	struct condition *cv = cond_checkself(L, 1);
+	int empty = TAILQ_EMPTY(&cv->waiting);
+	struct wakecb *cb;
+
+	while ((cb = TAILQ_FIRST(&cv->waiting))) {
+		wakecb_del(cb);
+		cb->fn(cb);
+	}
+
+	if (!empty)
+		return luaL_error(L, "invariant failure: condition variable wait queue not empty on __gc");
+
+	return 0;
+} /* cond__gc() */
+
+
+static int cond_wait(lua_State *L) {
+	struct condition *cv = cond_checkself(L, 1);
+
+	return lua_yield(L, lua_gettop(L));
+} /* cond_wait() */
+
+
+static int cond_signal(lua_State *L) {
+	struct condition *cv = cond_checkself(L, 1);
+	int i, n = luaL_optint(L, 2, INT_MAX);
 	struct wakecb *cb;
 	int error;
 
-	while (n-- > 0 && !TAILQ_EMPTY(&cv->waiting)) {
+	for (i = 0; i < n && !TAILQ_EMPTY(&cv->waiting); i++) {
 		cb = TAILQ_FIRST(&cv->waiting);
 		wakecb_del(cb);
 
 		if ((error = cb->fn(cb)))
-			return error;
+			goto error;
 	}
 
-	return 0;
+	lua_pushinteger(L, i);
+
+	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushstring(L, strerror(error));
+	lua_pushinteger(L, error);
+
+	return 3;
 } /* cond_signal() */
+
+
+static const luaL_Reg cond_methods[] = {
+	{ "wait",   &cond_wait },
+	{ "signal", &cond_signal },
+	{ NULL,     NULL }
+}; /* cond_methods[] */
+
+
+static const luaL_Reg cond_metatable[] = {
+	{ "__gc", &cond__gc },
+	{ NULL,   NULL }
+}; /* cond_metatable[] */
+
+
+static const luaL_Reg cond_globals[] = {
+	{ "new", &cond_new },
+	{ NULL,  NULL }
+}; /* cond_globals[] */
+
+
+int luaopen__cqueues_condition(lua_State *L) {
+	if (luaL_newmetatable(L, CQS_CONDITION)) {
+		/*
+		 * capture metatable as upvalue of methods and metamethods
+		 * for fast type checking.
+		 */
+		lua_pushvalue(L, -1);
+		luaL_setfuncs(L, cond_metatable, 1);
+
+		luaL_newlibtable(L, cond_methods);
+		lua_pushvalue(L, -2);
+		luaL_setfuncs(L, cond_methods, 1);
+		lua_setfield(L, -2, "__index");
+	}
+
+	lua_pop(L, 1);
+
+	luaL_newlib(L, cond_globals);
+
+	return 1;
+} /* luaopen__cqueues_condition() */
 
 
 /*
@@ -1088,7 +1194,7 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 	}
 
 	/* check for conditional variable */
-	if (luaL_testudata(T->L, index, CONDITION_CLASS)) {
+	if (luaL_testudata(T->L, index, CQS_CONDITION)) {
 		struct condition *cv = lua_touserdata(T->L, index);
 		int error;
 
@@ -2039,6 +2145,8 @@ static const luaL_Reg cqueues_globals[] = {
 
 
 int luaopen__cqueues(lua_State *L) {
+	luaL_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
+
 	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
 		luaL_setfuncs(L, cqueue_metatable, 0);
 

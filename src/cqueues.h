@@ -80,6 +80,7 @@
 #define CQS_SIGNAL "CQS Signal"
 #define CQS_THREAD "CQS Thread"
 #define CQS_NOTIFY "CQS Notify"
+#define CQS_CONDITION "CQS Condition"
 
 
 cqs_nargs_t luaopen__cqueues(lua_State *);
