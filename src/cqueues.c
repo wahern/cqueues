@@ -646,29 +646,49 @@ static void wakecb_add(struct wakecb *cb, struct condition *cv) {
 } /* wakecb_add() */
 
 
-static struct condition *cond_checkself(lua_State *L, int index) {
+static struct condition *cond_testself(lua_State *L, int index) {
 	struct condition *cv = lua_touserdata(L, index);
 	int eq;
 
 	if (!cv || !lua_getmetatable(L, index))
-		goto nope;
+		return NULL;
 
 	eq = lua_rawequal(L, -1, lua_upvalueindex(1));
 	lua_pop(L, 1);
 
-	if (!eq)
-		goto nope;
+	return (eq)? cv : NULL;
+} /* cond_testself() */
+
+
+static struct condition *cond_checkself(lua_State *L, int index) {
+	struct condition *cv;
+
+	if (!(cv = cond_testself(L, index))) {
+		index = lua_absindex(L, index);
+
+		luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", CQS_CONDITION, luaL_typename(L, index)));
+
+		NOTREACHED;
+	}
 
 	return cv;
-nope:
-	index = lua_absindex(L, index);
-
-	luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", CQS_CONDITION, luaL_typename(L, index)));
-
-	NOTREACHED;
-
-	return NULL;
 } /* cond_checkself() */
+
+
+static int cond_type(lua_State *L) {
+	if (cond_testself(L, 1)) {
+		lua_pushstring(L, "condition");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* cond_type() */
+
+
+static int cond_interpose(lua_State *L) {
+	return cqs_interpose(L, CQS_CONDITION);
+} /* cond_interpose() */
 
 
 static int cond_new(lua_State *L) {
@@ -748,8 +768,10 @@ static const luaL_Reg cond_metatable[] = {
 
 
 static const luaL_Reg cond_globals[] = {
-	{ "new", &cond_new },
-	{ NULL,  NULL }
+	{ "new",       &cond_new },
+	{ "type",      &cond_type },
+	{ "interpose", &cond_interpose },
+	{ NULL,        NULL }
 }; /* cond_globals[] */
 
 
@@ -768,9 +790,10 @@ int luaopen__cqueues_condition(lua_State *L) {
 		lua_setfield(L, -2, "__index");
 	}
 
-	lua_pop(L, 1);
-
-	luaL_newlib(L, cond_globals);
+	/* capture metatable here, too. */
+	luaL_newlibtable(L, cond_globals);
+	lua_pushvalue(L, -2);
+	luaL_setfuncs(L, cond_globals, 1);
 
 	return 1;
 } /* luaopen__cqueues_condition() */
@@ -1512,7 +1535,7 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 	switch (status) {
 	case LUA_YIELD:
 		for (index = 1; index <= lua_gettop(T->L); index++) {
-			if (lua_isnil(L, index))
+			if (lua_isnil(T->L, index))
 				continue;
 
 			if (LUA_OK != (status = event_add(L, Q, T, index)))

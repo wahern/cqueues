@@ -105,6 +105,7 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/cqueues/signal.lua \
 	$$(DESTDIR)$(3)/cqueues/thread.lua \
 	$$(DESTDIR)$(3)/cqueues/notify.lua \
+	$$(DESTDIR)$(3)/cqueues/condition.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/resolver.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/config.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/hosts.lua \
