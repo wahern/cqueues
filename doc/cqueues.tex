@@ -989,9 +989,45 @@ Explicitly destroy the resolver object, immediately closing all internal descrip
 \end{Module}
 
 
+\begin{Module}{cqueues.condition}
+
+This module implements a condition variable. A condition variable can be used to queue multiple Lua threads to await a user-defined event. Unlike some condition variable implementations, this one does not implement the monitor pattern directly. A monitor uses both a mutex and a condition variable. However, a full monitor will usually be unnecessary as coroutines do not run in parallel. Monitors are more a necessity in pre-emptive threading environments.
+
+The condition variable primitive can be used to implement mutexes, semaphores, and monitors.
+
+\subsubsection[\fn{condition.type}]{\fn{condition.type(object)}}
+
+Returns the string ``condition'' if the object is a condition variable, or nil otherwise.
+
+\subsubsection[\fn{condition.interpose}]{\fn{condition.interpose(name, function)}}
+
+Add or interpose a condition class method. Returns the previous method, if any.
+
+\subsubsection[\fn{condition.new}]{\fn{condition.new([lifo])}}
+
+Returns a new condition variable object. If `lifo' is \texttt{true}, waiting threads are woken
+in LIFO order, otherwise in FIFO order.
+
+Note that the \cqueues scheduler might schedule execution of multiple woken threads in a different order. The LIFO/FIFO behavior is most useful when implementing a mutex and for whatever reason you wish to select the thread which has waited either the longest or shortest amount of time.
+
+\subsubsection[\fn{condition:wait}]{\fn{condition:wait([$\ldots$])}}
+
+Wait on the condition variable. Additional arguments are yielded to the \cqueues controller for polling. Passing an integer, for example, allows you to effect a timeout. Passing a socket allows you to wait on both the condition variable and the socket.
+
+Returns true if the thread was woken by the condition variable, and false otherwise. Additional values are returned if they polled as ready. It's possible that both the condition variable and, e.g., a socket object poll ready simultaneously, in which case two values are returned---true and the socket object.
+
+You can also directly yield a condition variable, along with other condition variables, timeouts, or pollable objects, to the \cqueues controller with \fn{cqueues.poll}.
+
+\subsubsection[\fn{condition:signal}]{\fn{condition:signal([n])}}
+
+Signal a condition, wakening one or more waiting threads. If specified, a maximum of `n' threads are woken, otherwise all threads are woken.
+
+\end{Module}
+
+
 \begin{Module}{openssl.bignum}
 
-\module{openssl.bignum} binds OpenSSL's libcrypto bignum library. It supports all the standard arithmetic operations. Regular number operands in a mixed arithmetic expression are upgraded as-if \method{bignum.new} was used explicitly. The \fn{to string} metamethod generates a decimal encoded represention.
+\module{openssl.bignum} binds OpenSSL's libcrypto bignum library. It supports all the standard arithmetic operations. Regular number operands in a mixed arithmetic expression are upgraded as-if \method{bignum.new} was used explicitly. The \fn{\_\_tostring} metamethod generates a decimal encoded represention.
 
 \subsubsection[\fn{bignum.new}]{\fn{bignum.new(number)}}
 
