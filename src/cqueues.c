@@ -392,13 +392,49 @@ struct kpoll {
 		kpoll_event_t event[KPOLL_MAXWAIT];
 		size_t count;
 	} pending;
+
+	struct {
+		int fd[2];
+		short state;
+		int pending;
+	} alert;
 }; /* struct kpoll */
 
 
 static void kpoll_preinit(struct kpoll *kp) {
 	kp->fd = -1;
 	kp->pending.count = 0;
+	kp->alert.fd[0] = -1;
+	kp->alert.fd[1] = -1;
+	kp->alert.state = 0;
+	kp->alert.pending = 0;
 } /* kpoll_preinit() */
+
+
+static int kpoll_ctl(struct kpoll *, int, short *, short, void *);
+
+static int alert_init(struct kpoll *kp) {
+#if HAVE_PORTS
+	return 0;
+#else
+	int error;
+
+	if ((error = cqs_pipe(kp->alert.fd, O_CLOEXEC|O_NONBLOCK)))
+		return error;
+
+	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
+#endif
+} /* alert_init() */
+
+
+static void alert_destroy(struct kpoll *kp) {
+#if HAVE_PORTS
+	(void)0;
+#else
+	cqs_closefd(&kp->alert.fd[0]);
+	cqs_closefd(&kp->alert.fd[1]);
+#endif
+} /* alert_destroy() */
 
 
 static int kpoll_init(struct kpoll *kp) {
@@ -408,16 +444,12 @@ static int kpoll_init(struct kpoll *kp) {
 #if defined EPOLL_CLOEXEC
 	if (-1 == (kp->fd = epoll_create1(EPOLL_CLOEXEC)))
 		return errno;
-
-	return 0;
 #else
 	if (-1 == (kp->fd = epoll_create(32)))
 		return errno;
 
 	if ((error = setcloexec(kp->fd)))
 		return error;
-
-	return 0;
 #endif
 #elif HAVE_PORTS
 	if (-1 == (kp->fd = port_create()))
@@ -425,22 +457,20 @@ static int kpoll_init(struct kpoll *kp) {
 
 	if ((error = setcloexec(kp->fd)))
 		return error;
-
-	return 0;
 #else
 	if (-1 == (kp->fd = kqueue()))
 		return errno;
 
 	if ((error = setcloexec(kp->fd)))
 		return error;
-
-	return 0;
 #endif	
 
+	return alert_init(kp);
 } /* kpoll_init() */
 
 
 static void kpoll_destroy(struct kpoll *kp) {
+	alert_destroy(kp);
 	(void)close(kp->fd);
 	kpoll_preinit(kp);
 } /* kpoll_destroy() */
@@ -561,6 +591,68 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 } /* kpoll_ctl() */
 
 
+static int kpoll_alert(struct kpoll *kp) {
+#if HAVE_PORTS
+	if (0 != port_alert(kp->fd, PORT_ALERT_UPDATE, POLLIN, &kp->alert)) {
+		if (errno != EBUSY)
+			return errno;
+	}
+#else
+	int error;
+
+	if (kp->alert.pending)
+		return 0;
+
+	while (-1 == write(kp->alert.fd[1], "!", 1)) {
+		switch (errno) {
+		case EINTR:
+			continue;
+		case EAGAIN:
+			goto add;
+		default:
+			return errno;
+		}
+	}
+
+add:
+	if ((error = kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert)))
+		return error;
+#endif
+	kp->alert.pending = 1;
+
+	return 0;
+} /* kpoll_alert() */
+
+
+static int kpoll_calm(struct kpoll *kp) {
+#if HAVE_PORTS
+	if (0 != port_alert(kp->fd, PORT_ALERT_SET, 0, &kp->alert))
+		return errno;
+#else
+	char buf[64];
+	int error;
+
+	while (read(kp->alert.fd[0], buf, sizeof buf) > 0)
+		;;
+
+	if ((error = kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert)))
+		return error;
+#endif
+	kp->alert.pending = 0;
+
+	return 0;
+} /* kpoll_calm() */
+
+
+static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) {
+#if HAVE_PORTS
+	return event->portev_source == PORT_SOURCE_ALERT;
+#else
+	return kpoll_udata(event) == &kp->alert;
+#endif
+} /* kpoll_isalert() */
+
+
 static int kpoll_wait(struct kpoll *kp, double timeout) {
 #if HAVE_EPOLL
 	int n;
@@ -598,6 +690,11 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 
 /*
  * C O N D I T I O N  V A R I A B L E  R O U T I N E S
+ *
+ * FIXME: Add logic to the scheduler that prevents two coroutines from
+ * continually placing each other onto the pending queue within the same
+ * resume iteration. Otherwise cqueue_process could loop forever, starving
+ * other contexts.
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -1172,7 +1269,7 @@ static int wakecb_wakeup(struct wakecb *cb) {
 	event->pending = 1;
 	thread_move(event->thread, &Q->thread.pending);
 
-	return 0;
+	return kpoll_alert(&Q->kp);
 } /* wakecb_wakeup() */
 
 
@@ -1575,6 +1672,7 @@ error:
 
 
 static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+	int onalert = 0;
 	kpoll_event_t *ke;
 	struct fileno *fileno;
 	struct event *event;
@@ -1585,6 +1683,12 @@ static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	int status;
 
 	KPOLL_FOREACH(ke, &Q->kp) {
+		if (kpoll_isalert(&Q->kp, ke)) {
+			onalert = 1;
+
+			continue;
+		}
+
 		fileno = kpoll_udata(ke);
 		events = kpoll_pending(ke);
 
@@ -1613,6 +1717,10 @@ static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 
 		if (LUA_OK != (status = cqueue_resume(L, Q, I, T)))
 			return status;
+	}
+
+	if (onalert) {
+		kpoll_calm(&Q->kp);
 	}
 
 	return LUA_OK;
