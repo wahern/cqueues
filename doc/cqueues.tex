@@ -343,7 +343,7 @@ Add or interpose a socket class method. Returns the previous method, if any.
 Return a new socket immediately ready for reading or writing. DNS lookup and TCP connection handling are handled transparently.
 
 \subsubsection[\fn{socket.connect}]{\fn{socket.connect\{ $\ldots$ \}}}
-Like \fn{socket.connect}, but takes a table of options:
+Like \fn{socket.connect} with list arguments, but takes a table of named arguments:
 
 \begin{ctabular}{r | c | p{4.5in}}
 field & type:default & description\\\hline
@@ -387,7 +387,7 @@ field & type:default & description\\\hline
 	Return a new socket immediately ready for accepting connections.
 
 \subsubsection[\fn{socket.listen}]{\fn{socket.listen\{ $\ldots$ \}}}
-	Like \fn{socket.listen}. See also \fn{socket.connect\{\}}.
+	Like \fn{socket.listen} with list arguments, but takes a table of named arguments. See also \fn{socket.connect\{\}}.
 
 \subsubsection[\fn{socket.pair}]{\fn{socket.pair([type])}}
 Returns two bound sockets. Type should be the system type number, e.g. \fn{socket.SOCK\_STREAM} or \fn{socket.SOCK\_DGRAM}.
@@ -407,8 +407,9 @@ Returns two bound sockets. Type should be the system type number, e.g. \fn{socke
 \subsubsection[\fn{socket.onerror}]{\fn{socket.onerror([function])}}
 	Set the default error handler. See \fn{socket:onerror}.
 
-%\subsubsection[\fn{socket:connect}]{\fn{socket:connect()}}
-%	Wait for connection establishment to succeed. [UNFINISHED]
+\subsubsection[\fn{socket:connect}]{\fn{socket:connect([timeout])}}
+Wait for connection establishment to succeed. You do not need to wait before proceeding to perform
+read or write calls, but waiting may ease diagnosing connection problems in your code and allows you to separate connect phase from I/O phase timeouts.
 
 %\subsubsection[\fn{socket:listen}]{\fn{socket:listen()}}
 %	Wait for socket binding to complete, which may have been delayed if

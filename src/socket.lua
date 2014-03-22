@@ -78,7 +78,7 @@ local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
 					return nil, oops(self, "accept", ETIMEDOUT)
 				end
 
-				poll(self, { timeout = function() return curtime - deadline end })
+				poll(self, deadline - curtime)
 			else
 				poll(self)
 			end
@@ -98,6 +98,37 @@ end)
 --
 socket.interpose("clients", function(self, timeout)
 	return function() return self:accept(timeout) end
+end)
+
+
+--
+-- Yielding socket:connect
+--
+local oconnect; oconnect = socket.interpose("connect", function(self, timeout)
+	local deadline = (timeout and (monotime() + timeout)) or nil
+	local ok, why = oconnect(self)
+
+	while not ok do
+		if why == EAGAIN then
+			local curtime = monotime()
+
+			if deadline then
+				if deadline <= curtime then
+					return false, oops(self, "connect", ETIMEDOUT)
+				end
+
+				poll(self, deadline - curtime)
+			else
+				poll(self)
+			end
+		else
+			return false, oops(self, "connect", why)
+		end
+
+		ok, why = oconnect(self, mode)
+	end
+
+	return true
 end)
 
 
