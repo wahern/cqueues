@@ -1,3 +1,11 @@
+liblua-cqueues (20140322-0) unstable; urgency=low
+
+  * Add condition variable API.
+  * Allow passing more primitives types to thread.start.
+  * Add Lua 5.3 support.
+
+ -- William Ahern <william@25thandClement.com>  Sat, 22 Mar 2014 20:23:56 -0800
+
 liblua-cqueues (20140130-0) unstable; urgency=low
 
   * Install OpenSSL mutexes when loading thread module.
