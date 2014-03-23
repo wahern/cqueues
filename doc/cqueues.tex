@@ -136,11 +136,13 @@ Microsoft Windows support is basically out of the question, for far too many rea
 
 \section{Libraries}
 
-\subsection{Lua 5.2, LuaJIT}
-\cqueues principally targets Lua 5.2. It's not fully portable to Lua 5.1 because \cqueues relies on ephemeron tables to prevent coroutine/controller reference cycles, and because Lua 5.1 does not support yielding from metamethods and iterators. LuaJIT removes the latter of these handicaps, and so \cqueues targets LuaJIT secondarily. In lieu of ephemeron tables, application code must be sure not to hold a reference to a parent controller in an upvalue of the coroutine. Instead, use \fn{cqueues.running}.
+\subsection{LuaJIT, Lua 5.2, Lua 5.3}
+\cqueues principally targets Lua 5.2 and above. It's not fully portable to Lua 5.1 because \cqueues relies on ephemeron tables to prevent coroutine/controller reference cycles, and because Lua 5.1 does not support yielding from metamethods and iterators. LuaJIT removes the latter of these handicaps, and so \cqueues targets LuaJIT secondarily. In lieu of ephemeron tables, application code must be sure not to hold a reference to a parent controller in an upvalue of the coroutine. Instead, use \fn{cqueues.running}.
 
 \subsection{OpenSSL}
-The \cqueues \module{socket} module provides seamless SSL/TLS support using OpenSSL, and comprehensive bindings for certificate and key management are provided in the extension \module{openssl} module.
+The \cqueues \module{socket} module provides seamless SSL/TLS support using OpenSSL.
+
+Comprehensive bindings for certificate and key management are provided in the \href{http://25thandClement.com/~william/projects/luaossl.html}{companion \module{openssl} module, \texttt{luaossl}}.
 
 \subsection{pthreads}
 
@@ -162,32 +164,81 @@ SunPro has a broken diagnostic pass confused by macro-generated function calls.\
 
 For other warnings or errors, patches are welcome.
 
-\section{Makefile}
+\section{GNU Make}
 
 The Makefile requires GNU Make, usually installed as gmake on platforms other than Linux or OS X. The actual \texttt{Makefile} proxies to \texttt{GNUmakefile}. As long as \texttt{gmake} is installed on non-GNU systems you can invoke your system's \texttt{make}.
 
-There is no separate \texttt{./configure} step. System introspection occurs during compile-time. However, the ``configure'' make target can be used to cache the build environment.
+\chapter{Installation}
+
+All the C modules are built into a single core C library. The core routines are then wrapped and extended through Lua modules. Because there several extant versions of Lua often used in parallel on the same system, there are individual targets to build and install for each supported Lua version. The targets \texttt{all} and \texttt{install} will attempt to build and install all supported versions.
+
+Note that building and installation and can accomplished in a single step by simply invoking one of the install targets with all the necessary variables defined.
+
+\section{Building}
+
+There is no separate \texttt{./configure} step. System introspection occurs during compile-time. However, the ``\texttt{configure}'' make target can be used to cache the build environment so one needn't continually use a long command-line invocation.
+
+All the common GNU-style compiler variables are supported, including \texttt{CC}, \texttt{CPPFLAGS}, \texttt{CFLAGS}, \texttt{LDFLAGS}, and \texttt{SOFLAGS}. Note that you can specify the path to Lua 5.1, Lua 5.2, and Lua 5.3 include headers at the same time in CPPFLAGS; the build system will work things out to ensure the correct headers are loaded when compiling each version of the module.
+
+\subsection{Targets}
+
+\begin{description}
+\item[\texttt{all}] \hfill \\
+Build modules for Lua 5.1, 5.2, and 5.3.
+
+\item[\texttt{all5.1}] \hfill \\
+Build Lua 5.1 module.
+
+\item[\texttt{all5.2}] \hfill \\
+Build Lua 5.2 module.
+
+\item[\texttt{all5.3}] \hfill \\
+Build Lua 5.3 module.
+
+\end{description}
+
+\section{Installing}
 
 All the common GNU-style installation path variables are supported, including \texttt{prefix}, \texttt{bindir}, \texttt{libdir}, \texttt{datadir}, \texttt{includedir}, and \texttt{DESTDIR}. These additional path variables are also allowed:
 
 \begin{description}
 
-\item[\texttt{lua51path}] install path for Lua 5.1 modules, e.g. \texttt{\$(prefix)/share/lua/5.1}
-\item[\texttt{lua51cpath}] install path for Lua 5.1 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.1}
-\item[\texttt{lua52path}] install path for Lua 5.2 modules, e.g. \texttt{\$(prefix)/share/lua/5.2}
-\item[\texttt{lua52cpath}] install path for Lua 5.2 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.2}
+\item[\texttt{lua51path}]  \hfill \\
+Install path for Lua 5.1 modules, e.g. \texttt{\$(prefix)/share/lua/5.1}
+
+\item[\texttt{lua51cpath}]  \hfill \\
+Install path for Lua 5.1 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.1}
+
+\item[\texttt{lua52path}]  \hfill \\
+Install path for Lua 5.2 modules, e.g. \texttt{\$(prefix)/share/lua/5.2}
+
+\item[\texttt{lua52cpath}]  \hfill \\
+Install path for Lua 5.2 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.2}
 
 \end{description}
 
-All the common GNU-style compiler variables are supported, including \texttt{CC}, \texttt{CPPFLAGS}, \texttt{CFLAGS}, \texttt{LDFLAGS}, and \texttt{SOFLAGS}. Note that you can specify the path to both Lua 5.1 and Lua 5.2 include headers at the same time in CPPFLAGS; the build system will work things out to ensure the correct headers are loaded at compile-time.
+\subsection{Targets}
 
+\begin{description}
 
+\item[\texttt{install}] \hfill \\
+Install modules for Lua 5.1, 5.2, and 5.3.
+
+\item[\texttt{install5.1}] \hfill \\
+Install Lua 5.1 module.
+
+\item[\texttt{install5.2}] \hfill \\
+Install Lua 5.2 module.
+
+\item[\texttt{install5.3}] \hfill \\
+Install Lua 5.3 module.
+
+\end{description}
 
 
 \chapter{Usage}
 
 \section{Conventions}
-
 
 \subsection{Polling}
 
@@ -1022,546 +1073,6 @@ You can also directly yield a condition variable, along with other condition var
 \subsubsection[\fn{condition:signal}]{\fn{condition:signal([n])}}
 
 Signal a condition, wakening one or more waiting threads. If specified, a maximum of `n' threads are woken, otherwise all threads are woken.
-
-\end{Module}
-
-
-\begin{Module}{openssl.bignum}
-
-\module{openssl.bignum} binds OpenSSL's libcrypto bignum library. It supports all the standard arithmetic operations. Regular number operands in a mixed arithmetic expression are upgraded as-if \method{bignum.new} was used explicitly. The \fn{\_\_tostring} metamethod generates a decimal encoded represention.
-
-\subsubsection[\fn{bignum.new}]{\fn{bignum.new(number)}}
-
-Wraps the sign and integral part of `number' as a bignum object, discarding any fractional part.
-
-\subsubsection[\fn{bignum.interpose}]{\fn{bignum.interpose(name, function)}}
-
-Add or interpose a bignum class method. Returns the previous method, if any.
-
-\end{Module}
-
-
-\begin{Module}{openssl.pubkey}
-
-\module{openssl.pubkey} binds OpenSSL's libcrypto public-private key library. The \fn{tostring} metamethod generates a PEM encoded representation of the public key---excluding the private key.
-
-\subsubsection[\fn{pubkey.new}]{\fn{pubkey.new(string)}}
-
-Initializes a new pubkey object from the PEM-encoded key in `string'.
-
-\subsubsection[\fn{pubkey.new}]{\fn{pubkey.new\{ $\ldots$ \}}}
-
-Generates a new pubkey object according to the specified parameters.
-
-\begin{ctabular}{ c | c | p{5in}}
-field & type:default & description\\\hline
-.type & string:RSA & public key algorithm---``RSA'', ``DSA'', ``EC'', ``DH'', or an internal OpenSSL identifier of a subclass of one of those basic types \\
-
-.bits & number:1024 & private key size \\
-
-.exp & number:65537 & RSA or Diffie-Hellman exponent \\
-
-.curve & string:prime192v1 & for elliptic curve keys, the OpenSSL string identifier of the curve
-\end{ctabular}
-\subsubsection[\fn{pubkey.interpose}]{\fn{pubkey.interpose(name, function)}}
-
-Add or interpose a pubkey class method. Returns the previous method, if any.
-
-\subsubsection[\fn{pubkey:type}]{\fn{pubkey:type()}}
-
-Returns the OpenSSL string identifier for the type of key.
-
-\subsubsection[\fn{pubkey:setPublicKey}]{\fn{pubkey:setPublicKey(string)}}
-
-Set the public key component to that described by the PEM encoded public key in `string'.
-
-\subsubsection[\fn{pubkey:setPrivateKey}]{\fn{pubkey:setPrivateKey(string)}}
-
-Set the private key component to that described by the PEM encoded private key in `string'.
-
-\subsubsection[\fn{pubkey:sign}]{\fn{pubkey:sign(digest)}}
-
-Sign data which has been consumed by the specified \module{openssl.digest} `digest'. Digests and keys are not all interchangeable. For example, an elliptic curve key requires a digest of type ``ecdsa-with-SHA1'', while DSA requires ``dss1''. OpenSSL supports more varied digests for RSA.
-
-Returns the signature as an opaque binary string\footnote{Elliptic curve signatures are two X.509 DER-encoded numbers, for example, while RSA signatures are encrypted DER structures.} on success, and throws an error otherwise.
-
-\subsubsection[\fn{pubkey:verify}]{\fn{pubkey:verify(signature, digest)}}
-
-Verify the string `signature' as signing the document consumed by \module{openssl.digest} `digest`. See the :sign method for constraints on the format and type of the parameters.
-
-Returns true on success, false for properly formatted but invalid signatures, and throws an error otherwise. Because the structure of the signature is opaque and not susceptible to sanity checking before passing to OpenSSL, an application should always be prepared for an error to be thrown when verifying untrusted signatures. OpenSSL, of course, should be able to handle all malformed inputs. But the module does not attempt to differentiate local system errors from errors triggered by malformed signatures because the set of such errors may change in the future.
-
-\subsubsection[\fn{pubkey:toPEM}]{\fn{pubkey:toPEM(which[, which])}}
-
-Returns the PEM encoded string representation(s) of the specified key component. `which' must be one of ``public'', ``PublicKey'', ``private'', or ``PrivateKey''. For the two argument form, returns two values.
-
-\end{Module}
-
-
-\begin{Module}{openssl.x509.name}
-
-Binds the X.509 distinguished name OpenSSL ASN.1 object, used for representing certificate subject and issuer names.
-
-\subsubsection[\fn{name.new}]{\fn{name.new()}}
-
-Returns an empty name object.
-
-\subsubsection[\fn{name.interpose}]{\fn{name.interpose(name, function)}}
-
-Add or interpose a name class method. Returns the previous method, if any.
-
-\subsubsection[\fn{name:add}]{\fn{name:add(type, value)}}
-
-Add a distinguished name component. `type' is the OpenSSL string identifier of the component type---short, long, or OID forms. `value' is the string value of the component. DN components are free-form, and are encoded raw.
-
-\subsubsection[\fn{name:all}]{\fn{name:all()}}
-
-Returns a table array of the distinguished name components. Each element is a table with four fields:
-
-\begin{tabular}{ l | l}
-field & description\\\hline
-.sn & short name identifier, if available\\
-.ln & long name identifier, if available\\
-.id & OID identifier\\
-.blob & raw string value of the component
-\end{tabular}
-
-\subsubsection[\fn{name:\_\_pairs}]{\fn{name:\_\_pairs()}}
-
-Returns a key-value iterator over the distinguished name components. The key is either the short, long, or OID identifier, with preference for the former.
-
-\end{Module}
-
-
-\begin{Module}{openssl.x509.altname}
-
-Binds the X.509 alternative names (a.k.a ``general names'') OpenSSL ASN.1 object, used for representing certificate subject and issuer alternative names.
-
-\subsubsection[\fn{altname.new}]{\fn{altname.new()}}
-
-Returns an empty altname object.
-
-\subsubsection[\fn{altname.interpose}]{\fn{altname.interpose(name, function)}}
-
-Add or interpose an altname class method. Returns the previous method, if any.
-
-\subsubsection[\fn{altname:add}]{\fn{altname:add(type, value)}}
-
-Add an alternative name. `type' must specify one of the four basic types identified by ``RFC822Name'', ``RFC822'', ``email'', ``UniformResourceIdentifier'', ``URI'', ``DNSName'', ``DNS'', ``IPAddress'', and ``IP''.
-
-`value' is a string acceptable to OpenSSL's sanity checks. For an IP address, `value' must be parseable by the system's \fn{inet\_pton} routine, as IP addresses are stored as raw 4- or 16-byte octets.
-
-\subsubsection[\fn{name:\_\_pairs}]{\fn{name:\_\_pairs()}}
-
-Returns a key-value iterator over the alternative names. The key is one of ``email'', ``URI'', ``DNS'', or ``IP''. The value is the string representation of the name.
-
-\end{Module}
-
-
-\begin{Module}{openssl.x509}
-
-Binds the X.509 certificate OpenSSL ASN.1 object.
-
-\subsubsection[\fn{x509.new}]{\fn{x509.new([string])}}
-
-Returns a new x509 object, optionally initialized to the PEM encoded certificate specified by `string'.
-
-\subsubsection[\fn{x509.interpose}]{\fn{x509.interpose(name, function)}}
-
-Add or interpose an x509 class method. Returns the previous method, if any.
-
-\subsubsection[\fn{x509:getVersion}]{\fn{x509:getVersion()}}
-
-Returns the X.509 version of the certificate.
-
-\subsubsection[\fn{x509:setVersion}]{\fn{x509:setVersion(number)}}
-
-Sets the X.509 version of the certificate.
-
-\subsubsection[\fn{x509:getSerial}]{\fn{x509:getSerial()}}
-
-Returns the serial of the certificate as an \module{openssl.bignum}.
-
-\subsubsection[\fn{x509:setSerial}]{\fn{x509:setSerial(number)}}
-
-Sets the serial of the certificate. `number' is a Lua or \module{openssl.bignum} number.
-
-\subsubsection[\fn{x509:digest}]{\fn{x509:digest([type[, format]])}}
-
-Returns the cryptographic one-way message digest of the certificate. `type' is the OpenSSL string identifier of the hash type---e.g. ``md5'', ``sha1'' (default), ``sha256'', etc. `format' specifies the representation of the digest---``s'' for an octet string, ``x'' for a hexadecimal string (default), and ``n'' for an \module{openssl.bignum} number.
-
-\subsubsection[\fn{x509:getLifetime}]{\fn{x509:getLifetime()}}
-
-Returns the certificate validity ``Not Before'' and ``Not After'' dates as two Unix timestamp numbers.
-
-\subsubsection[\fn{x509:setLifetime}]{\fn{x509:setLifetime([notbefore][, notafter])}}
-
-Sets the certificate validity dates. A nil value leaves the particular date unchanged.
-
-\subsubsection[\fn{x509:getIssuer}]{\fn{x509:getIssuer()}}
-
-Returns the issuer distinguished name as an \module{x509.name} object.
-
-\subsubsection[\fn{x509:setIssuer}]{\fn{x509:setIssuer(name)}}
-
-Sets the issuer distinguished name.
-
-\subsubsection[\fn{x509:getSubject}]{\fn{x509:getSubject()}}
-
-Returns the subject distinguished name as an \module{x509.name} object.
-
-\subsubsection[\fn{x509:setSubject}]{\fn{x509:setSubject(name)}}
-
-Sets the subject distinguished name.
-
-\subsubsection[\fn{x509:getIssuerAlt}]{\fn{x509:getIssuerAlt()}}
-
-Returns the issuer alternative names as an \module{x509.altname} object.
-
-\subsubsection[\fn{x509:setIssuerAlt}]{\fn{x509:setIssuer(altname)}}
-
-Sets the issuer alternative names.
-
-\subsubsection[\fn{x509:getSubjectAlt}]{\fn{x509:getSubjectAlt()}}
-
-Returns the subject alternative names as an \module{x509.name} object.
-
-\subsubsection[\fn{x509:setSubjectAlt}]{\fn{x509:setSubjectAlt(name)}}
-
-Sets the subject alternative names.
-
-\subsubsection[\fn{x509:getIssuerAltCritical}]{\fn{x509:getIssuerAltCritical()}}
-
-Returns the issuer alternative names critical flag as a boolean.
-
-\subsubsection[\fn{x509:setIssuerAltCritical}]{\fn{x509:setIssuerAltCritical(boolean)}}
-
-Sets the issuer alternative names critical flag.
-
-\subsubsection[\fn{x509:getSubjectAltCritical}]{\fn{x509:getSubjectAltCritical()}}
-
-Returns the subject alternative names critical flag as a boolean.
-
-\subsubsection[\fn{x509:setSubjectAltCritical}]{\fn{x509:setSubjectAltCritical(boolean)}}
-
-Sets the subject alternative names critical flag.
-
-\subsubsection[\fn{x509:getBasicConstraints}]{\fn{x509:getBasicConstraints([which[, which $\ldots$ ]])}}
-
-Returns the X.509 ``basic constraint'' flags. If specified, `which' should be one of ``CA'' or ``pathLen'', which returns the specified constraint---respectively, a boolean and a number.  If no parameters are specified, returns a table with fields ``CA'' and ``pathLen''.
-
-\subsubsection[\fn{x509:setBasicConstraints}]{\fn{x509:setBasicConstraints\{ $\ldots$ \}}}
-
-Sets the basic constraint flag according to the defined field values for ``CA'' (boolean) and ``pathLen'' (number).
-
-\subsubsection[\fn{x509:getBasicConstraintsCritical}]{\fn{x509:getBasicConstraintsCritical()}}
-
-Returns the basic constraints critical flag as a boolean.
-
-\subsubsection[\fn{x509:setBasicConstraintsCritical}]{\fn{x509:setBasicConstraintsCritical(boolean)}}
-
-Sets the basic constraints critical flag.
-
-\subsubsection[\fn{x509:isIssuedBy}]{\fn{x509:isIssuedBy(issuer)}}
-
-Returns a boolean according to whether the specified issuer---an \module{openssl.x509} object---signed the instance certificate.
-
-\subsubsection[\fn{x509:getPublicKey}]{\fn{x509:getPublicKey()}}
-
-Returns the public key component as an \module{openssl.pubkey} object.
-
-\subsubsection[\fn{x509:setPublicKey}]{\fn{x509:setPublicKey(key)}}
-
-Sets the public key component referenced by the \module{openssl.pubkey} object `key'.
-
-\subsubsection[\fn{x509:sign}]{\fn{x509:sign(key [, type])}}
-
-Signs and updates the instance certificate using the \module{openssl.pubkey} `key'. `type' is an optional string describing the digest type. See \module{pubkey:sign}, regarding which types of digests are valid. If `type' is omitted than a default type is used---``sha1'' for RSA keys, ``dss1'' for DSA keys, and ``ecdsa-with-SHA1'' for EC keys.
-
-\subsubsection[\fn{x509:\_\_tostring}]{\fn{x509:\_\_tostring}}
-
-Returns the PEM encoded representation of the instance certificate.
-
-\end{Module}
-
-
-\begin{Module}{openssl.x509.csr}
-
-Binds the X.509 certificate signing request OpenSSL ASN.1 object.
-
-\subsubsection[\fn{csr.new}]{\fn{csr.new([x509|string])}}
-
-Returns a new request object, optionally initialized to the specified \module{openssl.x509} certificate `x509' or the the PEM encoded certificate signing request `string'.
-
-\subsubsection[\fn{csr.interpose}]{\fn{csr.interpose(name, function)}}
-
-Add or interpose a request class method. Returns the previous method, if any.
-
-\subsubsection[\fn{csr:getVersion}]{\fn{csr:getVersion()}}
-
-Returns the X.509 version of the request.
-
-\subsubsection[\fn{car:setVersion}]{\fn{csr:setVersion(number)}}
-
-Sets the X.509 version of the request.
-
-\subsubsection[\fn{csr:getSubject}]{\fn{csr:getSubject()}}
-
-Returns the subject distinguished name as an \module{x509.name} object.
-
-\subsubsection[\fn{csr:setSubject}]{\fn{csr:setSubject(name)}}
-
-Sets the subject distinguished name.
-
-\subsubsection[\fn{csr:getPublicKey}]{\fn{csr:getPublicKey()}}
-
-Returns the public key component as an \module{openssl.pubkey} object.
-
-\subsubsection[\fn{csr:setPublicKey}]{\fn{csr:setPublicKey(key)}}
-
-Sets the public key component referenced by the \module{openssl.pubkey} object `key'.
-
-\subsubsection[\fn{car:sign}]{\fn{csr:sign(key)}}
-
-Signs the instance request using the \module{openssl.pubkey} `key'.
-
-\subsubsection[\fn{csr:\_\_tostring}]{\fn{csr:\_\_tostring}}
-
-Returns the PEM encoded representation of the instance request.
-
-\end{Module}
-
-
-\begin{Module}{openssl.x509.chain}
-
-Binds the ``STACK\_OF(X509)'' OpenSSL object, principally used in the OpenSSL library for representing a validation chain.
-
-\subsubsection[\fn{chain.new}]{\fn{chain.new()}}
-
-Returns a new chain object.
-
-\subsubsection[\fn{chain.interpose}]{\fn{chain.interpose(name, function)}}
-
-Add or interpose a chain class method. Returns the previous method, if any.
-
-\subsubsection[\fn{chain:add}]{\fn{chain:add(x509)}}
-
-Append the X.509 certificate `x509'.
-
-\subsubsection[\fn{chain:\_\_ipairs}]{\fn{chain:\_\_ipairs()}}
-
-Returns an iterator over the stored certificates.
-
-\end{Module}
-
-
-\begin{Module}{openssl.x509.store}
-
-Binds the X.509 certificate ``X509\_STORE'' OpenSSL object, principally used for loading and storing trusted certificates, paths to trusted certificates, and verification policy.
-
-\subsubsection[\fn{store.new}]{\fn{store.new()}}
-
-Returns a new store object.
-
-\subsubsection[\fn{store.interpose}]{\fn{store.interpose(name, function)}}
-
-Add or interpose a store class method. Returns the previous method, if any.
-
-\subsubsection[\fn{store:add}]{\fn{store:add(x509|filepath|dirpath)}}
-
-Add the X.509 certificate `x509' to the store, load the certificates from the file `filepath', or set the OpenSSL ``hash dir'' certificate path `dirpath'.
-
-\subsubsection[\fn{store:verify}]{\fn{store:verify(x509[, chain])}}
-
-Returns two values. The first is a boolean value for whether the specified certificate `x509' was verified. If true, the second value is a  \module{openssl.x509.chain} object validation chain. If false, the second value is a string describing why verification failed. The optional parameter `chain' is an \module{openssl.x509.chain} object of untrusted certificates linking the certificate `x509' to one of the trusted certificates in the instance store.
-
-\end{Module}
-
-
-\begin{Module}{openssl.ssl.context}
-
-Binds the ``SSL\_CTX'' OpenSSL object, used as a configuration prototype for SSL connection instances. See \method{socket.starttls}.
-
-\subsubsection[\fn{context[]}]{\fn{context[]}}
-
-A table mapping bitwise flags to names.
-
-\begin{tabular}{ c | l }
-name & description \\\hline
-VERIFY\_NONE & disable client peer certificate verification \\
-VERIFY\_PEER & enable client peer certificate verification \\
-VERIFY\_FAIL\_IF\_NO\_PEER\_CERT & require a peer certificate \\
-VERIFY\_CLIENT\_ONCE & do not request peer certificates after initial handshake
-\end{tabular}
-
-See the \href{http://www.openssl.org/docs/ssl/SSL_CTX_set_verify.html#NOTES}{NOTES section} in the OpenSSL documentation for \fn{SSL\_CTX\_set\_verify\_mode}.
-
-\subsubsection[\fn{context.new}]{\fn{context.new([protocol][, server])}}
-
-Returns a new context object. `protocol' is an optional string identifier selecting the SSL mode---TLSv1 (default), SSLv3, SSLv23, or SSLv2. If `server' is true, then SSL connections instantiated using this context will be placed into server mode, otherwise they behave as clients.
-
-\subsubsection[\fn{context.interpose}]{\fn{context.interpose(name, function)}}
-
-Add or interpose a context class method. Returns the previous method, if any.
-
-\subsubsection[\fn{context:setStore}]{\fn{context:setStore(store)}}
-
-Sets the \module{x509.store} of the context instance.
-
-\subsubsection[\fn{context:getVerify}]{\fn{context:getVerify()}}
-
-Returns two values: the bitwise verification mode flags, and the maximum validation depth.
-
-\subsubsection[\fn{context:setVerify}]{\fn{context:setVerify([mode][, depth])}}
-
-Sets the verification mode flags and maximum validation chain depth.
-
-\subsubsection[\fn{context:setCertificate}]{\fn{context:setCertificate(x509)}}
-
-Sets the X.509 certificate \module{openssl.x509} object `x509' to send during SSL connection instance handshakes.
-
-\subsubsection[\fn{context:setPrivateKey}]{\fn{context:setPrivateKey(key)}}
-
-Sets the private key \module{openssl.pubkey} object `key' for use during SSL connection instance handshakes.
-
-\subsubsection[\fn{context:setCipherList}]{\fn{context:setCipherList(string)}}
-
-Sets the allowed public key and private key algorithms. The string format is documented in the \href{http://www.openssl.org/docs/apps/ciphers.html#CIPHER_LIST_FORMAT}{OpenSSL ciphers(1) utility documentation}.
-
-\end{Module}
-
-
-\begin{Module}{openssl.ssl}
-
-Binds the ``SSL'' OpenSSL object, which represents an SSL connection instance. See \method{socket.checktls}.
-
-\subsubsection[\fn{ssl.interpose}]{\fn{ssl.interpose(name, function)}}
-
-Add or interpose an ssl class method. Returns the previous method, if any.
-
-\subsubsection[\fn{ssl:getPeerCertificate}]{\fn{ssl:getPeerCertificate()}}
-
-Returns the X.509 peer certificate as a \module{cqueues.openssl.x509} object. If no peer certificate is available, returns nil.
-
-\subsubsection[\fn{ssl:getPeerChain}]{\fn{ssl:getPeerChain()}}
-
-Similar to :getPeerCertifiate, but returns the entire chain sent by the peer as a \module{cqueues.openssl.x509.chain} object.
-
-\subsubsection[\fn{ssl:getCipherInfo}]{\fn{ssl:getCipherInfo()}}
-
-Returns a table of information on the current cipher. 
-
-\begin{tabular}{ c | l }
-field & description\\\hline
-.name & cipher name returned by \fn{SSL\_CIPHER\_get\_name}\\
-.bits & number of secret bits returned by \fn{SSL\_CIPHER\_get\_bits}\\
-.version & SSL/TLS version string returned by \fn{SSL\_CIPHER\_get\_version}\\
-.description & key:value cipher description returned by \fn{SSL\_CIPHER\_description}
-\end{tabular}
-
-\end{Module}
-
-
-\begin{Module}{openssl.digest}
-
-Binds the ``EVP\_MD\_CTX'' OpenSSL object, which represents a cryptographic message digest (i.e. hashing) algorithm instance.
-
-\subsubsection[\fn{digest.interpose}]{\fn{digest.interpose(name, function)}}
-
-Add or interpose a digest class method. Returns the previous method, if any.
-
-\subsubsection[\fn{digest.new}]{\fn{digest.new([type])}}
-
-Return a new digest instance using the specified algorithm `type'. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_digestbyname, and defaults to ``sha1''.
-
-\subsubsection[\fn{digest:update}]{\fn{digest:update([string [, ...]])}}
-
-Update the digest with the specified strings. Returns true.
-
-\subsubsection[\fn{digest:final}]{\fn{digest:final([string [, ...]])}}
-
-Update the digest with the specified strings. Returns the final message digest as a binary string.
-
-\end{Module}
-
-
-\begin{Module}{openssl.hmac}
-
-Binds the ``HMAC\_CTX'' OpenSSL object, which represents a cryptographic HMAC algorithm instance.
-
-\subsubsection[\fn{hmac.interpose}]{\fn{hmac.interpose(name, function)}}
-
-Add or interpose an HMAC class method. Returns the previous method, if any.
-
-\subsubsection[\fn{hmac.new}]{\fn{hmac.new(key [, type])}}
-
-Return a new HMAC instance using the specified `key' and `type'. `key' is the secret used for HMAC authentication. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_digestbyname, and defaults to ``sha1''.
-
-\subsubsection[\fn{hmac:update}]{\fn{hmac:update([string [, ...]])}}
-
-Update the HMAC with the specified strings. Returns true.
-
-\subsubsection[\fn{hmac:final}]{\fn{hmac:final([string [, ...]])}}
-
-Update the HMAC with the specified strings. Returns the final HMAC checksum as a binary string.
-
-\end{Module}
-
-
-\begin{Module}{openssl.cipher}
-
-Binds the ``EVP\_CIPHER\_CTX'' OpenSSL object, which represents a cryptographic cipher instance.
-
-\subsubsection[\fn{cipher.interpose}]{\fn{cipher.interpose(name, function)}}
-
-Add or interpose a cipher class method. Returns the previous method, if any.
-
-\subsubsection[\fn{cipher.new}]{\fn{cipher.new(type)}}
-
-Return a new, uninitialized cipher instance. `type' is a string suitable for passing to the OpenSSL routine EVP\_get\_cipherbyname, typically of a form similar to ``AES-128-CBC''.
-
-The cipher is uninitialized because some algorithms support or require additional \textit{ad hoc} parameters before key initialization. The API still allows one-shot encryption like ``cipher.new(type):encrypt(key, iv):final(plaintext)''.
-
-\subsubsection[\fn{cipher:encrypt}]{\fn{cipher:encrypt(key [, iv] [, padding])}}
-
-Initialize the cipher in encryption mode. `key' and `iv' are binary strings with lengths equal to that required by the cipher instance as configured. In other words, key stretching and other transformations must be done explicitly. If the mode does not take an IV or equivalent, such as in ECB mode, then it may be nil. `padding' is a boolean which controls whether PKCS padding is applied, and defaults to true. Returns the cipher instance.
-
-\subsubsection[\fn{cipher:decrypt}]{\fn{cipher:decrypt(key [, iv] [, padding])}}
-
-Initialize the cipher in decryption mode. `key', `iv', and `padding' are as described in :encrypt. Returns the cipher instance.
-
-\subsubsection[\fn{cipher:update}]{\fn{cipher:update([string [, ...]])}}
-
-Update the cipher instance with the specified strings. Returns a string on success, or nil and an error message on failure. The returned string may be empty if no blocks can be flushed.
-
-\subsubsection[\fn{cipher:final}]{\fn{cipher:final([string [, ...]])}}
-
-Update the cipher with the specified strings. Returns the final output string on success, or nil and an error message on failure. The returned string may be empty if all blocks have already been flushed in prior :update calls.
-
-\end{Module}
-
-
-\begin{Module}{openssl.rand}
-
-Binds OpenSSL's random number interfaces.
-
-OpenSSL will automatically attempt to seed itself from the system. The only time this could theoretically fail is if /dev/urandom (or similar) were not visible or could not be opened. This might happen if within a chroot jail, or if a file descriptor limit were reached.
-
-\subsubsection[\fn{rand.bytes}]{\fn{rand.bytes(count)}}
-
-Returns `count' cryptographically-strong bytes as a single string. Throws an error if OpenSSL could  not complete the request---e.g. because the CSPRNG could not be seeded.
-
-\subsubsection[\fn{rand.ready}]{\fn{rand.ready()}}
-
-Returns a boolean describing whether the CSPRNG has been properly seeded.
-
-In the default CSPRNG engine this routine will also attempt to seed the system if not already. Because seeding only needs to happen once per process to ensure a successful RAND\_bytes invocation\footnote{At least this appeared to be the case when examining the source code of OpenSSL 1.0.1. See md\_rand.c near line 407---``Once we've had enough initial seeding we don't bother to adjust the entropy count, though, because we're not ambitious to provide *information-theoretic* randomness.''}, it may be prudent to assert on rand:ready() at application startup.
-
-\subsubsection[\fn{rand.uniform}]{\fn{rand.uniform([n])}}
-
-Returns a cryptographically strong uniform random integer in the interval $[0, n-1]$. If `n' is omitted, the interval is $[0, 2^{64}-1]$.
-
-The routine operates internally on 64-bit unsigned integers.\footnote{Actually, \texttt{unsigned long long}.} Because neither Lua 5.1 nor 5.2 support 64-bit integers, it's probably best to generate numbers that fit the integral range of your Lua implementation. Lua 5.3 is expected to add a new arithmetic type for 64-bit signed integers in two's-complement representation. This new arithmetic type will be used for return values when available.
 
 \end{Module}
 
