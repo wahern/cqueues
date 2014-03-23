@@ -170,7 +170,7 @@ The Makefile requires GNU Make, usually installed as gmake on platforms other th
 
 \chapter{Installation}
 
-All the C modules are built into a single core C library. The core routines are then wrapped and extended through Lua modules. Because there several extant versions of Lua often used in parallel on the same system, there are individual targets to build and install for each supported Lua version. The targets \texttt{all} and \texttt{install} will attempt to build and install all supported versions.
+All the C modules are built into a single core C library. The core routines are then wrapped and extended through Lua modules. Because there several extant versions of Lua often used in parallel on the same system, there are individual targets to build and install for each supported Lua version. The targets \texttt{all} and \texttt{install} will attempt to build and install both Lua 5.1 and 5.2 modules.
 
 Note that building and installation and can accomplished in a single step by simply invoking one of the install targets with all the necessary variables defined.
 
@@ -184,7 +184,7 @@ All the common GNU-style compiler variables are supported, including \texttt{CC}
 
 \begin{description}
 \item[\texttt{all}] \hfill \\
-Build modules for Lua 5.1, 5.2, and 5.3.
+Build modules for Lua 5.1 and 5.2.
 
 \item[\texttt{all5.1}] \hfill \\
 Build Lua 5.1 module.
@@ -215,6 +215,12 @@ Install path for Lua 5.2 modules, e.g. \texttt{\$(prefix)/share/lua/5.2}
 \item[\texttt{lua52cpath}]  \hfill \\
 Install path for Lua 5.2 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.2}
 
+\item[\texttt{lua53path}]  \hfill \\
+Install path for Lua 5.3 modules, e.g. \texttt{\$(prefix)/share/lua/5.3}
+
+\item[\texttt{lua53cpath}]  \hfill \\
+Install path for Lua 5.3 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.3}
+
 \end{description}
 
 \subsection{Targets}
@@ -222,7 +228,7 @@ Install path for Lua 5.2 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.2}
 \begin{description}
 
 \item[\texttt{install}] \hfill \\
-Install modules for Lua 5.1, 5.2, and 5.3.
+Install modules for Lua 5.1 and 5.2.
 
 \item[\texttt{install5.1}] \hfill \\
 Install Lua 5.1 module.

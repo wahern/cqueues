@@ -24,6 +24,8 @@ lua51cpath ?= $(libdir)/lua/5.1
 lua51path ?= $(datadir)/lua/5.1
 lua52cpath ?= $(libdir)/lua/5.2
 lua52path ?= $(datadir)/lua/5.2
+lua53cpath ?= $(libdir)/lua/5.3
+lua53path ?= $(datadir)/lua/5.3
 
 AR ?= ar
 RANLIB ?= ranlib
@@ -48,6 +50,8 @@ $(d)/config:
 	printf 'lua51path ?= $(value lua51path)'"\n" >> $(@D)/.config
 	printf 'lua52cpath ?= $(value lua52cpath)'"\n" >> $(@D)/.config
 	printf 'lua52path ?= $(value lua52path)'"\n" >> $(@D)/.config
+	printf 'lua53cpath ?= $(value lua53cpath)'"\n" >> $(@D)/.config
+	printf 'lua53path ?= $(value lua53path)'"\n" >> $(@D)/.config
 	printf 'CC ?= $(CC)'"\n" >> $(@D)/.config
 	printf 'CPPFLAGS ?= $(value CPPFLAGS)'"\n" >> $(@D)/.config
 	printf 'CFLAGS ?= $(value CFLAGS)'"\n" >> $(@D)/.config

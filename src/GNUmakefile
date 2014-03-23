@@ -78,12 +78,16 @@ $(eval $(call BUILD_$(d),5.1))
 
 $(eval $(call BUILD_$(d),5.2))
 
+$(eval $(call BUILD_$(d),5.3))
+
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
-.SECONDARY: all all5.1 all5.2
+.SECONDARY: all all5.1 all5.2 all5.3
 
 all5.1: liblua5.1-cqueues
 
 all5.2: liblua5.2-cqueues
+
+all5.3: liblua5.3-cqueues
 
 all: all5.1 all5.2
 
@@ -149,20 +153,26 @@ $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
 
+$(eval $(call INSTALL_$(d),5.3,$$(lua53cpath),$$(lua53path)))
+
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
-.SECONDARY: install5.1 install5.2 install
+.SECONDARY: install5.1 install5.2 install5.3 install
 
 install5.1: liblua5.1-cqueues-install
 
 install5.2: liblua5.2-cqueues-install
 
+install5.3: liblua5.3-cqueues-install
+
 install: install5.1 install5.2
 
-.PHONY: uninstall5.1 uninstall5.2 uninstall
+.PHONY: uninstall5.1 uninstall5.2 uninstall5.3 uninstall
 
 uninstall5.1: liblua5.1-cqueues-uninstall
 
 uninstall5.2: liblua5.2-cqueues-uninstall
+
+uninstall5.3: liblua5.3-cqueues-uninstall
 
 uninstall: uninstall5.1 uninstall5.2
 
@@ -175,7 +185,7 @@ endif
 .PHONY: $(d)/clean $(d)/clean~ clean clean~
 
 $(d)/clean:
-	rm -rf $(@D)/errno.c $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2
+	rm -rf $(@D)/errno.c $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3
 
 $(d)/clean~: $(d)/clean
 	rm -f $(@D)/*~
@@ -198,23 +208,28 @@ $(d)/help:
 	@echo "cqueues      - invokes cqueues5.1 and cqueues5.2"
 	@echo "cqueues5.1   - build 5.1/cqueues.so"
 	@echo "cqueues5.2   - build 5.2/cqueues.so"
+	@echo "cqueues5.3   - build 5.3/cqueues.so"
 	@echo "install      - invokes install5.1 and install5.2"
 	@echo "install5.1   - install cqueues Lua 5.1 modules"
 	@echo "install5.2   - install cqueues Lua 5.2 modules"
+	@echo "install5.3   - install cqueues Lua 5.3 modules"
 	@echo "uninstall    - invokes uninstall5.1 and uninstall5.2"
 	@echo "uninstall5.1 - uninstall cqueues Lua 5.1 modules"
 	@echo "uninstall5.2 - uninstall cqueues Lua 5.2 modules"
+	@echo "uninstall5.3 - uninstall cqueues Lua 5.3 modules"
 	@echo "  clean      - rm binary targets, object files, debugging symbols, etc"
 	@echo " clean~      - clean + rm *~"
 	@echo "   help      - echo this help message"
 	@echo ""
 	@echo "Some important Make variables:"
 	@echo ""
-	@echo "    prefix - path to install root"
-	@echo ' lua51path - install path for Lua 5.1 modules ($$(lua51path))'
-	@echo 'lua51cpath - install path for Lua 5.1 C modules ($$(lua51cpath))'
-	@echo ' lua52path - install path for Lua 5.1 modules ($$(lua51path))'
-	@echo 'lua52cpath - install path for Lua 5.1 C modules ($$(lua51cpath))'
+	@echo "    prefix - path to install root ($(value prefix))"
+	@echo ' lua51path - install path for Lua 5.1 modules ($(value lua51path))'
+	@echo 'lua51cpath - install path for Lua 5.1 C modules ($(value lua51cpath))'
+	@echo ' lua52path - install path for Lua 5.2 modules ($(value lua52path))'
+	@echo 'lua52cpath - install path for Lua 5.2 C modules ($(value lua52cpath))'
+	@echo ' lua53path - install path for Lua 5.3 modules ($(value lua53path))'
+	@echo 'lua53cpath - install path for Lua 5.3 C modules ($(value lua53cpath))'
 	@echo ""
 	@echo "(NOTE: all the common GNU-style paths are supported, including"
 	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"
