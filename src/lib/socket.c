@@ -1,7 +1,7 @@
 /* ==========================================================================
  * socket.c - Simple Sockets
  * --------------------------------------------------------------------------
- * Copyright (c) 2009, 2010, 2011, 2012  William Ahern
+ * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -56,11 +56,15 @@
 
 #include <netdb.h>	/* struct addrinfo */
 
-#include <unistd.h>	/* _POSIX_REALTIME_SIGNALS _POSIX_THREADS close(2) unlink(2) */
+#include <unistd.h>	/* _POSIX_REALTIME_SIGNALS _POSIX_THREADS close(2) unlink(2) getpeereid(2) */
 
 #include <fcntl.h>	/* F_SETFD F_GETFD F_GETFL F_SETFL FD_CLOEXEC O_NONBLOCK O_NOSIGPIPE F_SETNOSIGPIPE F_GETNOSIGPIPE */
 
 #include <poll.h>	/* POLLIN POLLOUT */
+
+#if defined __sun
+#include <ucred.h>	/* ucred_t getpeerucred(2) ucred_free(3) */
+#endif
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -1003,6 +1007,12 @@ struct socket {
 		sigset_t pending;
 		sigset_t blocked;
 	} pipeign;
+
+	struct {
+		pid_t pid;
+		uid_t uid;
+		gid_t gid;
+	} cred;
 }; /* struct socket */
 
 
@@ -1447,7 +1457,7 @@ error:
 
 
 static struct socket *so_init(struct socket *so, const struct so_options *opts) {
-	static const struct socket so_initializer = { .fd = -1 };
+	static const struct socket so_initializer = { .fd = -1, .cred = { -1, -1, -1, } };
 
 	if (!so)
 		return 0;
@@ -2249,6 +2259,71 @@ int so_peerfd(struct socket *so) {
 int so_uncork(struct socket *so) {
 	return so_nopush(so->fd, 0);
 } /* so_uncork() */
+
+
+static int so_loadcred(struct socket *so) {
+	if (so->cred.uid != (uid_t)-1)
+		return 0;
+
+#if defined SO_PEERCRED
+	struct ucred uc;
+
+	if (0 != getsockopt(so->fd, SOL_SOCKET, SO_PEERCRED, &uc, &(socklen_t){ sizeof uc }))
+		return errno;
+
+	so->cred.pid = uc.pid;
+	so->cred.uid = uc.uid;
+	so->cred.gid = uc.gid;
+
+	return 0
+#elif defined __sun
+	ucred_t *uc = NULL;
+
+	if (0 != getpeerucred(so->fd, &uc))
+		return errno;
+
+	so->cred.pid = ucred_getpid(uc);
+	so->cred.uid = ucred_geteuid(uc);
+	so->cred.gid = ucred_getegid(uc);
+
+	ucred_free(uc);
+
+	return 0;
+#else
+	if (0 != getpeereid(so->fd, &so->cred.uid, &so->cred.gid))
+		return errno;
+
+	return 0;
+#endif
+} /* so_loadcred() */
+
+
+int so_peereid(struct socket *so, uid_t *uid, gid_t *gid) {
+	int error;
+
+	if ((error = so_loadcred(so)))
+		return error;
+
+	if (uid)
+		*uid = so->cred.uid;
+	if (gid)
+		*gid = so->cred.gid;
+
+	return 0;
+} /* so_peereid() */
+
+
+int so_peerpid(struct socket *so, pid_t *pid) {
+	int error;
+
+	if ((error = so_loadcred(so)))
+		return error;
+
+	if (pid)
+		*pid = so->cred.pid;
+
+	return 0;
+} /* so_peerpid() */
 
 
 /*

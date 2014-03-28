@@ -1,7 +1,7 @@
 /* ==========================================================================
  * socket.h - Simple Sockets
  * --------------------------------------------------------------------------
- * Copyright (c) 2009, 2010, 2011, 2012  William Ahern
+ * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -28,7 +28,7 @@
 
 #include <time.h>		/* time_t */
 
-#include <sys/types.h>		/* socklen_t in_port_t */
+#include <sys/types.h>		/* socklen_t in_port_t uid_t gid_t pid_t */
 #include <sys/uio.h>		/* struct iovec */
 #include <sys/socket.h>		/* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr struct msghdr struct cmsghdr */
 #if defined(AF_UNIX)
@@ -59,9 +59,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20130430
+#define SOCKET_V_REL  0x20140328
 #define SOCKET_V_ABI  0x20120915
-#define SOCKET_V_API  0x20120915
+#define SOCKET_V_API  0x20140328
 
 
 const char *socket_vendor(void);
@@ -527,6 +527,9 @@ int so_poll(struct socket *, int);
 int so_peerfd(struct socket *);
 
 int so_uncork(struct socket *);
+
+int so_peereid(struct socket *, uid_t *, gid_t *);
+int so_peerpid(struct socket *, pid_t *);
 
 
 /*
