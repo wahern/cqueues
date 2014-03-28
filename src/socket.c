@@ -1852,6 +1852,54 @@ static lso_nargs_t lso_peername(lua_State *L) {
 } /* lso_peername() */
 
 
+static lso_nargs_t lso_peereid(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	uid_t uid;
+	gid_t gid;
+	int error;
+
+	if ((error = so_peereid(S->socket, &uid, &gid))) {
+		lua_pushnil(L);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+
+	if (uid != (uid_t)-1)
+		lua_pushinteger(L, uid);
+	else
+		lua_pushnil(L);
+
+	if (gid != (gid_t)-1)
+		lua_pushinteger(L, gid);
+	else
+		lua_pushnil(L);
+
+	return 2;
+} /* lso_peereid() */
+
+
+static lso_nargs_t lso_peerpid(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	pid_t pid;
+	int error;
+
+	if ((error = so_peerpid(S->socket, &pid))) {
+		lua_pushnil(L);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+
+	if (pid != (pid_t)-1)
+		lua_pushinteger(L, pid);
+	else
+		lua_pushnil(L);
+
+	return 1;
+} /* lso_peerpid() */
+
+
 static lso_nargs_t lso_localname(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	struct sockaddr_storage ss;
@@ -1977,6 +2025,8 @@ static luaL_Reg lso_methods[] = {
 	{ "eof",        &lso_eof },
 	{ "accept",     &lso_accept },
 	{ "peername",   &lso_peername },
+	{ "peereid",    &lso_peereid },
+	{ "peerpid",    &lso_peerpid },
 	{ "localname",  &lso_localname },
 	{ "stat",       &lso_stat },
 	{ "close",      &lso_close },
