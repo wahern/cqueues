@@ -33,11 +33,17 @@ CPPFLAGS_$(d) += $(and $(VENDOR_$(<D)),-DCQUEUES_VENDOR='"$(VENDOR_$(<D))"')
 CPPFLAGS_$(d) += $(and $(VERSION_$(<D)),-DCQUEUES_VERSION=$(VERSION_$(<D))L)
 CPPFLAGS_$(d) += $(and $(COMMIT_$(<D)),-DCQUEUES_COMMIT='"$(COMMIT_$(<D))"')
 
-ifeq ($(OS_$(d)), NetBSD)
-LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread -lrt -lm
-else
-LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -ldl -lpthread -lrt -lm
+LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
+
+ifneq ($(OS_$(d)), NetBSD)
+LDFLAGS_$(d) += -ldl
 endif
+
+ifneq ($(OS_$(d)), Darwin)
+LDFLAGS_$(d) += -lrt
+endif
+
+LDFLAGS_$(d) += -lm
 
 
 #
