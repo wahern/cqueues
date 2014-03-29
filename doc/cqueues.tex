@@ -607,9 +607,21 @@ Returns one, two, or three values. On success, returns three values for AF\_INET
 
 On failure returns nil and a numeric error code.
 
+\subsubsection[\fn{socket:peereid}]{\fn{socket:peereid()}}
+
+Queries the effective UID and effective GID of an AF\_UNIX, SOCK\_STREAM peer as cached by the kernel when the stream initially connected.
+
+Returns two numbers representing the UID and GID, respectively, on success, otherwise nil and a numeric error code.
+
+\subsubsection[\fn{socket:peerpid}]{\fn{socket:peerpid()}}
+
+Queries the PID of a AF\_UNIX, SOCK\_STREAM peer as cached by the kernel when the stream initially connected. This capability is unsupported on OS X and FreeBSD; they only provide \fn{getpeereid}, which cannot provide the PID.
+
+Returns a number representing the PID on success, otherwise nil and a numeric error code.
+
 \subsubsection[\fn{socket:localname}]{\fn{socket:localname()}}
 
-Identical to \fn{socket:peer name}, but returns the local address of the socket.
+Identical to \fn{socket:peername}, but returns the local address of the socket.
 
 \subsubsection[\fn{socket:stat}]{\fn{socket:stat()}}
 
