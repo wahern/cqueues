@@ -1595,7 +1595,7 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 			continue;
 
 		cqs_closefd(&fd);
-		fd = *(int *)CMSG_DATA(cmsg);
+		memcpy(&fd, CMSG_DATA(cmsg), sizeof fd);
 	}
 
 	if (msg->msg_flags & (MSG_TRUNC|MSG_CTRUNC))

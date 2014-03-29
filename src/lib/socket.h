@@ -28,6 +28,8 @@
 
 #include <time.h>		/* time_t */
 
+#include <string.h>		/* memcpy(3) */
+
 #include <sys/types.h>		/* socklen_t in_port_t uid_t gid_t pid_t */
 #include <sys/uio.h>		/* struct iovec */
 #include <sys/socket.h>		/* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr struct msghdr struct cmsghdr */
@@ -492,7 +494,7 @@ static inline struct msghdr *so_fdmsg_(struct msghdr *msg, const void *p, size_t
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_RIGHTS;
 	cmsg->cmsg_len = CMSG_LEN(sizeof (int));
-	*(int *)CMSG_DATA(cmsg) = fd;
+	memcpy(CMSG_DATA(cmsg), &fd, sizeof fd);
 	return msg;
 } /* so_fdmsg_() */
 

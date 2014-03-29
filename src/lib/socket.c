@@ -769,6 +769,9 @@ int so_nosigpipe(int fd, _Bool nosigpipe) {
 #elif defined SO_NOSIGPIPE
 	return so_setboolopt(fd, SOL_SOCKET, SO_NOSIGPIPE, nosigpipe);
 #else
+	(void)fd;
+	(void)nosigpipe;
+
 	return EOPNOTSUPP;
 #endif
 } /* so_nosigpipe() */
