@@ -2270,7 +2270,11 @@ static int so_loadcred(struct socket *so) {
 		return 0;
 
 #if defined SO_PEERCRED
+#if defined __OpenBSD__
+	struct sockpeercred uc;
+#else
 	struct ucred uc;
+#endif
 
 	if (0 != getsockopt(so->fd, SOL_SOCKET, SO_PEERCRED, &uc, &(socklen_t){ sizeof uc }))
 		return errno;
