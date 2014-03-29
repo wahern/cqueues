@@ -153,8 +153,8 @@ static void so_trace(enum so_trace, int, const struct addrinfo *, ...);
 #define SAY(...) SAY_("@@ %s:%d:%s: " __VA_ARGS__, "\n");
 #endif
 
-#if !defined(MARK)
-#define MARK SAY_("@@ %s:%d:%s", "\n");
+#if !defined(HAI)
+#define HAI SAY_("@@ %s:%d:%s", "\n");
 #endif
 
 
@@ -1148,7 +1148,7 @@ static int so_bind_(struct socket *so) {
 	} else
 		return 0;
 
-	return (0 == so_bind(so->fd, saddr, &so->opts))? 0 : so_soerr();
+	return so_bind(so->fd, saddr, &so->opts);
 } /* so_bind_() */
 
 
@@ -1369,21 +1369,15 @@ exec:
 
 		goto exec;
 	case SO_S_SOCKET:
-		if ((error = so_socket_(so))) {
-			so->done = 0;
-
-			goto exec;
-		}
+		if ((error = so_socket_(so)))
+			goto retry;
 
 		so->done |= state;
 
 		goto exec;
 	case SO_S_BIND:
-		if ((error = so_bind_(so))) {
-			so->done = 0;
-
-			goto exec;
-		}
+		if ((error = so_bind_(so)))
+			goto retry;
 
 		so->done |= state;
 
@@ -1401,9 +1395,7 @@ exec:
 			case SO_EAGAIN:
 				goto error;
 			default:
-				so->done = 0;
-
-				goto exec;
+				goto retry;
 			} /* switch() */
 		}
 
@@ -1451,6 +1443,18 @@ exec:
 	} /* so_exec() */
 
 	return 0;
+retry:
+	/*
+	 * Jump back to the SO_S_GETADDR iterator if enabled. Otherwise,
+	 * this is a terminal error.
+	 */
+	if (so->todo & SO_S_GETADDR) {
+		so->done = 0;
+
+		goto exec;
+	}
+
+	/* FALL THROUGH */
 error:
 	return error;
 } /* so_exec() */
