@@ -468,9 +468,10 @@ Returns two bound sockets. Type should be the system type number, e.g. \fn{socke
 Wait for connection establishment to succeed. You do not need to wait before proceeding to perform
 read or write calls, but waiting may ease diagnosing connection problems in your code and allows you to separate connect phase from I/O phase timeouts.
 
-%\subsubsection[\fn{socket:listen}]{\fn{socket:listen()}}
-%	Wait for socket binding to complete, which may have been delayed if
-%	the specified host required DNS resolution. [UNFINISHED]
+\subsubsection[\fn{socket:listen}]{\fn{socket:listen([timeout])}}
+Wait for socket binding to succeed. You do not need to wait before proceeding to call \fn{:accept}, but waiting may ease diagnosing binding problems in your code and allows you to separate listen phase from accept phase timeouts.
+
+Socket binding may not occur immediately if you provided a host address that required DNS resolution over the network. This is uncommon for listening sockets but supported nonetheless; the symmetry simplifies internal code. Also, socket object instantiation with \fn{socket.listen} and \fn{socket.connect} only return errors regarding user data object construction; address lookup and binding errors are detected later, when initiated by subsequent method calls.
 
 \subsubsection[\fn{socket:accept}]{\fn{socket:accept([timeout])}}
 Wait for and return an incoming client socket on a listening object.
@@ -483,7 +484,7 @@ Iterator over \method{socket:accept}: \texttt{for con in srv:clients() do ... en
 %	[UNFINISHED]
 
 \subsubsection[\fn{socket:starttls}]{\fn{socket:starttls([context][, timeout])}}
-Place socket into TLS mode, optionally using the \module{openssl.ssl.context} object as the configuration prototype. If no timeout specified,  returns immediately. Otherwise, retries and polls for up to `timeout' seconds for completion. Returns true on success, false and an error code on failure.
+Place socket into TLS mode, optionally using the \module{openssl.ssl.context} object as the configuration prototype. If no timeout specified, returns immediately. Otherwise, retries and polls for up to `timeout' seconds for completion. Returns true on success, false and an error code on failure.
 
 \subsubsection[\fn{socket:checktls}]{\fn{socket:checktls()}}
 
