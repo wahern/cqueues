@@ -35,11 +35,16 @@ CPPFLAGS_$(d) += $(and $(COMMIT_$(<D)),-DCQUEUES_COMMIT='"$(COMMIT_$(<D))"')
 
 LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
 
-ifneq ($(OS_$(d)), NetBSD)
+# NetBSD, FreeBSD, OpenBSD (and presumably descendants) lack any libdl;
+# dlopen, et al are part of libc.
+ifneq ($(patsubst %BSD,BSD,$(OS_$(d))), BSD)
 LDFLAGS_$(d) += -ldl
 endif
 
-ifneq ($(OS_$(d)), Darwin)
+# This only seems to be necessary on Linux. Darwin and OpenBSD lack a librt. 
+# On OpenBSD clock_gettime is part of libc. Others have librt, but linking
+# it in is unnecessary.
+ifeq ($(OS_$(d)), Linux)
 LDFLAGS_$(d) += -lrt
 endif
 
