@@ -1,3 +1,11 @@
+liblua-cqueues (20140328-0) unstable; urgency=low
+
+  * Add :peereid and :peerpid socket methods.
+  * Fix endless loop bug when an AF_UNIX socket could not be bound.
+  * Add socket:listen wrapper.
+
+ -- William Ahern <william@25thandClement.com>  Fri, 28 Mar 2014 22:23:19 -0700
+
 liblua-cqueues (20140322-0) unstable; urgency=low
 
   * Add condition variable API.
