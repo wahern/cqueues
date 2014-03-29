@@ -1865,15 +1865,8 @@ static lso_nargs_t lso_peereid(lua_State *L) {
 		return 2;
 	}
 
-	if (uid != (uid_t)-1)
-		lua_pushinteger(L, uid);
-	else
-		lua_pushnil(L);
-
-	if (gid != (gid_t)-1)
-		lua_pushinteger(L, gid);
-	else
-		lua_pushnil(L);
+	lua_pushinteger(L, uid);
+	lua_pushinteger(L, gid);
 
 	return 2;
 } /* lso_peereid() */
@@ -1891,10 +1884,7 @@ static lso_nargs_t lso_peerpid(lua_State *L) {
 		return 2;
 	}
 
-	if (pid != (pid_t)-1)
-		lua_pushinteger(L, pid);
-	else
-		lua_pushnil(L);
+	lua_pushinteger(L, pid);
 
 	return 1;
 } /* lso_peerpid() */

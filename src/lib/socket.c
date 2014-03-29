@@ -2326,6 +2326,9 @@ int so_peereid(struct socket *so, uid_t *uid, gid_t *gid) {
 	if ((error = so_loadcred(so)))
 		return error;
 
+	if (so->cred.uid == (uid_t)-1)
+		return EOPNOTSUPP;
+
 	if (uid)
 		*uid = so->cred.uid;
 	if (gid)
@@ -2340,6 +2343,9 @@ int so_peerpid(struct socket *so, pid_t *pid) {
 
 	if ((error = so_loadcred(so)))
 		return error;
+
+	if (so->cred.pid == (pid_t)-1)
+		return EOPNOTSUPP;
 
 	if (pid)
 		*pid = so->cred.pid;
