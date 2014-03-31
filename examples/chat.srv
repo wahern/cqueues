@@ -6,8 +6,8 @@
 -- Provides simple example of combining sockets, condition variables, and a
 -- basic flow control methodology.
 --
--- Also provides an example of fail-safe signal management and a dead-man
--- switch using pre-emptive threads.
+-- Also provides an example of signal management and a dead-man switch using
+-- pre-emptive threads.
 --
 local cqueues = require"cqueues"
 local errno = require"cqueues.errno"
@@ -302,33 +302,46 @@ end)
 
 
 --
--- Put our signal handlers in another thread in case a bug in our code
--- causes our main event loop to freeze.
+-- Try to handle our signals cleanly by doing managed shutdown.
 --
--- Also employ a dead-man switch for the same reason.
---
--- This is probably overkill.
+-- Do signal management in the same POSIX thread as our client loop because
+-- the /die command raises SIGTERM, and raise(2) sends the signal to the
+-- issuing thread, regardless of signal masks. Linux signalfd and Solaris
+-- sigtimedwait won't detect signals sent to another thread.
 --
 -- ------------------------------------------------------------------------
 loop:wrap(function()
-	-- Block these in our main thread so we're assured they will be
-	-- delivered to our signal thread.
 	signal.block(signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
 
+	local sigs = signal.listen(signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+	sigs:wait()
+
+	for _, user in pairs(Users) do
+		user:put"# server exiting\n"
+		user:exit()
+	end
+
+	local deadline = monotime() + 1
+
+	while next(Users) and deadline > monotime() do
+		sleep(0.05)
+	end
+
+	os.exit(true)
+end)
+
+
+--
+-- Implement a dead-man switch in case a bug in our code causes the main
+-- loop to stall.
+--
+-- ------------------------------------------------------------------------
+loop:wrap(function()
 	local thr, pipe = thread.start(function(pipe)
 		local cqueues = require"cqueues"
-		local signal = require"cqueues.signal"
 		local sleep = cqueues.sleep
 		local poll = cqueues.poll
 		local loop = cqueues.new()
-		local sigs = signal.listen(signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
-
-		loop:wrap(function()
-			sigs:wait()
-			pipe:shutdown"w"
-			sleep(1) --> give main a chance to exit cleanly
-			os.exit(false)
-		end)
 
 		loop:wrap(function()
 			sleep(10)
@@ -346,7 +359,7 @@ loop:wrap(function()
 
 		local ok, why = loop:loop()
 
-		io.stderr:write(string.format("failsafe thread failed: %s\n", why or "unknown error"))
+		io.stderr:write(string.format("dead-man thread failed: %s\n", why or "unknown error"))
 
 		os.exit(false)
 	end)
@@ -357,16 +370,6 @@ loop:wrap(function()
 			assert(pipe:write"!\n")
 		end
 	end)	
-
-	pipe:read() --> just wait around for the channel to close
-
-	for _, user in pairs(Users) do
-		user:put"# server exiting\n"
-	end
-
-	sleep(.35) --> allow time for message queues to flush
-
-	os.exit(true)
 end)
 
 
