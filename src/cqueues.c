@@ -109,12 +109,6 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define MIN(a, b) (((a) < (b))? (a) : (b))
-#define MAX(a, b) (((a) > (b))? (a) : (b))
-
-#define countof(a) (sizeof (a) / sizeof *(a))
-
-
 static int setcloexec(int fd) {
 	if (-1 == fcntl(fd, F_SETFD, FD_CLOEXEC))
 		return errno;

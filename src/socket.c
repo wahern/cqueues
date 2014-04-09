@@ -371,7 +371,11 @@ static struct luasocket lso_initializer = {
 	.type = AF_UNSPEC,
 	.type = SOCK_STREAM,
 	.onerror = LUA_NOREF,
+#if !defined __NetBSD__ || NETBSD_PREREQ(6,0)
 	.timeout = NAN,
+#else
+	.timeout = __builtin_nan(""),
+#endif
 };
 
 

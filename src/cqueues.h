@@ -30,6 +30,7 @@
 
 #include <errno.h>	/* EINTR EOVERFLOW */
 
+#include <sys/param.h>  /* __NetBSD_Version__ OpenBSD __FreeBSD__version */
 #include <sys/types.h>
 #include <sys/socket.h>	/* socketpair(2) */
 
@@ -49,6 +50,12 @@
  * F E A T U R E / E N V I R O N M E N T  M A C R O S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef __NetBSD_Prereq__
+#define __NetBSD_Prereq__(M, m, p) 0
+#endif
+
+#define NETBSD_PREREQ(M, m) __NetBSD_Prereq__(M, m, 0)
 
 #define HAVE_EPOLL  (__linux)
 #define HAVE_PORTS  (__sun)
