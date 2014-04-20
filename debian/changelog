@@ -1,3 +1,9 @@
+liblua-cqueues (20140419-0) unstable; urgency=low
+
+  * Implement fast metatable checking in the controller code.
+
+ -- William Ahern <william@25thandClement.com>  Sat, 19 Apr 2014 22:56:19 -0700
+
 liblua-cqueues (20140331-0) unstable; urgency=low
 
   * Remove invariant check in condition variable __gc routine because the
