@@ -10,6 +10,29 @@ local loader = function(loader, ...)
 		core.poll(timeout)
 	end -- core.sleep
 
+
+	local function findwhy(x, ...)
+		if x then
+			if type(x) == "number" then
+				return require"cqueues.errno".strerror(x) or x
+			else
+				return x
+			end
+		elseif select("#", ...) > 0 then
+			return findwhy(...)
+		else
+			return
+		end
+	end
+
+	function core.assert(x, ...)
+		if x then
+			return x, ...
+		end
+
+		return assert(false, findwhy(...))
+	end -- core.assert
+
 	local step; step = core.interpose("step", function (self, timeout)
 		if core.running() then
 			core.poll(self, timeout)
