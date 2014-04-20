@@ -1037,8 +1037,42 @@ struct callinfo {
 }; /* struct callinfo */
 
 
+static void *cqueue_testudata(lua_State *L, int index, int upvalue) {
+	void *ud = lua_touserdata(L, index);
+	int eq;
+
+	if (!ud || !lua_getmetatable(L, index))
+		return NULL;
+
+	eq = lua_rawequal(L, -1, lua_upvalueindex(upvalue));
+	lua_pop(L, 1);
+
+	return (eq)? ud : NULL;
+} /* cqueue_testudata() */
+
+
+static void *cqueue_checkudata(lua_State *L, int index, int upvalue, const char *tname) {
+	void *ud;
+
+	if (!(ud = cqueue_testudata(L, index, upvalue))) {
+		index = lua_absindex(L, index);
+
+		luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", tname, luaL_typename(L, index)));
+
+		NOTREACHED;
+	}
+
+	return ud;
+} /* cqueue_checkudata() */
+
+
+static struct cqueue *cqueue_checkself(lua_State *L, int index) {
+	return cqueue_checkudata(L, index, 1, CQUEUE_CLASS);
+} /* cqueue_checkself() */
+
+
 static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) {
-	struct cqueue *Q = luaL_checkudata(L, index, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, index);
 
 	I->self = lua_absindex(L, index);
 
@@ -1328,63 +1362,64 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 		return LUA_OK;
 	}
 
+	/*
+	 * push onto our local stack so we don't dirty the thread stack and
+	 * also to allow fast upvalue comparisons
+	 */
+	lua_pushvalue(T->L, index);
+	lua_xmove(T->L, L, 1);
+
 	/* check for conditional variable */
-	if (luaL_testudata(T->L, index, CQS_CONDITION)) {
-		struct condition *cv = lua_touserdata(T->L, index);
+	if (cqueue_testudata(L, -1, 3)) {
+		struct condition *cv = lua_touserdata(L, -1);
 		int error;
 
 		if (!(event->wakecb = pool_get(&Q->pool.wakecb, &error))) {
 			lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
 			status = LUA_ERRRUN;
 
-			goto error;
+			goto oops;
 		}
 
 		wakecb_init(event->wakecb, &wakecb_wakeup, Q, event);
 		wakecb_add(event->wakecb, cv);
+	} else {
+		if (LUA_OK != (status = object_pcall(L, -1, "pollfd", LUA_TNUMBER)))
+			goto oops;
 
-		return LUA_OK;
+		event->fd = luaL_optinteger(L, -1, -1);
+		event->fd = MAX(event->fd, -1);
+
+		lua_pop(L, 1); /* pop fd */
+
+		if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TSTRING)))
+			goto oops;
+
+		mode = luaL_optstring(L, -1, "");
+		event->events = 0;
+
+		while (*mode) {
+			if (*mode == 'r')
+				event->events |= POLLIN;
+			else if (*mode == 'w')
+				event->events |= POLLOUT;
+			mode++;
+		}
+
+		lua_pop(L, 1); /* pop event mode */
+
+		if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER)))
+			goto oops;
+
+		event->timeout = abstimeout(luaL_optnumber(L, -1, NAN));
+
+		lua_pop(L, 1); /* pop timeout */
 	}
-
-	/* otherwise, push onto our main stack and call event methods */
-	lua_pushvalue(T->L, index);
-	lua_xmove(T->L, L, 1);
-
-	if (LUA_OK != (status = object_pcall(L, -1, "pollfd", LUA_TNUMBER)))
-		goto error;
-
-	event->fd = luaL_optinteger(L, -1, -1);
-	event->fd = MAX(event->fd, -1);
-
-	lua_pop(L, 1); /* pop fd */
-
-	if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TSTRING)))
-		goto error;
-
-	mode = luaL_optstring(L, -1, "");
-	event->events = 0;
-
-	while (*mode) {
-		if (*mode == 'r')
-			event->events |= POLLIN;
-		else if (*mode == 'w')
-			event->events |= POLLOUT;
-		mode++;
-	}
-
-	lua_pop(L, 1); /* pop event mode */
-
-	if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER)))
-		goto error;
-
-	event->timeout = abstimeout(luaL_optnumber(L, -1, NAN));
-
-	lua_pop(L, 1); /* pop timeout */
 
 	lua_pop(L, 1); /* pop object */
 
 	return LUA_OK;
-error:
+oops:
 	return status;
 } /* object_getinfo() */
 
@@ -1825,7 +1860,7 @@ static int cqueue_wrap(lua_State *L) {
 
 
 static int cqueue_empty(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 
 	lua_pushboolean(L, !Q->thread.count);
 
@@ -1834,7 +1869,7 @@ static int cqueue_empty(lua_State *L) {
 
 
 static int cqueue_count(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 
 	lua_pushnumber(L, Q->thread.count);
 
@@ -1873,7 +1908,7 @@ static int cqueue_checkfd(lua_State *L, int index) {
 
 
 static int cqueue_cancel(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 	int index, fd;
 
 	for (index = 2; index <= lua_gettop(L); index++)
@@ -1884,7 +1919,7 @@ static int cqueue_cancel(lua_State *L) {
 
 
 static int cqueue_reset(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 	int error;
 
 	if ((error = cqueue_reboot(Q, 1, 1)))
@@ -2041,7 +2076,7 @@ error:
 
 
 static int cqueue_pause(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 	sigset_t block;
 	fd_set rfds;
 	int index, error;
@@ -2072,7 +2107,7 @@ error:
 
 
 static int cqueue_pollfd(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 
 	lua_pushinteger(L, Q->kp.fd);
 
@@ -2081,7 +2116,7 @@ static int cqueue_pollfd(lua_State *L) {
 
 
 static int cqueue_events(lua_State *L) {
-	luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 
 	lua_pushliteral(L, "r");
 
@@ -2090,7 +2125,7 @@ static int cqueue_events(lua_State *L) {
 
 
 static int cqueue_timeout(lua_State *L) {
-	struct cqueue *Q = luaL_checkudata(L, 1, CQUEUE_CLASS);
+	struct cqueue *Q = cqueue_checkself(L, 1);
 
 	if (!LIST_EMPTY(&Q->thread.pending)) {
 		lua_pushnumber(L, 0.0);
@@ -2290,19 +2325,31 @@ static const luaL_Reg cqueues_globals[] = {
 
 
 int luaopen__cqueues(lua_State *L) {
+	/*
+	 * initialize our dependencies, which we use for fast metatable
+	 * lookup.
+	 */
+	cqs_requiref(L, "_cqueues.socket", &luaopen__cqueues_socket, 0);
 	cqs_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
-	lua_pop(L, 1);
+	lua_pop(L, 2);
 
 	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
-		luaL_setfuncs(L, cqueue_metatable, 0);
+		lua_pushvalue(L, -1); /* capture metatable as upvalue */
+		luaL_setfuncs(L, cqueue_metatable, 1);
 
-		luaL_newlib(L, cqueue_methods);
+		luaL_newlibtable(L, cqueue_methods);
+		lua_pushvalue(L, -2); /* capture metatable as upvalue */
+		luaL_getmetatable(L, CQS_SOCKET);
+		luaL_getmetatable(L, CQS_CONDITION);
+		luaL_setfuncs(L, cqueue_methods, 3);
 		lua_setfield(L, -2, "__index");
 	}
 
-	lua_pop(L, 1);
-
-	luaL_newlib(L, cqueues_globals);
+	luaL_newlibtable(L, cqueues_globals);
+	lua_pushvalue(L, -2); /* capture metatable as upvalue */
+	luaL_getmetatable(L, CQS_SOCKET);
+	luaL_getmetatable(L, CQS_CONDITION);
+	luaL_setfuncs(L, cqueues_globals, 3);
 
 	lua_pushliteral(L, CQUEUES_VENDOR);
 	lua_setfield(L, -2, "VENDOR");
