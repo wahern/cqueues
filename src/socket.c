@@ -28,6 +28,8 @@
 #include <stdlib.h>	/* abs(3) strtol(3) */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) */
 
+#include <math.h>	/* NAN */
+
 #include <errno.h>	/* EAGAIN EPIPE EINTR */
 
 #include <sys/types.h>
@@ -282,10 +284,14 @@ static int lso_closefd(int *fd, void *arg) {
 } /* lso_closefd() */
 
 
-static struct luasocket *lso_checkself(lua_State *L, int index) {
-	struct luasocket *S = luaL_checkudata(L, index, LSO_CLASS);
+static struct luasocket *lso_checkvalid(lua_State *L, int index, struct luasocket *S) {
 	luaL_argcheck(L, !!S->socket, index, "socket closed");
 	return S;
+} /* lso_checkvalid() */
+
+
+static struct luasocket *lso_checkself(lua_State *L, int index) {
+	return lso_checkvalid(L, index, luaL_checkudata(L, index, LSO_CLASS));
 } /* lso_checkself() */
 
 
@@ -1722,6 +1728,12 @@ static lso_nargs_t lso_clear(lua_State *L) {
 } /* lso_clear() */
 
 
+int cqs_socket_pollfd(lua_State *L, int index) {
+	struct luasocket *S = lso_checkvalid(L, index, lua_touserdata(L, index));
+
+	return so_pollfd(S->socket);
+} /* cqs_socket_pollfd() */
+
 static lso_nargs_t lso_pollfd(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 
@@ -1730,6 +1742,12 @@ static lso_nargs_t lso_pollfd(lua_State *L) {
 	return 1;
 } /* lso_pollfd() */
 
+
+int cqs_socket_events(lua_State *L, int index) {
+	struct luasocket *S = lso_checkvalid(L, index, lua_touserdata(L, index));
+
+	return so_events(S->socket);
+} /* cqs_socket_events() */
 
 static lso_nargs_t lso_events(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
@@ -1746,6 +1764,11 @@ static lso_nargs_t lso_events(lua_State *L) {
 
 	return 1;
 } /* lso_events() */
+
+
+double cqs_socket_timeout(lua_State *L NOTUSED, int index NOTUSED) {
+	return NAN;
+} /* cqs_socket_timeout() */
 
 
 static lso_nargs_t lso_shutdown(lua_State *L) {

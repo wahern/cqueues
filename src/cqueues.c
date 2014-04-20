@@ -1369,8 +1369,13 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 	lua_pushvalue(T->L, index);
 	lua_xmove(T->L, L, 1);
 
-	/* check for conditional variable */
-	if (cqueue_testudata(L, -1, 3)) {
+	if (cqueue_testudata(L, -1, 2)) {
+		event->fd = cqs_socket_pollfd(L, -1);
+
+		event->events = cqs_socket_events(L, -1);
+
+		event->timeout = abstimeout(cqs_socket_timeout(L, -1));
+	} else if (cqueue_testudata(L, -1, 3)) {
 		struct condition *cv = lua_touserdata(L, -1);
 		int error;
 

@@ -119,6 +119,12 @@ struct so_options;
 
 cqs_error_t cqs_socket_fdopen(lua_State *, int, const struct so_options *);
 
+int cqs_socket_pollfd(lua_State *, int);
+
+int cqs_socket_events(lua_State *, int);
+
+double cqs_socket_timeout(lua_State *, int);
+
 
 static void cqs_requiref(lua_State *L, const char *modname, lua_CFunction openf, int glb) {
 	luaL_getsubtable(L, LUA_REGISTRYINDEX, "_LOADED");
