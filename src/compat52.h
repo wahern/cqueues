@@ -75,17 +75,31 @@ static void luaL_setfuncs(lua_State *L, const luaL_Reg *l, int nup) {
 	(luaL_newlibtable((L), (l)), luaL_setfuncs((L), (l), 0))
 
 
+static int luaL_getsubtable(lua_State *L, int index, const char *tname) {
+	lua_getfield(L, index, tname);
+
+	if (lua_istable(L, -1))
+		return 1;
+
+	lua_pop(L, 1);
+	index = lua_absindex(L, index);
+	lua_newtable(L);
+	lua_pushvalue(L, -1);
+	lua_setfield(L, index, tname);
+
+	return 0;
+} /* luaL_getsubtable() */
+
+
 static void luaL_requiref(lua_State *L, const char *modname, lua_CFunction openf, int glb) {
 	lua_pushcfunction(L, openf);
 	lua_pushstring(L, modname);
 	lua_call(L, 1, 1);
 
-	lua_getglobal(L, "package");
-	lua_getfield(L, -1, "loaded");
-	lua_pushvalue(L, -3);
+	luaL_getsubtable(L, LUA_REGISTRYINDEX, "_LOADED");
+	lua_pushvalue(L, -2);
 	lua_setfield(L, -2, modname);
-
-	lua_pop(L, 2);
+	lua_pop(L, 1);
 	
 	if (glb) {
 		lua_pushvalue(L, -1);

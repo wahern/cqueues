@@ -2290,7 +2290,8 @@ static const luaL_Reg cqueues_globals[] = {
 
 
 int luaopen__cqueues(lua_State *L) {
-	luaL_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
+	cqs_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
+	lua_pop(L, 1);
 
 	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
 		luaL_setfuncs(L, cqueue_metatable, 0);

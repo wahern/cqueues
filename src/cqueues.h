@@ -120,24 +120,36 @@ struct so_options;
 cqs_error_t cqs_socket_fdopen(lua_State *, int, const struct so_options *);
 
 
+static void cqs_requiref(lua_State *L, const char *modname, lua_CFunction openf, int glb) {
+	luaL_getsubtable(L, LUA_REGISTRYINDEX, "_LOADED");
+	lua_getfield(L, -1, modname);
+	lua_remove(L, -2);
+
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+		luaL_requiref(L, modname, openf, glb);
+	}
+} /* cqs_requiref() */
+
+
 static void cqs_openlibs(lua_State *L) {
 	int top = lua_gettop(L);
 
-	luaL_requiref(L, "_cqueues", &luaopen__cqueues, 0);
-	luaL_requiref(L, "_cqueues.errno", &luaopen__cqueues_errno, 0);
-	luaL_requiref(L, "_cqueues.socket", &luaopen__cqueues_socket, 0);
-	luaL_requiref(L, "_cqueues.signal", &luaopen__cqueues_signal, 0);
-	luaL_requiref(L, "_cqueues.thread", &luaopen__cqueues_thread, 0);
-	luaL_requiref(L, "_cqueues.notify", &luaopen__cqueues_notify, 0);
+	cqs_requiref(L, "_cqueues", &luaopen__cqueues, 0);
+	cqs_requiref(L, "_cqueues.errno", &luaopen__cqueues_errno, 0);
+	cqs_requiref(L, "_cqueues.socket", &luaopen__cqueues_socket, 0);
+	cqs_requiref(L, "_cqueues.signal", &luaopen__cqueues_signal, 0);
+	cqs_requiref(L, "_cqueues.thread", &luaopen__cqueues_thread, 0);
+	cqs_requiref(L, "_cqueues.notify", &luaopen__cqueues_notify, 0);
 #if 0 /* Make optional? */
-	luaL_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
-	luaL_requiref(L, "_cqueues.dns.record", &luaopen__cqueues_dns_record, 0);
-	luaL_requiref(L, "_cqueues.dns.packet", &luaopen__cqueues_dns_packet, 0);
-	luaL_requiref(L, "_cqueues.dns.config", &luaopen__cqueues_dns_config, 0);
-	luaL_requiref(L, "_cqueues.dns.hosts", &luaopen__cqueues_dns_hosts, 0);
-	luaL_requiref(L, "_cqueues.dns.hints", &luaopen__cqueues_dns_hints, 0);
-	luaL_requiref(L, "_cqueues.dns.resolver", &luaopen__cqueues_dns_resolver, 0);
-	luaL_requiref(L, "_cqueues.dns", &luaopen__cqueues_dns, 0);
+	cqs_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
+	cqs_requiref(L, "_cqueues.dns.record", &luaopen__cqueues_dns_record, 0);
+	cqs_requiref(L, "_cqueues.dns.packet", &luaopen__cqueues_dns_packet, 0);
+	cqs_requiref(L, "_cqueues.dns.config", &luaopen__cqueues_dns_config, 0);
+	cqs_requiref(L, "_cqueues.dns.hosts", &luaopen__cqueues_dns_hosts, 0);
+	cqs_requiref(L, "_cqueues.dns.hints", &luaopen__cqueues_dns_hints, 0);
+	cqs_requiref(L, "_cqueues.dns.resolver", &luaopen__cqueues_dns_resolver, 0);
+	cqs_requiref(L, "_cqueues.dns", &luaopen__cqueues_dns, 0);
 #endif
 
 	lua_settop(L, top);
