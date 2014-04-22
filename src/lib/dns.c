@@ -650,13 +650,28 @@ static unsigned short *dns_sa_port(int af, void *sa) {
 } /* dns_sa_port() */
 
 
-static void *dns_sa_addr(int af, void *sa) {
+static void *dns_sa_addr(int af, void *sa, socklen_t *size) {
 	switch (af) {
-	case AF_INET6:
-		return &((struct sockaddr_in6 *)sa)->sin6_addr;
-	case AF_INET:
-		return &((struct sockaddr_in *)sa)->sin_addr;
+	case AF_INET6: {
+		struct in6_addr *in6 = &((struct sockaddr_in6 *)sa)->sin6_addr;
+
+		if (size)
+			*size = sizeof *in6;
+
+		return in6;
+	}
+	case AF_INET: {
+		struct in_addr *in = &((struct sockaddr_in *)sa)->sin_addr;
+
+		if (size)
+			*size = sizeof *in;
+
+		return in;
+	}
 	default:
+		if (size)
+			*size = 0;
+
 		return 0;
 	}
 } /* dns_sa_addr() */
@@ -1568,6 +1583,9 @@ size_t dns_d_comp(void *dst_, size_t lim, const void *src_, size_t len, struct d
 	} /* if () */
 #endif
 
+	if (!dst.p)
+		*error = DNS_EILLEGAL;
+
 	return dst.p;
 } /* dns_d_comp() */
 
@@ -1694,7 +1712,7 @@ reserved:
 int dns_d_push(struct dns_packet *P, const void *dn, size_t len) {
 	size_t lim	= P->size - P->end;
 	unsigned dp	= P->end;
-	int error;
+	int error	= DNS_EILLEGAL; /* silence compiler */
 
 	len	= dns_d_comp(&P->data[dp], lim, dn, len, P, &error);
 
@@ -3886,7 +3904,7 @@ int dns_resconf_pton(struct sockaddr_storage *ss, const char *src) {
 	} /* while() */
 inet:
 
-	if ((error = dns_pton(af, addr.buf, dns_sa_addr(af, ss))))
+	if ((error = dns_pton(af, addr.buf, dns_sa_addr(af, ss, NULL))))
 		return error;
 
 	port = (!port)? 53 : port;
@@ -4599,7 +4617,7 @@ int dns_resconf_setiface(struct dns_resolv_conf *resconf, const char *addr, unsi
 	int af = (strchr(addr, ':'))? AF_INET6 : AF_INET;
 	int error;
 
-	if ((error = dns_pton(af, addr, dns_sa_addr(af, &resconf->iface))))
+	if ((error = dns_pton(af, addr, dns_sa_addr(af, &resconf->iface, NULL))))
 		return error;
 
 	*dns_sa_port(af, &resconf->iface)	= htons(port);
@@ -4680,7 +4698,7 @@ int dns_resconf_dump(struct dns_resolv_conf *resconf, FILE *fp) {
 		char addr[INET6_ADDRSTRLEN + 1]	= "[INVALID]";
 		unsigned short port;
 
-		dns_inet_ntop(af, dns_sa_addr(af, &resconf->nameserver[i]), addr, sizeof addr);
+		dns_inet_ntop(af, dns_sa_addr(af, &resconf->nameserver[i], NULL), addr, sizeof addr);
 		port = ntohs(*dns_sa_port(af, &resconf->nameserver[i]));
 
 		if (port == 53)
@@ -4745,7 +4763,7 @@ int dns_resconf_dump(struct dns_resolv_conf *resconf, FILE *fp) {
 	if ((af = resconf->iface.ss_family) != AF_UNSPEC) {
 		char addr[INET6_ADDRSTRLEN + 1]	= "[INVALID]";
 
-		dns_inet_ntop(af, dns_sa_addr(af, &resconf->iface), addr, sizeof addr);
+		dns_inet_ntop(af, dns_sa_addr(af, &resconf->iface, NULL), addr, sizeof addr);
 
 		fprintf(fp, "interface %s %hu\n", addr, ntohs(*dns_sa_port(af, &resconf->iface)));
 	}
@@ -4898,7 +4916,7 @@ struct dns_hints *dns_hints_root(struct dns_resolv_conf *resconf, int *error_) {
 	for (i = 0; i < lengthof(root_hints); i++) {
 		af	= root_hints[i].af;
 
-		if ((error = dns_pton(af, root_hints[i].addr, dns_sa_addr(af, &ss))))
+		if ((error = dns_pton(af, root_hints[i].addr, dns_sa_addr(af, &ss, NULL))))
 			goto error;
 
 		*dns_sa_port(af, &ss)	= htons(53);
@@ -5106,7 +5124,7 @@ struct dns_packet *dns_hints_query(struct dns_hints *hints, struct dns_packet *Q
 			int af		= sa->sa_family;
 			int rtype	= (af == AF_INET6)? DNS_T_AAAA : DNS_T_A;
 
-			if ((error = dns_p_push(P, DNS_S_ADDITIONAL, "hints.local.", strlen("hints.local."), rtype, DNS_C_IN, 0, dns_sa_addr(af, sa))))
+			if ((error = dns_p_push(P, DNS_S_ADDITIONAL, "hints.local.", strlen("hints.local."), rtype, DNS_C_IN, 0, dns_sa_addr(af, sa, NULL))))
 				goto error;
 		}
 	} while ((zlen = dns_d_cleave(zone, sizeof zone, zone, zlen)));
@@ -5127,6 +5145,8 @@ error:
 /** ugly hack to support specifying ports other than 53 in resolv.conf. */
 static unsigned short dns_hints_port(struct dns_hints *hints, int af, void *addr) {
 	struct dns_hints_soa *soa;
+	void *addrsoa;
+	socklen_t addrlen;
 	unsigned short port;
 	unsigned i;
 
@@ -5135,7 +5155,10 @@ static unsigned short dns_hints_port(struct dns_hints *hints, int af, void *addr
 			if (af != soa->addrs[i].ss.ss_family)
 				continue;
 
-			if (memcmp(addr, dns_sa_addr(af, &soa->addrs[i].ss), (af == AF_INET6)? sizeof (struct in6_addr) : sizeof (struct in_addr)))
+			if (!(addrsoa = dns_sa_addr(af, &soa->addrs[i].ss, &addrlen)))
+				continue;
+
+			if (memcmp(addr, addrsoa, addrlen))
 				continue;
 
 			port = *dns_sa_port(af, &soa->addrs[i].ss);
@@ -5160,7 +5183,7 @@ int dns_hints_dump(struct dns_hints *hints, FILE *fp) {
 		for (i = 0; i < soa->count; i++) {
 			af = soa->addrs[i].ss.ss_family;
 
-			if ((error = dns_ntop(af, dns_sa_addr(af, &soa->addrs[i].ss), addr, sizeof addr)))
+			if ((error = dns_ntop(af, dns_sa_addr(af, &soa->addrs[i].ss, NULL), addr, sizeof addr)))
 				return error;
 
 			fprintf(fp, "\t(%d) [%s]:%hu\n", (int)soa->addrs[i].priority, addr, ntohs(*dns_sa_port(af, &soa->addrs[i].ss)));
@@ -7353,7 +7376,7 @@ size_t dns_ai_print(void *dst, size_t lim, struct addrinfo *ent, struct dns_addr
 
 	cp	+= dns__printstring(dst, lim, cp, ".ai_addr      = [");
 
-	dns_inet_ntop(dns_sa_family(ent->ai_addr), dns_sa_addr(dns_sa_family(ent->ai_addr), ent->ai_addr), addr, sizeof addr);
+	dns_inet_ntop(dns_sa_family(ent->ai_addr), dns_sa_addr(dns_sa_family(ent->ai_addr), ent->ai_addr, NULL), addr, sizeof addr);
 
 	cp	+= dns__printstring(dst, lim, cp, addr);
 	cp	+= dns__printstring(dst, lim, cp, "]:");
@@ -8157,14 +8180,14 @@ static int send_query(int argc, char *argv[]) {
 	if (argc > 1) {
 		ss.ss_family	= (strchr(argv[1], ':'))? AF_INET6 : AF_INET;
 		
-		if ((error = dns_pton(ss.ss_family, argv[1], dns_sa_addr(ss.ss_family, &ss))))
+		if ((error = dns_pton(ss.ss_family, argv[1], dns_sa_addr(ss.ss_family, &ss, NULL))))
 			panic("%s: %s", argv[1], dns_strerror(error));
 
 		*dns_sa_port(ss.ss_family, &ss)	= htons(53);
 	} else
 		memcpy(&ss, &resconf()->nameserver[0], dns_sa_len(&resconf()->nameserver[0]));
 
-	if (!dns_inet_ntop(ss.ss_family, dns_sa_addr(ss.ss_family, &ss), host, sizeof host))
+	if (!dns_inet_ntop(ss.ss_family, dns_sa_addr(ss.ss_family, &ss, NULL), host, sizeof host))
 		panic("bad host address, or none provided");
 
 	if (!MAIN.qname)

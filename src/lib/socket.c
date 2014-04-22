@@ -247,6 +247,7 @@ static void so_trace(enum so_trace event, int fd, const struct addrinfo *host, .
 		ctx = va_arg(ap, SSL *);
 		fmt = va_arg(ap, char *);
 
+		(void)ctx; /* unused for now */
 		fprintf(stderr, "starttls(%s): ", who);
 		vfprintf(stderr, fmt, ap);
 		fputc('\n', stderr);
