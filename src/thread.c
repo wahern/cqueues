@@ -417,7 +417,7 @@ static int ct_pollfd(lua_State *L) {
 
 
 static int ct_events(lua_State *L) {
-	struct cthread *ct = ct_checkthread(L, 1);
+	ct_checkthread(L, 1);
 
 	lua_pushliteral(L, "r");
 

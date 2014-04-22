@@ -1335,8 +1335,9 @@ static int resconf__next(lua_State *L) {
 
 
 static int resconf_search(lua_State *L) {
-	struct dns_resolv_conf *resconf = resconf_check(L, 1);
 	dns_resconf_i_t *i;
+
+	resconf_check(L, 1);
 
 	lua_settop(L, 2);
 	luaL_checktype(L, 2, LUA_TSTRING);
@@ -1511,20 +1512,24 @@ static int hosts_insert(lua_State *L) {
 	int error;
 
 	if ((error = dns_resconf_pton(&any.other, ip)))
-		return luaL_error(L, "%s: %s", ip, dns_strerror(error));
+		goto error;
 
 	switch (any.other.ss_family) {
 	case AF_INET:
-		error = dns_hosts_insert(hosts, AF_INET, &any.in.sin_addr, dn, alias);
+		if ((error = dns_hosts_insert(hosts, AF_INET, &any.in.sin_addr, dn, alias)))
+			goto error;
 		break;
 	case AF_INET6:
-		error = dns_hosts_insert(hosts, AF_INET6, &any.in6.sin6_addr, dn, alias);
+		if ((error = dns_hosts_insert(hosts, AF_INET6, &any.in6.sin6_addr, dn, alias)))
+			goto error;
 		break;
 	default:
 		break;
 	}
 
 	return lua_pushboolean(L, 1), 1;
+error:
+	return luaL_error(L, "%s: %s", ip, dns_strerror(error));
 } /* hosts_insert() */
 
 
@@ -1722,8 +1727,9 @@ static int hints_next(lua_State *L) {
 } /* hints_next() */
 
 static int hints_grep(lua_State *L) {
-	struct dns_hints *hints = hints_check(L, 1);
 	struct dns_hints_i *i;
+
+	hints_check(L, 1);
 
 	lua_settop(L, 2);
 	i = memset(lua_newuserdata(L, sizeof *i), 0, sizeof *i);

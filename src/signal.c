@@ -271,7 +271,7 @@ static int lsl_pollfd(lua_State *L) {
 
 
 static int lsl_events(lua_State *L) {
-	struct signalfd *S = luaL_checkudata(L, 1, LSL_CLASS);
+	luaL_checkudata(L, 1, LSL_CLASS);
 
 	lua_pushliteral(L, "r");
 

@@ -93,7 +93,7 @@ static int ln_pollfd(lua_State *L) {
 
 
 static int ln_events(lua_State *L) {
-	struct luanotify *N = luaL_checkudata(L, 1, CQS_NOTIFY);
+	luaL_checkudata(L, 1, CQS_NOTIFY);
 
 	lua_pushliteral(L, "r");
 

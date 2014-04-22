@@ -811,30 +811,30 @@ static int cond__gc(lua_State *L) {
 		cb->fn(cb);
 	}
 
-/*
- * XXX: Check can fail when lua_State is destroyed (e.g. script terminates)
- * and there are coroutines still waiting. Condition variables are usually
- * younger than the coroutines and objects waiting on them, resources are
- * collected in reverse order of creation during each cycle, and in this
- * case everything is collected in the same cycle.
- *
- * Note that even if luaL_error triggers, oddly the Lua interpreter will
- * only show the message if the script terminated with an error, and not if
- * it terminated normally. The order of destruction is the same either way.
- *
- * Is there a way to detect that the lua_State is being destroyed?
- */
-#if 0
-	if (!empty)
+	/*
+	 * XXX: Check can fail when lua_State is destroyed (e.g. script
+	 * terminates) and there are coroutines still waiting.  Condition
+	 * variables are usually younger than the coroutines and objects
+	 * waiting on them, resources are collected in reverse order of
+	 * creation during each cycle, and in this case everything is
+	 * collected in the same cycle.
+	 *
+	 * Note that even if luaL_error triggers, oddly the Lua interpreter
+	 * will only show the message if the script terminated with an
+	 * error, and not if it terminated normally.  The order of
+	 * destruction is the same either way.
+	 *
+	 * Is there a way to detect that the lua_State is being destroyed?
+	 */
+	if (0 && !empty)
 		return luaL_error(L, "invariant failure: condition variable wait queue not empty on __gc");
-#endif
 
 	return 0;
 } /* cond__gc() */
 
 
 static int cond_wait(lua_State *L) {
-	struct condition *cv = cond_checkself(L, 1);
+	cond_checkself(L, 1);
 
 	return lua_yield(L, lua_gettop(L));
 } /* cond_wait() */
@@ -2121,7 +2121,7 @@ static int cqueue_pollfd(lua_State *L) {
 
 
 static int cqueue_events(lua_State *L) {
-	struct cqueue *Q = cqueue_checkself(L, 1);
+	cqueue_checkself(L, 1);
 
 	lua_pushliteral(L, "r");
 
