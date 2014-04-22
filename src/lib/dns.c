@@ -5420,7 +5420,7 @@ struct dns_socket {
 
 	struct dns_packet *answer;
 	size_t alen, apos;
-}; /* struct dns_socket() */
+}; /* struct dns_socket */
 
 
 /*
