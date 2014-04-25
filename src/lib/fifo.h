@@ -59,7 +59,7 @@
 
 #define FIFO_VENDOR "william@25thandClement.com"
 
-#define FIFO_V_REL  0x20130330 /* 0x20120911 */
+#define FIFO_V_REL  0x20140424 /* 0x20130330 */
 #define FIFO_V_ABI  0x20111113 /* 0x20100815 */
 #define FIFO_V_API  0x20130325 /* 0x20111113 */
 
@@ -78,7 +78,7 @@ static inline int fifo_v_api(void) { return FIFO_V_API; }
 #define FIFO_MIN(a, b) (((a) < (b))? (a) : (b))
 
 #define FIFO_NARG_(_15, _14, _13, _12, _11, _10, _9, _8, _7, _6, _5, _4, _3, _2, _1, N, ...) N
-#define FIFO_NARG(...) FIFO_NARG_(__VA_ARGS__, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define FIFO_NARG(...) FIFO_NARG_(__VA_ARGS__, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
 
 #define FIFO_PASTE(a, b) a ## b
 #define FIFO_XPASTE(a, b) FIFO_PASTE(a, b)
@@ -88,7 +88,7 @@ static inline int fifo_v_api(void) { return FIFO_V_API; }
 #define FIFO_FORMAT(type, x, y) __attribute__((format (type, x, y)))
 #else
 #define FIFO_NOTUSED
-#define FIFO_FORMAT()
+#define FIFO_FORMAT(...)
 #endif
 
 
@@ -305,7 +305,7 @@ static size_t fifo_rvec(struct fifo *fifo, struct iovec *iov, _Bool realign) {
 } /* fifo_rvec() */
 
 #define fifo_rvec3(fifo, iov, realign, ...) (fifo_rvec)((fifo), (iov), (realign))
-#define fifo_rvec(...) fifo_rvec3(__VA_ARGS__, 0)
+#define fifo_rvec(...) fifo_rvec3(__VA_ARGS__, 0, (char[-1]{ 0 }))
 
 
 static size_t fifo_wvec(struct fifo *fifo, struct iovec *iov, _Bool realign) {
@@ -324,7 +324,7 @@ static size_t fifo_wvec(struct fifo *fifo, struct iovec *iov, _Bool realign) {
 } /* fifo_wvec() */
 
 #define fifo_wvec3(fifo, iov, realign, ...) (fifo_wvec)((fifo), (iov), (realign))
-#define fifo_wvec(...) fifo_wvec3(__VA_ARGS__, 0)
+#define fifo_wvec(...) fifo_wvec3(__VA_ARGS__, 0, (char[-1]{ 0 }))
 
 
 FIFO_NOTUSED static size_t fifo_slice(struct fifo *fifo, struct iovec *iov, size_t p, size_t count) {

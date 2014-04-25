@@ -107,11 +107,6 @@ ifeq ($(VENDOR_CC_$(d)), sunpro)
 CFLAGS_$(d) += -xcode=pic13
 CFLAGS_$(d) += -g
 #
-# Solaris Studio has a brain-dead function call analyzer which counts
-# arguments before preprocessor expansion.
-#
-CFLAGS_$(d) += -erroff=E_ARGUEMENT_MISMATCH
-#
 # Solaris Studio supports anonymous unions just fine; but it complains
 # incessantly about them.
 #
