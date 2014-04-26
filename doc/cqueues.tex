@@ -132,7 +132,7 @@ morestring=[b]"
 
 \subsection{$\lnot$ Microsoft Windows}
 
-Microsoft Windows support is basically out of the question, for far too many reasons to put here. Aside from the more technical reasons, Windows I/O and networking programming interfaces have a fundamentally different character than on Unix. Unix historically relies on readiness polling, while Windows uses event completion callbacks. There are strengths and weaknesses to each approach. Trying to paper over the chasm between the two approaches invariably results in a framework with the strengths of neither and the weaknesses of both. The purpose of \cqueues is to leverage the strengths of polling as well as address the weaknesses.
+Microsoft Windows support is basically out of the question\footnote{I have been toying with the idea of using an fd\_set in-place of a pollable descriptor on Windows, and taking the union of all fd\_sets when polling.}, for far too many reasons to put here. Aside from the more technical reasons, Windows I/O and networking programming interfaces have a fundamentally different character than on Unix. Unix historically relies on readiness polling, while Windows uses event completion callbacks. There are strengths and weaknesses to each approach. Trying to paper over the chasm between the two approaches invariably results in a framework with the strengths of neither and the weaknesses of both. The purpose of \cqueues is to leverage the strengths of polling as well as address the weaknesses.
 
 \section{Libraries}
 
@@ -156,13 +156,9 @@ OpenBSD 5.1 threading is completely \emph{fubar}, especially with regard to sign
 
 \section{Compilers}
 
-The source code is mostly ISO C99 compliant, and even more so with regards to ISO C11. Regardless, it aims to build cleanly with the native compiler for each targeted platform. It currently builds with recent versions of GCC, clang, and SunPro.
+The source code is mostly ISO C99 compliant, and even more so with regards to ISO C11. But regardless of standards conformance, it aims to build cleanly with the native compiler for each targeted platform. It currently builds with recent versions of GCC, clang, and SunPro.
 
-GCC and especially clang may emit copious warnings about initializers and unused parameters. These warnings, particularly the former, are stupid---for lack of a better term. The Makefile uses -Wno-override-init (GCC), -Wno-initializer-overrides (clang), and -Wno-unused to quiet these.
-
-SunPro has a broken diagnostic pass confused by macro-generated function calls.\footnote{\texttt{e.g.\ "lib/fifo.h", line 348:\ warning:\ argument mismatch}.} Likewise, the code flow analyzer in older versions of GCC---especially on the BSDs---emits erroneous uninitialized use warnings. Newer versions also occasionally get this wrong, but not nearly as often, and so the code is refactored to reduce noise so that legitimate warnings are not suppressed.
-
-For other warnings or errors, patches are welcome.
+Patches are welcome to silence compiler diagnostics.
 
 \section{GNU Make}
 
