@@ -1,7 +1,7 @@
 /* ==========================================================================
  * socket.c - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012  William Ahern
+ * Copyright (c) 2012, 2013, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -115,7 +115,7 @@ struct luasocket {
 
 	lua_State *mainthread;
 
-	int error;
+	double timeout;
 }; /* struct luasocket */
 
 
@@ -125,6 +125,7 @@ static struct luasocket lso_initializer = {
 	.type = AF_UNSPEC,
 	.type = SOCK_STREAM,
 	.onerror = LUA_NOREF,
+	.timeout = NAN,
 };
 
 
@@ -988,6 +989,33 @@ static lso_nargs_t lso_setmaxline3(struct lua_State *L) {
 } /* lso_setmaxline3() */
 
 
+static lso_nargs_t lso_settimeout_(struct lua_State *L, struct luasocket *S, int index) {
+	double timeout;
+
+	lua_pushnumber(L, S->timeout);
+
+	timeout = luaL_optnumber(L, index, NAN);
+
+	S->timeout = (isnormal(timeout) || timeout == 0)? timeout : NAN;
+
+	return 1;
+} /* lso_settimeout_() */
+
+
+static lso_nargs_t lso_settimeout1(struct lua_State *L) {
+	lua_settop(L, 1);
+
+	return lso_settimeout_(L, lso_prototype(L), 1);
+} /* lso_settimeout1() */
+
+
+static lso_nargs_t lso_settimeout2(struct lua_State *L) {
+	lua_settop(L, 2);
+
+	return lso_settimeout_(L, lso_checkself(L, 1), 2);
+} /* lso_settimeout2() */
+
+
 static lso_nargs_t lso_onerror_(struct lua_State *L, struct luasocket *S, int fidx) {
 	cqs_getref(L, S->onerror);
 
@@ -1767,8 +1795,23 @@ static lso_nargs_t lso_events(lua_State *L) {
 
 
 double cqs_socket_timeout(lua_State *L NOTUSED, int index NOTUSED) {
-	return NAN;
+	struct luasocket *S = lso_checkvalid(L, index, lua_touserdata(L, index));
+
+	return S->timeout;
 } /* cqs_socket_timeout() */
+
+
+static lso_nargs_t lso_timeout(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+
+	if (isnormal(S->timeout) || S->timeout == 0) {
+		lua_pushnumber(L, S->timeout);
+
+		return 1;
+	}
+
+	return 0;
+} /* lso_timeout() */
 
 
 static lso_nargs_t lso_shutdown(lua_State *L) {
@@ -2019,6 +2062,7 @@ static luaL_Reg lso_methods[] = {
 	{ "setmode",    &lso_setmode3 },
 	{ "setbufsiz",  &lso_setbufsiz3 },
 	{ "setmaxline", &lso_setmaxline3 },
+	{ "settimeout", &lso_settimeout2 },
 	{ "onerror",    &lso_onerror2 },
 	{ "recv",       &lso_recv3 },
 	{ "unget",      &lso_unget2 },
@@ -2034,6 +2078,7 @@ static luaL_Reg lso_methods[] = {
 	{ "clear",      &lso_clear },
 	{ "pollfd",     &lso_pollfd },
 	{ "events",     &lso_events },
+	{ "timeout",    &lso_timeout },
 	{ "shutdown",   &lso_shutdown },
 	{ "eof",        &lso_eof },
 	{ "accept",     &lso_accept },
@@ -2063,6 +2108,7 @@ static luaL_Reg lso_globals[] = {
 	{ "setmode",    &lso_setmode2 },
 	{ "setbufsiz",  &lso_setbufsiz2 },
 	{ "setmaxline", &lso_setmaxline2 },
+	{ "settimeout", &lso_settimeout1 },
 	{ "onerror",    &lso_onerror1 },
 	{ 0, 0 }
 }; /* lso_globals[] */

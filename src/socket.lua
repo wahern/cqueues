@@ -18,20 +18,39 @@ local ENOTSOCK = errno.ENOTSOCK
 local strerror = errno.strerror
 
 
-local function oops(con, op, why)
+local function oops(con, op, why, level)
 	local onerror = con:onerror()
 
 	if onerror then
-		return onerror(con, op, why)
+		return onerror(con, op, why, (level or 2) + 1)
 	elseif why == EPIPE then
 		return EPIPE
 	elseif why == ETIMEDOUT then
 		return ETIMEDOUT
 	else
 		local msg = string.format("socket.%s: %s", op, strerror(why))
-		error(msg)
+		error(msg, (level or 2) + 1)
 	end
 end -- oops
+
+
+local function timed_poll(self, deadline)
+	if deadline then
+		local curtime = monotime()
+
+		if deadline <= curtime then
+			return false
+		end
+
+		poll(self, deadline - curtime)
+
+		return true
+	else
+		poll(self)
+
+		return true
+	end
+end -- timed_poll
 
 
 --
@@ -65,28 +84,21 @@ end)
 --
 -- Yielding socket:listen
 --
-local olisten; olisten = socket.interpose("listen", function(self, timeout)
-	local deadline = (timeout and (monotime() + timeout)) or nil
-	local ok, why = olisten(self)
+local listen_nb; listen_nb = socket.interpose("listen", function(self, timeout)
+	local timeout = timeout or self:timeout()
+	local deadline = timeout and (monotime() + timeout)
+	local ok, why = listen_nb(self)
 
 	while not ok do
 		if why == EAGAIN then
-			local curtime = monotime()
-
-			if deadline then
-				if deadline <= curtime then
-					return false, oops(self, "listen", ETIMEDOUT)
-				end
-
-				poll(self, deadline - curtime)
-			else
-				poll(self)
+			if not timed_poll(self, deadline) then
+				return false, oops(self, "listen", ETIMEDOUT)
 			end
 		else
 			return false, oops(self, "listen", why)
 		end
 
-		ok, why = olisten(self)
+		ok, why = listen_nb(self)
 	end
 
 	return true
@@ -96,28 +108,21 @@ end)
 --
 -- Yielding socket:accept
 --
-local oaccept; oaccept = socket.interpose("accept", function(self, timeout)
-	local deadline = (timeout and (monotime() + timeout)) or nil
-	local con, why = oaccept(self)
+local accept_nb; accept_nb = socket.interpose("accept", function(self, timeout)
+	local timeout = timeout or self:timeout()
+	local deadline = timeout and (monotime() + timeout)
+	local con, why = accept_nb(self)
 
 	while not con do
 		if why == EAGAIN then
-			local curtime = monotime()
-
-			if deadline then
-				if deadline <= curtime then
-					return nil, oops(self, "accept", ETIMEDOUT)
-				end
-
-				poll(self, deadline - curtime)
-			else
-				poll(self)
+			if not timed_poll(self, deadline) then
+				return nil, oops(self, "accept", ETIMEDOUT)
 			end
 		else
 			return nil, oops(self, "accept", why)
 		end
 
-		con, why = oaccept(self)
+		con, why = accept_nb(self)
 	end
 
 	return con
@@ -135,28 +140,21 @@ end)
 --
 -- Yielding socket:connect
 --
-local oconnect; oconnect = socket.interpose("connect", function(self, timeout)
-	local deadline = (timeout and (monotime() + timeout)) or nil
-	local ok, why = oconnect(self)
+local connect_nb; connect_nb = socket.interpose("connect", function(self, timeout)
+	local timeout = timeout or self:timeout()
+	local deadline = timeout and (monotime() + timeout)
+	local ok, why = connect_nb(self)
 
 	while not ok do
 		if why == EAGAIN then
-			local curtime = monotime()
-
-			if deadline then
-				if deadline <= curtime then
-					return false, oops(self, "connect", ETIMEDOUT)
-				end
-
-				poll(self, deadline - curtime)
-			else
-				poll(self)
+			if not timed_poll(self, deadline) then
+				return false, oops(self, "connect", ETIMEDOUT)
 			end
 		else
 			return false, oops(self, "connect", why)
 		end
 
-		ok, why = oconnect(self)
+		ok, why = connect_nb(self)
 	end
 
 	return true
@@ -164,47 +162,38 @@ end)
 
 
 --
--- socket:starttls
+-- Yielding socket:starttls
 --
-local starttls; starttls = socket.interpose("starttls", function(self, ...)
-	local nargs = select("#", ...)
-	local arg1, arg2 = ...
+local stls_nb; stls_nb = socket.interpose("starttls", function(self, arg1, arg2)
 	local ctx, timeout
 
-	if nargs == 0 then
-		return starttls(self)
-	elseif nargs == 1 then
-		if type(arg1) == "userdata" then
-			return starttls(self, arg1)
-		end
-
-		timeout = arg1
-	else
+	if type(arg1) == "userdata" then
 		ctx = arg1
+	elseif type(arg2) == "userdata" then
+		ctx = arg2
+	end
+
+	if type(arg1) == "number" then
+		timeout = arg1
+	elseif type(arg2) == "number" then
 		timeout = arg2
+	else
+		timeout = self:timeout()
 	end
 
 	local deadline = timeout and monotime() + timeout
-	local ok, why = starttls(self, ctx)
+	local ok, why = stls_nb(self, ctx)
 
 	while not ok do
 		if why == EAGAIN then
-			if deadline then
-				local curtime = monotime()
-
-				if curtime >= deadline then
-					return false, oops(self, "starttls", ETIMEDOUT)
-				end
-
-				poll(self, deadline - curtime)
-			else
-				poll(self)
+			if not timed_poll(self, deadline) then
+				return false, oops(self, "starttls", ETIMEDOUT)
 			end
 		else
 			return false, oops(self, "starttls", why)
 		end
 
-		ok, why = starttls(self, ctx)
+		ok, why = stls_nb(self, ctx)
 	end
 
 	return true
@@ -236,17 +225,39 @@ end)
 --
 -- Yielding socket:flush
 --
-local oflush; oflush = socket.interpose("flush", function(self, mode)
-	local ok, why = oflush(self, mode)
+local flush_nb; flush_nb = socket.interpose("flush", function(self, arg1, arg2)
+	local mode, timeout
 
-	while not ok do
-		if why == EAGAIN then
-			poll(self)
-		else
-			return false, oops(self, "flush", why)
-		end
+	if type(arg1) == "string" then
+		mode = arg1
+	elseif type(arg2) == "string" then
+		mode = arg2
+	end
 
-		ok, why = oflush(self, mode)
+	if type(arg1) == "number" then
+		timeout = arg1
+	elseif type(arg2) == "number" then
+		timeout = arg2
+	else
+		timeout = self:timeout()
+	end
+
+	local ok, why = flush_nb(self, mode)
+
+	if not ok then
+		local deadline = timeout and (monotime() + timeout)
+
+		repeat
+			if why == EAGAIN then
+				if not timed_poll(self, deadline) then
+					return false, oops(self, "flush", ETIMEDOUT)
+				end
+			else
+				return false, oops(self, "flush", why)
+			end
+
+			ok, why = flush_nb(self, mode)
+		until ok
 	end
 
 	return true
@@ -263,14 +274,23 @@ local function read(self, what, ...)
 
 	local data, why = self:recv(what)
 
-	while not data and why do
-		if why == EAGAIN then
-			poll(self)
-		else
-			return nil, oops(self, "read", why)
-		end
+	if not data then
+		local timeout = self:timeout()
+		local deadline = timeout and (monotime() + timeout)
 
-		data, why = self:recv(what)
+		repeat
+			if why == EAGAIN then
+				if not timed_poll(self, deadline) then
+					return nil, oops(self, "read", ETIMEDOUT)
+				end
+			elseif why then
+				return nil, oops(self, "read", why)
+			else -- EOF
+				return
+			end
+
+			data, why = self:recv(what)
+		until data
 	end
 
 	return data, read(self, ...)
@@ -294,16 +314,21 @@ local writeall; writeall = function(self, data, ...)
 	local i = 1
 
 	while i <= #data do
-		-- use only full buffering mode here
+		-- use only full buffering mode here to minimize socket I/O
 		local n, why = self:send(data, i, #data, "f")
 
 		i = i + n
 
 		if i <= #data then
 			if why == EAGAIN then
-				poll(self)
+				local timeout = self:timeout()
+				local deadline = timeout and (monotime() + timeout)
+
+				if not timed_poll(self, deadline) then
+					return false, oops(self, "write", ETIMEDOUT)
+				end
 			else
-				return nil, oops(self, "write", why)
+				return false, oops(self, "write", why)
 			end
 		end
 	end
@@ -315,7 +340,7 @@ socket.interpose("write", function (self, ...)
 	local ok, why = writeall(self, ...)
 
 	if not ok then
-		return nil, why
+		return false, why
 	end
 
 	-- writeall returns once all data is written, even if just to the
@@ -339,6 +364,8 @@ end)
 -- socket:sendfd
 --
 local sendfd; sendfd = socket.interpose("sendfd", function (self, msg, fd)
+	local timeout = self:timeout()
+	local deadline = timeout and (monotime() + timeout)
 	local ok, why
 
 	repeat
@@ -346,9 +373,11 @@ local sendfd; sendfd = socket.interpose("sendfd", function (self, msg, fd)
 
 		if not ok then
 			if why == EAGAIN then
-				poll(self)
+				if not timed_poll(self, deadline) then
+					return false, oops(self, "sendfd", ETIMEDOUT)
+				end
 			else
-				return nil, oops(self, "sendfd", why)
+				return false, oops(self, "sendfd", why)
 			end
 		end
 	until ok
@@ -361,6 +390,8 @@ end)
 -- socket:recvfd
 --
 local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
+	local timeout = self:timeout()
+	local deadline = timeout and (monotime() + timeout)
 	local msg, fd, why
 
 	repeat
@@ -368,7 +399,9 @@ local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
 
 		if not msg then
 			if why == EAGAIN then
-				poll(self)
+				if not timed_poll(self, deadline) then
+					return nil, nil, oops(self, "recvfd", ETIMEDOUT)
+				end
 			else
 				return nil, nil, oops(self, "recvfd", why)
 			end
@@ -383,19 +416,24 @@ end)
 -- socket:pack
 --
 local pack; pack = socket.interpose("pack", function (self, num, nbits, mode)
-	local ok, why
+	local ok, why = pack(self, num, nbits, mode)
 
-	repeat
-		ok, why = pack(self, num, nbits, mode)
+	if not ok then
+		local timeout = self:timeout()
+		local deadline = timeout and (monotime() + timeout)
 
-		if not ok then
+		repeat
 			if why == EAGAIN then
-				poll(self)
+				if not timed_poll(self, deadline) then
+					return false, oops(self, "pack", ETIMEDOUT)
+				end
 			else
 				return false, oops(self, "pack", why)
 			end
-		end
-	until ok
+
+			ok, why = pack(self, num, nbits, mode)
+		until ok
+	end
 
 	return ok
 end)
@@ -405,19 +443,24 @@ end)
 -- socket:unpack
 --
 local unpack; unpack = socket.interpose("unpack", function (self, nbits)
-	local num, why
+	local num, why = unpack(self, nbits)
 
-	repeat
-		num, why = unpack(self, nbits)
+	if not num then
+		local timeout = self:timeout()
+		local deadline = timeout and (monotime() + timeout)
 
-		if not num then
+		repeat
 			if why == EAGAIN then
-				poll(self)
+				if not timed_poll(self, deadline) then
+					return nil, oops(self, "unpack", ETIMEDOUT)
+				end
 			else
 				return nil, oops(self, "unpack", why)
 			end
-		end
-	until num
+
+			num, why = unpack(self, nbits)
+		until num
+	end
 
 	return num
 end)
@@ -428,26 +471,22 @@ end)
 --
 local fill; fill = socket.interpose("fill", function (self, size, timeout)
 	local ok, why = fill(self, size)
-	local deadline = timeout and monotime() + timeout
 
-	while not ok do
-		if why == EAGAIN then
-			if deadline then
-				local curtime = monotime()
+	if not ok then
+		local timeout = timeout or self:timeout()
+		local deadline = timeout and (monotime() + timeout)
 
-				if deadline <= curtime then
-					return false, oops(self, "fill", why)
+		repeat
+			if why == EAGAIN then
+				if not timed_poll(self, deadline) then
+					return false, oops(self, "fill", ETIMEDOUT)
 				end
-
-				poll(self, deadline - curtime)
 			else
-				poll(self)
+				return false, oops(self, "fill", why)
 			end
-		else
-			return false, oops(self, "fill", why)
-		end
 
-		ok, why = fill(self, size)
+			ok, why = fill(self, size)
+		until ok
 	end
 
 	return true
