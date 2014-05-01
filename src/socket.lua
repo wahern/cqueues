@@ -277,7 +277,7 @@ end)
 --
 -- Yielding socket:read, built on non-blocking socket.recv
 --
-local function read(self, what, ...)
+local function read(self, func, what, ...)
 	if not what then
 		return
 	end
@@ -291,10 +291,10 @@ local function read(self, what, ...)
 		repeat
 			if why == EAGAIN then
 				if not timed_poll(self, deadline) then
-					return nil, oops(self, "read", ETIMEDOUT, 2)
+					return nil, oops(self, func, ETIMEDOUT, 2)
 				end
 			elseif why then
-				return nil, oops(self, "read", why, 2)
+				return nil, oops(self, func, why, 2)
 			else -- EOF
 				return
 			end
@@ -303,14 +303,14 @@ local function read(self, what, ...)
 		until data
 	end
 
-	return data, read(self, ...)
+	return data, read(self, func, ...)
 end
 
 socket.interpose("read", function(self, what, ...)
 	if what then
-		return read(self, what, ...)
+		return read(self, "read", what, ...)
 	else
-		return read(self, "*l")
+		return read(self, "read", "*l")
 	end
 end)
 
@@ -394,7 +394,7 @@ socket.interpose("lines", function (self, mode, ...)
 			local args = { ... }
 
 			return function ()
-				return read(self, mode, unpack(args))
+				return read(self, "lines", mode, unpack(args))
 			end
 		end
 	else
@@ -402,7 +402,7 @@ socket.interpose("lines", function (self, mode, ...)
 	end
 
 	return function ()
-		return read(self, mode)
+		return read(self, "lines", mode)
 	end
 end)
 
