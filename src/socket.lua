@@ -6,6 +6,7 @@ local errno = require("cqueues.errno")
 
 local poll = cqueues.poll
 local monotime = cqueues.monotime
+local running = cqueues.running
 
 local SOCK_STREAM = socket.SOCK_STREAM
 local SOCK_DGRAM = socket.SOCK_DGRAM
@@ -182,6 +183,17 @@ local stls_nb; stls_nb = socket.interpose("starttls", function(self, arg1, arg2)
 	elseif type(arg2) == "number" then
 		timeout = arg2
 	else
+		-- NOTE: Backwards compatibility for old behavior, where an
+		-- absent timeout simply returned immediately without
+		-- polling.
+		--
+		-- Earlier code examples called :starttls outside of the
+		-- event loop, and so we cannot yield in those cases without
+		-- needlessly breaking such code.
+		if running() then
+			return stls_nb(self, ctx)
+		end
+
 		timeout = self:timeout()
 	end
 
