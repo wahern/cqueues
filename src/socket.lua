@@ -18,12 +18,8 @@ local ENOTSOCK = errno.ENOTSOCK
 local strerror = errno.strerror
 
 
-local function oops(con, op, why, level)
-	local onerror = con:onerror()
-
-	if onerror then
-		return onerror(con, op, why, (level or 2) + 1)
-	elseif why == EPIPE then
+local function def_onerror(con, op, why, level)
+	if why == EPIPE then
 		return EPIPE
 	elseif why == ETIMEDOUT then
 		return ETIMEDOUT
@@ -31,6 +27,14 @@ local function oops(con, op, why, level)
 		local msg = string.format("socket.%s: %s", op, strerror(why))
 		error(msg, (level or 2) + 1)
 	end
+end -- def_onerror
+
+socket.onerror(def_onerror)
+
+local function oops(con, op, why, level)
+	local onerror = con:onerror() or def_onerror
+
+	return onerror(con, op, why, (level or 2)) --> no incr on tail call
 end -- oops
 
 
