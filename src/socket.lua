@@ -225,7 +225,31 @@ end)
 --
 -- Yielding socket:flush
 --
-local flush_nb; flush_nb = socket.interpose("flush", function(self, arg1, arg2)
+local flush_nb;
+
+local function flush_timed(self, mode, timeout, level)
+	local ok, why = flush_nb(self, mode)
+
+	if not ok then
+		local deadline = timeout and (monotime() + timeout)
+
+		repeat
+			if why == EAGAIN then
+				if not timed_poll(self, deadline) then
+					return false, oops(self, "flush", ETIMEDOUT, level + 1)
+				end
+			else
+				return false, oops(self, "flush", why, level + 1)
+			end
+
+			ok, why = flush_nb(self, mode)
+		until ok
+	end
+
+	return true
+end -- flush_timed
+
+flush_nb = socket.interpose("flush", function (self, arg1, arg2)
 	local mode, timeout
 
 	if type(arg1) == "string" then
@@ -242,25 +266,7 @@ local flush_nb; flush_nb = socket.interpose("flush", function(self, arg1, arg2)
 		timeout = self:timeout()
 	end
 
-	local ok, why = flush_nb(self, mode)
-
-	if not ok then
-		local deadline = timeout and (monotime() + timeout)
-
-		repeat
-			if why == EAGAIN then
-				if not timed_poll(self, deadline) then
-					return false, oops(self, "flush", ETIMEDOUT)
-				end
-			else
-				return false, oops(self, "flush", why)
-			end
-
-			ok, why = flush_nb(self, mode)
-		until ok
-	end
-
-	return true
+	return flush_timed(self, mode, timeout, 2)
 end)
 
 
@@ -281,10 +287,10 @@ local function read(self, what, ...)
 		repeat
 			if why == EAGAIN then
 				if not timed_poll(self, deadline) then
-					return nil, oops(self, "read", ETIMEDOUT)
+					return nil, oops(self, "read", ETIMEDOUT, 2)
 				end
 			elseif why then
-				return nil, oops(self, "read", why)
+				return nil, oops(self, "read", why, 2)
 			else -- EOF
 				return
 			end
@@ -296,13 +302,21 @@ local function read(self, what, ...)
 	return data, read(self, ...)
 end
 
-socket.interpose("read", function(self, ...)
-	return read(self, ... or "*l")
+socket.interpose("read", function(self, what, ...)
+	if what then
+		return read(self, what, ...)
+	else
+		return read(self, "*l")
+	end
 end)
 
 
 --
--- Yielding socket:write, built on non-blocking socket.send
+-- Yielding socket:write
+--
+-- This is complicated by the fact that we want error messages to get the
+-- correct stack trace, and also because on failure we want to return a list
+-- of error values of indeterminate length.
 --
 local writeall; writeall = function(self, data, ...)
 	if not data then
@@ -325,10 +339,10 @@ local writeall; writeall = function(self, data, ...)
 				local deadline = timeout and (monotime() + timeout)
 
 				if not timed_poll(self, deadline) then
-					return false, oops(self, "write", ETIMEDOUT)
+					return nil, oops(self, "write", ETIMEDOUT, 3)
 				end
 			else
-				return false, oops(self, "write", why)
+				return nil, oops(self, "write", why, 3)
 			end
 		end
 	end
@@ -336,26 +350,55 @@ local writeall; writeall = function(self, data, ...)
 	return writeall(self, ...)
 end
 
-socket.interpose("write", function (self, ...)
-	local ok, why = writeall(self, ...)
+local function fileresult(self, ok, ...)
+	if ok then
+		return self
+	else
+		return nil, ...
+	end
+end -- fileresult
 
+local function flushwrite(self, ok, ...)
 	if not ok then
-		return false, why
+		return nil, ...
 	end
 
-	-- writeall returns once all data is written, even if just to the
-	-- buffer. Flush the buffer here, but pass empty mode so it uses the
-	-- configured flushing mode instead of an implicit flush all.
-	return self:flush("")
+	-- Flush the buffer here because we used full buffering mode in
+	-- writeall. But pass empty mode so it uses the configured flushing
+	-- mode instead of an implicit flush all.
+	return fileresult(self, flush_timed(self, "", nil, 2))
+end -- flushwrite
+
+socket.interpose("write", function (self, ...)
+	return flushwrite(self, writeall(self, ...))
 end)
 
 
 --
 -- socket:lines
 --
-socket.interpose("lines", function (self, mode)
-	return function()
-		return self:read(mode or "*l")
+-- NOTE: optimize single-mode case so we're not unpacking tables all the
+-- time.
+--
+local unpack = assert(table.unpack or unpack)
+
+socket.interpose("lines", function (self, mode, ...)
+	local args = select("#", ...) > 0 and { ... }
+
+	if mode then
+		if select("#", ...) > 0 then
+			local args = { ... }
+
+			return function ()
+				return read(self, mode, unpack(args))
+			end
+		end
+	else
+		mode = "*l"
+	end
+
+	return function ()
+		return read(self, mode)
 	end
 end)
 
