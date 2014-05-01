@@ -116,6 +116,8 @@ struct luasocket {
 	lua_State *mainthread;
 
 	double timeout;
+
+	int error;
 }; /* struct luasocket */
 
 
@@ -1038,6 +1040,39 @@ static lso_nargs_t lso_onerror1(struct lua_State *L) {
 static lso_nargs_t lso_onerror2(struct lua_State *L) {
 	return lso_onerror_(L, lso_checkself(L, 1), 2);
 } /* lso_onerror2() */
+
+
+static lso_nargs_t lso_seterror(struct lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	int error = S->error;
+
+	S->error = luaL_optint(L, 2, 0);
+
+	lua_pushinteger(L, error);
+
+	return 1;
+} /* lso_seterror() */
+
+
+static lso_nargs_t lso_error(struct lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+
+	lua_pushinteger(L, S->error);
+
+	return 1;
+} /* lso_error() */
+
+
+static lso_nargs_t lso_clearerr(struct lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	int error = S->error;
+
+	S->error = 0;
+
+	lua_pushinteger(L, error);
+
+	return 1;
+} /* lso_clearerr() */
 
 
 static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
@@ -2063,6 +2098,9 @@ static luaL_Reg lso_methods[] = {
 	{ "setbufsiz",  &lso_setbufsiz3 },
 	{ "setmaxline", &lso_setmaxline3 },
 	{ "settimeout", &lso_settimeout2 },
+	{ "seterror",   &lso_seterror },
+	{ "error",      &lso_error },
+	{ "clearerr",   &lso_clearerr },
 	{ "onerror",    &lso_onerror2 },
 	{ "recv",       &lso_recv3 },
 	{ "unget",      &lso_unget2 },

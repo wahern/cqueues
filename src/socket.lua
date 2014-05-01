@@ -35,6 +35,8 @@ socket.onerror(def_onerror)
 local function oops(con, op, why, level)
 	local onerror = con:onerror() or def_onerror
 
+	con:seterror(why)
+
 	return onerror(con, op, why, (level or 2)) --> no incr on tail call
 end -- oops
 
