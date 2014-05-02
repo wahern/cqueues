@@ -12,7 +12,7 @@ loop:wrap(function()
 	local con = unix:accept()
 	local pid, uid, gid = con:peerpid(), con:peereid()
 
-	print(pid, uid, gid)
+	print(string.format("pid:%s uid:%s gid:%s", pid, uid, gid))
 end)
 
 loop:wrap(function()
