@@ -532,11 +532,19 @@ Sets the default timeout period for I/O. If nil or none, then clears any default
 Sockets are instantiated without a default timeout.
 
 \subsubsection[\fn{socket:onerror}]{\fn{socket:onerror([function])}}
-Set the error handler. The error handler is passed the tuple socket-object, method-string, error-number, and is expected to either throw an error or return an error code---to be returned to the caller as part of the documented return interface.
+Set the error handler. The error handler is passed four arguments: socket object, method name, error number, and stack level of caller. The handler is expected to either throw an error or return an error code---to be returned to the caller as part of the documented return interface.
 
 The default error handler returns \errno{EPIPE} and \errno{ETIMEDOUT} directly, and throws everything else. \errno{EAGAIN} is handled internally for logically synchronous calls.
 
 Returns the previous error handler, if any.
+
+\subsubsection[\fn{socket:error}]{\fn{socket:error([which])}}
+
+Returns the saved error conditions for the input and output channels. $which$ is a string containing one or more of the characters `r' and `w', which return the input and output channel errors respectively and in the order specified. $which$ defaults to the string ``rw''.
+
+\subsubsection[\fn{socket:clearerr}]{\fn{socket:clearerr([which])}}
+
+Clears the error conditions for the input and output channels and returns any previous errors. $which$ is a string containing one or more of the characters `r' and `w', which clears the input and output channel errors respectively, and returns the previous error numbers (or nil) in the order specified. $which$ defaults to the string ``rw''.
 
 \subsubsection[\fn{socket:read}]{\fn{socket:read(...)}}
 Similar to Lua's \fn{file:read}, with additional formats.
@@ -604,8 +612,10 @@ r & analagous to \syscall{shutdown(SHUT\_RD)} \\
 w & analagous to \syscall{shutdown(SHUT\_WR)} \\
 \end{tabular}
 
-\subsubsection[\fn{socket:eof}]{\fn{socket:eof()}}
-Returns two boolean values representing whether EOF has been received on the input channel, and whether the output channel has signaled closure (e.g. \errno{EPIPE}).
+\subsubsection[\fn{socket:eof}]{\fn{socket:eof([which])}}
+Returns boolean values representing whether EOF has been received on the input channel, and whether the output channel has signaled closure (e.g. \errno{EPIPE}). $which$ is a string containing one or more of the characters ``r'' and ``w'', which return the state of the input or output channel, respectively, in the order specified. $which$ defaults to ``rw''.
+
+Note that \fn{socket:shutdown} does not change the state of these values. They are set only upon receiving the condition after I/O is attempted.
 
 \subsubsection[\fn{socket:peername}]{\fn{socket:peername()}}
 Returns one, two, or three values. On success, returns three values for AF\_INET and AF\_INET6 sockets---the address family number, IP address string, and IP port. For AF\_UNIX sockets, returns the address family and file path. If the socket is not yet connected, returns the address family AF\_UNSPEC, usually numeric 0.
