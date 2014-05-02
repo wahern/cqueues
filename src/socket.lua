@@ -486,8 +486,8 @@ end)
 --
 -- Yielding socket:sendfd
 --
-local _sendfd; _sendfd = socket.interpose("sendfd", function (self, msg, fd)
-	local timeout = self:timeout()
+local _sendfd; _sendfd = socket.interpose("sendfd", function (self, msg, fd, timeout)
+	local timeout = timeout or self:timeout()
 	local deadline = timeout and (monotime() + timeout)
 	local ok, why
 
@@ -512,8 +512,8 @@ end)
 --
 -- Yielding socket:recvfd
 --
-local _recvfd; _recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
-	local timeout = self:timeout()
+local _recvfd; _recvfd = socket.interpose("recvfd", function (self, prepbufsiz, timeout)
+	local timeout = timeout or self:timeout()
 	local deadline = timeout and (monotime() + timeout)
 	local msg, fd, why
 
