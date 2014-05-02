@@ -57,14 +57,14 @@ end -- timed_poll
 -- ========================================================================
 
 -- default error handler
-local function def_onerror(con, op, why, level)
+local function def_onerror(self, op, why, lvl)
 	if why == EPIPE then
 		return EPIPE
 	elseif why == ETIMEDOUT then
 		return ETIMEDOUT
 	else
 		local msg = string.format("socket.%s: %s", op, strerror(why))
-		error(msg, (level or 2) + 1)
+		error(msg, lvl)
 	end
 end -- def_onerror
 
@@ -102,14 +102,26 @@ local preserve = {
 	recvfd = "r", sendfd = "w",
 }
 
-local function oops(con, op, why, level)
-	local onerror = con:onerror() or def_onerror
+-- drop EPIPE errors on input channel
+local nopipe = {
+	read = true, lines = true, fill = true, unpack = true, recvfd = true
+}
 
-	if preserve[op] then
-		con:seterror(preserve[op], why)
+local function oops(self, op, why, level)
+	local onerror = self:onerror() or def_onerror
+
+	if why == EPIPE and nopipe[op] then
+		return -- EOF
+	elseif preserve[op] then
+		self:seterror(preserve[op], why)
 	end
 
-	return onerror(con, op, why, (level or 2)) --> no incr on tail call
+	-- NOTE: There's normally no need to increment on a tail-call
+	-- (except when directly calling the error() routine), but we
+	-- increment here so the callee has the correct stack level to pass
+	-- to error() directly, without making adjustments for its own
+	-- activation record.
+	return onerror(self, op, why, (level or 2) + 1)
 end -- oops
 
 
@@ -370,10 +382,8 @@ local function read(self, func, what, ...)
 				if not timed_poll(self, deadline) then
 					return nil, oops(self, func, ETIMEDOUT, 2)
 				end
-			elseif why then
+			else
 				return nil, oops(self, func, why, 2)
-			else -- EOF
-				return
 			end
 
 			data, why = self:recv(what)
