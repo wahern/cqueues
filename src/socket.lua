@@ -32,10 +32,17 @@ end -- def_onerror
 
 socket.onerror(def_onerror)
 
+local saveon = {
+	read = "r", lines = "r", unpack = "r", recvfd = "r",
+	write = "w", flush = "w", sendfd = "w", unpack = "w",
+}
+
 local function oops(con, op, why, level)
 	local onerror = con:onerror() or def_onerror
 
-	con:seterror(why)
+	if saveon[op] then
+		con:seterror(saveon[op], why)
+	end
 
 	return onerror(con, op, why, (level or 2)) --> no incr on tail call
 end -- oops
@@ -192,7 +199,7 @@ local stls_nb; stls_nb = socket.interpose("starttls", function(self, arg1, arg2)
 		-- Earlier code examples called :starttls outside of the
 		-- event loop, and so we cannot yield in those cases without
 		-- needlessly breaking such code.
-		if running() then
+		if not running() then
 			return stls_nb(self, ctx)
 		end
 

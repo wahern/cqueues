@@ -94,6 +94,8 @@ struct luasocket {
 
 		_Bool eof;
 		_Bool eom;
+
+		int error;
 	} ibuf;
 
 	struct {
@@ -105,6 +107,8 @@ struct luasocket {
 
 		_Bool eof;
 		size_t eol;
+
+		int error;
 	} obuf;
 
 	int family;
@@ -116,8 +120,6 @@ struct luasocket {
 	lua_State *mainthread;
 
 	double timeout;
-
-	int error;
 }; /* struct luasocket */
 
 
@@ -1042,36 +1044,82 @@ static lso_nargs_t lso_onerror2(struct lua_State *L) {
 } /* lso_onerror2() */
 
 
+static void lso_pusherror(struct lua_State *L, int error) {
+	if (error)
+		lua_pushinteger(L, error);
+	else
+		lua_pushnil(L);
+} /* lso_pusherror() */
+
+
+static lso_nargs_t lso_seterror_(struct lua_State *L, struct luasocket *S, const char *what, int error) {
+	int nret = 0;
+
+	for (; *what; what++) {
+		switch (*what) {
+		case 'r':
+			lso_pusherror(L, S->ibuf.error);
+			nret++;
+
+			S->ibuf.error = error;
+
+			break;
+		case 'w':
+			lso_pusherror(L, S->obuf.error);
+			nret++;
+
+			S->obuf.error = error;
+
+			break;
+		default:
+			return luaL_argerror(L, 2, lua_pushfstring(L, "%s: %c: only `r' or `w' accepted", what, *what));
+		} /* switch() */
+	} /* for() */
+
+	return nret;
+} /* lso_seterror_() */
+
+
 static lso_nargs_t lso_seterror(struct lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
-	int error = S->error;
+	const char *what = luaL_checkstring(L, 2);
+	int error = luaL_optint(L, 3, 0);
 
-	S->error = luaL_optint(L, 2, 0);
-
-	lua_pushinteger(L, error);
-
-	return 1;
+	return lso_seterror_(L, S, what, error);
 } /* lso_seterror() */
 
 
 static lso_nargs_t lso_error(struct lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
+	const char *what = luaL_optstring(L, 2, "rw");
+	int nret = 0;
 
-	lua_pushinteger(L, S->error);
+	for (; *what; what++) {
+		switch (*what) {
+		case 'r':
+			lso_pusherror(L, S->ibuf.error);
+			nret++;
 
-	return 1;
+			break;
+		case 'w':
+			lso_pusherror(L, S->obuf.error);
+			nret++;
+
+			break;
+		default:
+			return luaL_argerror(L, 2, lua_pushfstring(L, "%s: %c: only `r' or `w' accepted", what, *what));
+		} /* switch() */
+	} /* for() */
+
+	return nret;
 } /* lso_error() */
 
 
 static lso_nargs_t lso_clearerr(struct lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
-	int error = S->error;
+	const char *what = luaL_optstring(L, 2, "rw");
 
-	S->error = 0;
-
-	lua_pushinteger(L, error);
-
-	return 1;
+	return lso_seterror_(L, S, what, 0);
 } /* lso_clearerr() */
 
 
@@ -1284,6 +1332,9 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	size_t count;
 	int error;
 
+	if ((error = S->ibuf.error))
+		goto error;
+
 	lua_settop(L, 3);
 
 	op = lso_checkrcvop(L, 2, lso_imode(luaL_optstring(L, 3, ""), S->ibuf.mode));
@@ -1491,6 +1542,13 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	size_t tp, p, pe, end, n;
 	int mode, byline, error;
 
+	if ((error = S->obuf.error)) {
+		lua_pushnumber(L, 0);
+		lua_pushinteger(L, error);
+
+		return 2;
+	}
+
 	lua_settop(L, 5);
 
 	src = (const void *)luaL_checklstring(L, 2, &end);
@@ -1565,7 +1623,7 @@ static lso_nargs_t lso_flush(lua_State *L) {
 	int mode = lso_imode(luaL_optstring(L, 2, "n"), S->obuf.mode);
 	int error;
 
-	if ((error = lso_doflush(S, mode))) {
+	if ((error = S->obuf.error) || (error = lso_doflush(S, mode))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
@@ -1613,6 +1671,9 @@ static lso_nargs_t lso_sendfd3(lua_State *L) {
 	luaL_Stream *fh;
 	int fd, error;
 
+	if ((error = S->obuf.error))
+		goto error;
+
 	lua_settop(L, 3);
 
 	src = luaL_checklstring(L, 2, &len);
@@ -1646,6 +1707,9 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	struct iovec iov;
 	struct so_options opts;
 	int fd = -1, error;
+
+	if ((error = S->ibuf.error))
+		goto error;
 
 	if ((error = fifo_grow(&S->ibuf.fifo, bufsiz)))
 		goto error;
@@ -1698,6 +1762,9 @@ static lso_nargs_t lso_pack4(lua_State *L) {
 	unsigned count;
 	int mode, error;
 
+	if ((error = S->obuf.error))
+		goto error;
+
 	lua_settop(L, 4);
 
 	value = luaL_checknumber(L, 2);
@@ -1728,6 +1795,9 @@ static lso_nargs_t lso_unpack2(lua_State *L) {
 	unsigned long long value;
 	unsigned count;
 	int error;
+
+	if ((error = S->ibuf.error))
+		goto error;
 
 	lua_settop(L, 2);
 
@@ -1767,7 +1837,7 @@ static lso_nargs_t lso_fill2(lua_State *L) {
 	size_t size = lso_checksize(L, 2);
 	int error;
 
-	if ((error = lso_fill(S, size))) {
+	if ((error = S->ibuf.error) || (error = lso_fill(S, size))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
