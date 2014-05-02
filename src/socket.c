@@ -1953,11 +1953,25 @@ static lso_nargs_t lso_shutdown(lua_State *L) {
 
 static lso_nargs_t lso_eof(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
+	const char *which = luaL_optstring(L, 2, "rw");
+	int nret = 0;
 
-	lua_pushboolean(L, S->ibuf.eof);
-	lua_pushboolean(L, S->obuf.eof);
+	for (; *which; which++) {
+		switch (*which) {
+		case 'r':
+			lua_pushboolean(L, S->ibuf.eof);
+			nret++;
 
-	return 2;
+			break;
+		case 'w':
+			lua_pushboolean(L, S->obuf.eof);
+			nret++;
+
+			break;
+		}
+	} /* for() */
+
+	return nret;
 } /* lso_eof() */
 
 
