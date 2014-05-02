@@ -19,34 +19,10 @@ local ENOTSOCK = errno.ENOTSOCK
 local strerror = errno.strerror
 
 
-local function def_onerror(con, op, why, level)
-	if why == EPIPE then
-		return EPIPE
-	elseif why == ETIMEDOUT then
-		return ETIMEDOUT
-	else
-		local msg = string.format("socket.%s: %s", op, strerror(why))
-		error(msg, (level or 2) + 1)
-	end
-end -- def_onerror
-
-socket.onerror(def_onerror)
-
-local saveon = {
-	read = "r", lines = "r", unpack = "r", recvfd = "r",
-	write = "w", flush = "w", sendfd = "w", unpack = "w",
-}
-
-local function oops(con, op, why, level)
-	local onerror = con:onerror() or def_onerror
-
-	if saveon[op] then
-		con:seterror(saveon[op], why)
-	end
-
-	return onerror(con, op, why, (level or 2)) --> no incr on tail call
-end -- oops
-
+--
+-- H E L P E R  R O U T I N E S
+--
+-- ========================================================================
 
 local function timed_poll(self, deadline)
 	if deadline then
@@ -68,24 +44,104 @@ end -- timed_poll
 
 
 --
--- Yielding socket.pair
+-- E R R O R  M A N A G E M E N T
 --
-local pair = socket.pair; socket.pair = function(type)
+-- All errors in the I/O routines are first passed to a per-socket error
+-- handler, which can choose to return or throw them.
+--
+-- The default error handler is not actually installed with any socket, as
+-- that would create needless churn in the registry index on socket
+-- instantiation. Instead we interpose socket.onerror and socket:onerror and
+-- return our default handler if none was previously installed.
+--
+-- ========================================================================
+
+-- default error handler
+local function def_onerror(con, op, why, level)
+	if why == EPIPE then
+		return EPIPE
+	elseif why == ETIMEDOUT then
+		return ETIMEDOUT
+	else
+		local msg = string.format("socket.%s: %s", op, strerror(why))
+		error(msg, (level or 2) + 1)
+	end
+end -- def_onerror
+
+
+local _onerror = socket.onerror; socket.onerror = function(...)
+	return _onerror(...) or def_onerror
+end
+
+local _onerror; _onerror = socket.interpose("onerror", function(...)
+	return _onerror(...) or def_onerror
+end)
+
+
+--
+-- On buffered I/O we need to preserve errors across calls, otherwise
+-- unchecked transient errors might lead to unexpected behavior by
+-- application code. This is particularly true regarding timeouts, and
+-- especially so when mixed with iterators like socket:lines--doubly so when
+-- reading MIME headers, which could terminate on ETIMEDOUT, EPIPE, or just
+-- when reaching the end of the headers section.
+--
+-- Why not just always throw on such errors? One reason is that we partially
+-- mimic Lua's file objects, which will return such errors. (And we might
+-- change our semantics to fully mimic Lua in the future.)
+--
+-- Another reason is that it's very common to want to deal with timeouts
+-- inline. For example, maybe you want to write a keep-alive message after a
+-- read timeout. Timeouts are exceptional but not necessarily errors.
+--
+local preserve = {
+	read = "r", lines = "r", fill = "r", unpack = "r",
+	write = "w", flush = "w", pack = "w",
+
+	-- these too for good measure, even though they're not buffered
+	recvfd = "r", sendfd = "w",
+}
+
+local function oops(con, op, why, level)
+	local onerror = con:onerror() or def_onerror
+
+	if preserve[op] then
+		con:seterror(preserve[op], why)
+	end
+
+	return onerror(con, op, why, (level or 2)) --> no incr on tail call
+end -- oops
+
+
+--
+-- A P I  E X T E N S I O N S
+--
+-- The core sockets implementation in C will not yield on I/O, or throw
+-- recoverable errors. These things are done in Lua code for simplicitly and
+-- portability--Lua 5.1/LuaJIT doesn't support resumption of C routines.
+--
+-- ========================================================================
+
+
+--
+-- Extended socket.pair
+--
+local _pair = socket.pair; socket.pair = function(type)
 	if type == "stream" then
 		type = SOCK_STREAM
 	elseif type == "dgram" then
 		type = SOCK_DGRAM
 	end
 
-	return pair(type)
+	return _pair(type)
 end
 
 
 --
 -- Throwable socket:setbufsiz
 --
-local setbufsiz; setbufsiz = socket.interpose("setbufsiz", function(self, input, output)
-	local input, output, why = setbufsiz(self, input, output)
+local _setbufsiz; _setbufsiz = socket.interpose("setbufsiz", function(self, input, output)
+	local input, output, why = _setbufsiz(self, input, output)
 
 	if not input then
 		return nil, nil, oops(self, "setbufsiz", why)
@@ -98,10 +154,10 @@ end)
 --
 -- Yielding socket:listen
 --
-local listen_nb; listen_nb = socket.interpose("listen", function(self, timeout)
+local _listen; _listen = socket.interpose("listen", function(self, timeout)
 	local timeout = timeout or self:timeout()
 	local deadline = timeout and (monotime() + timeout)
-	local ok, why = listen_nb(self)
+	local ok, why = _listen(self)
 
 	while not ok do
 		if why == EAGAIN then
@@ -112,7 +168,7 @@ local listen_nb; listen_nb = socket.interpose("listen", function(self, timeout)
 			return false, oops(self, "listen", why)
 		end
 
-		ok, why = listen_nb(self)
+		ok, why = _listen(self)
 	end
 
 	return true
@@ -122,10 +178,10 @@ end)
 --
 -- Yielding socket:accept
 --
-local accept_nb; accept_nb = socket.interpose("accept", function(self, timeout)
+local _accept; _accept = socket.interpose("accept", function(self, timeout)
 	local timeout = timeout or self:timeout()
 	local deadline = timeout and (monotime() + timeout)
-	local con, why = accept_nb(self)
+	local con, why = _accept(self)
 
 	while not con do
 		if why == EAGAIN then
@@ -136,7 +192,7 @@ local accept_nb; accept_nb = socket.interpose("accept", function(self, timeout)
 			return nil, oops(self, "accept", why)
 		end
 
-		con, why = accept_nb(self)
+		con, why = _accept(self)
 	end
 
 	return con
@@ -144,7 +200,7 @@ end)
 
 
 --
--- socket:clients
+-- Add socket:clients
 --
 socket.interpose("clients", function(self, timeout)
 	return function() return self:accept(timeout) end
@@ -154,10 +210,10 @@ end)
 --
 -- Yielding socket:connect
 --
-local connect_nb; connect_nb = socket.interpose("connect", function(self, timeout)
+local _connect; _connect = socket.interpose("connect", function(self, timeout)
 	local timeout = timeout or self:timeout()
 	local deadline = timeout and (monotime() + timeout)
-	local ok, why = connect_nb(self)
+	local ok, why = _connect(self)
 
 	while not ok do
 		if why == EAGAIN then
@@ -168,7 +224,7 @@ local connect_nb; connect_nb = socket.interpose("connect", function(self, timeou
 			return false, oops(self, "connect", why)
 		end
 
-		ok, why = connect_nb(self)
+		ok, why = _connect(self)
 	end
 
 	return true
@@ -178,7 +234,7 @@ end)
 --
 -- Yielding socket:starttls
 --
-local stls_nb; stls_nb = socket.interpose("starttls", function(self, arg1, arg2)
+local _starttls; _starttls = socket.interpose("starttls", function(self, arg1, arg2)
 	local ctx, timeout
 
 	if type(arg1) == "userdata" then
@@ -200,14 +256,14 @@ local stls_nb; stls_nb = socket.interpose("starttls", function(self, arg1, arg2)
 		-- event loop, and so we cannot yield in those cases without
 		-- needlessly breaking such code.
 		if not running() then
-			return stls_nb(self, ctx)
+			return _starttls(self, ctx)
 		end
 
 		timeout = self:timeout()
 	end
 
 	local deadline = timeout and monotime() + timeout
-	local ok, why = stls_nb(self, ctx)
+	local ok, why = _starttls(self, ctx)
 
 	while not ok do
 		if why == EAGAIN then
@@ -218,7 +274,7 @@ local stls_nb; stls_nb = socket.interpose("starttls", function(self, arg1, arg2)
 			return false, oops(self, "starttls", why)
 		end
 
-		ok, why = stls_nb(self, ctx)
+		ok, why = _starttls(self, ctx)
 	end
 
 	return true
@@ -226,11 +282,11 @@ end)
 
 
 --
--- socket:checktls
+-- Smarter socket:checktls
 --
 local havessl, whynossl
 
-local checktls; checktls = socket.interpose("checktls", function(self)
+local _checktls; _checktls = socket.interpose("checktls", function(self)
 	if not havessl then
 		if havessl == false then
 			return nil, whynossl
@@ -243,17 +299,17 @@ local checktls; checktls = socket.interpose("checktls", function(self)
 		end
 	end
 
-	return checktls(self)
+	return _checktls(self)
 end)
 
 
 --
 -- Yielding socket:flush
 --
-local flush_nb;
+local _flush;
 
-local function flush_timed(self, mode, timeout, level)
-	local ok, why = flush_nb(self, mode)
+local function timed_flush(self, mode, timeout, level)
+	local ok, why = _flush(self, mode)
 
 	if not ok then
 		local deadline = timeout and (monotime() + timeout)
@@ -267,14 +323,14 @@ local function flush_timed(self, mode, timeout, level)
 				return false, oops(self, "flush", why, level + 1)
 			end
 
-			ok, why = flush_nb(self, mode)
+			ok, why = _flush(self, mode)
 		until ok
 	end
 
 	return true
-end -- flush_timed
+end -- timed_flush
 
-flush_nb = socket.interpose("flush", function (self, arg1, arg2)
+_flush = socket.interpose("flush", function (self, arg1, arg2)
 	local mode, timeout
 
 	if type(arg1) == "string" then
@@ -291,12 +347,12 @@ flush_nb = socket.interpose("flush", function (self, arg1, arg2)
 		timeout = self:timeout()
 	end
 
-	return flush_timed(self, mode, timeout, 2)
+	return timed_flush(self, mode, timeout, 2)
 end)
 
 
 --
--- Yielding socket:read, built on non-blocking socket.recv
+-- Yielding socket:read
 --
 local function read(self, func, what, ...)
 	if not what then
@@ -391,7 +447,7 @@ local function flushwrite(self, ok, ...)
 	-- Flush the buffer here because we used full buffering mode in
 	-- writeall. But pass empty mode so it uses the configured flushing
 	-- mode instead of an implicit flush all.
-	return fileresult(self, flush_timed(self, "", nil, 2))
+	return fileresult(self, timed_flush(self, "", nil, 2))
 end -- flushwrite
 
 socket.interpose("write", function (self, ...)
@@ -400,10 +456,9 @@ end)
 
 
 --
--- socket:lines
+-- Add socket:lines
 --
--- NOTE: optimize single-mode case so we're not unpacking tables all the
--- time.
+-- We optimize single-mode case so we're not unpacking tables all the time.
 --
 local unpack = assert(table.unpack or unpack)
 
@@ -429,15 +484,15 @@ end)
 
 
 --
--- socket:sendfd
+-- Yielding socket:sendfd
 --
-local sendfd; sendfd = socket.interpose("sendfd", function (self, msg, fd)
+local _sendfd; _sendfd = socket.interpose("sendfd", function (self, msg, fd)
 	local timeout = self:timeout()
 	local deadline = timeout and (monotime() + timeout)
 	local ok, why
 
 	repeat
-		ok, why = sendfd(self, msg, fd)
+		ok, why = _sendfd(self, msg, fd)
 
 		if not ok then
 			if why == EAGAIN then
@@ -455,15 +510,15 @@ end)
 
 
 --
--- socket:recvfd
+-- Yielding socket:recvfd
 --
-local recvfd; recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
+local _recvfd; _recvfd = socket.interpose("recvfd", function (self, prepbufsiz)
 	local timeout = self:timeout()
 	local deadline = timeout and (monotime() + timeout)
 	local msg, fd, why
 
 	repeat
-		msg, fd, why = recvfd(self, prepbufsiz)
+		msg, fd, why = _recvfd(self, prepbufsiz)
 
 		if not msg then
 			if why == EAGAIN then
@@ -481,10 +536,10 @@ end)
 
 
 --
--- socket:pack
+-- Yielding socket:pack
 --
-local pack; pack = socket.interpose("pack", function (self, num, nbits, mode)
-	local ok, why = pack(self, num, nbits, mode)
+local _pack; _pack = socket.interpose("pack", function (self, num, nbits, mode)
+	local ok, why = _pack(self, num, nbits, mode)
 
 	if not ok then
 		local timeout = self:timeout()
@@ -499,7 +554,7 @@ local pack; pack = socket.interpose("pack", function (self, num, nbits, mode)
 				return false, oops(self, "pack", why)
 			end
 
-			ok, why = pack(self, num, nbits, mode)
+			ok, why = _pack(self, num, nbits, mode)
 		until ok
 	end
 
@@ -508,10 +563,10 @@ end)
 
 
 --
--- socket:unpack
+-- Yielding socket:unpack
 --
-local unpack; unpack = socket.interpose("unpack", function (self, nbits)
-	local num, why = unpack(self, nbits)
+local _unpack; _unpack = socket.interpose("unpack", function (self, nbits)
+	local num, why = _unpack(self, nbits)
 
 	if not num then
 		local timeout = self:timeout()
@@ -526,7 +581,7 @@ local unpack; unpack = socket.interpose("unpack", function (self, nbits)
 				return nil, oops(self, "unpack", why)
 			end
 
-			num, why = unpack(self, nbits)
+			num, why = _unpack(self, nbits)
 		until num
 	end
 
@@ -535,10 +590,10 @@ end)
 
 
 --
--- socket:fill
+-- Yielding socket:fill
 --
-local fill; fill = socket.interpose("fill", function (self, size, timeout)
-	local ok, why = fill(self, size)
+local _fill; _fill = socket.interpose("fill", function (self, size, timeout)
+	local ok, why = _fill(self, size)
 
 	if not ok then
 		local timeout = timeout or self:timeout()
@@ -553,7 +608,7 @@ local fill; fill = socket.interpose("fill", function (self, size, timeout)
 				return false, oops(self, "fill", why)
 			end
 
-			ok, why = fill(self, size)
+			ok, why = _fill(self, size)
 		until ok
 	end
 
@@ -562,7 +617,7 @@ end)
 
 
 --
--- socket:peername
+-- Extend socket:peername
 --
 local function getname(get, self)
 	local af, r1, r2 = get(self)
@@ -576,16 +631,16 @@ local function getname(get, self)
 	end
 end
 
-local peername; peername = socket.interpose("peername", function (self)
-	return getname(peername, self)
+local _peername; _peername = socket.interpose("peername", function (self)
+	return getname(_peername, self)
 end)
 
 
 --
--- socket:localname
+-- Extend socket:localname
 --
-local localname; localname = socket.interpose("localname", function (self)
-	return getname(localname, self)
+local _localname; _localname = socket.interpose("localname", function (self)
+	return getname(_localname, self)
 end)
 
 
