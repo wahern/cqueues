@@ -8,6 +8,9 @@ local poll = cqueues.poll
 local monotime = cqueues.monotime
 local running = cqueues.running
 
+local AF_INET = socket.AF_INET
+local AF_INET6 = socket.AF_INET6
+local AF_UNIX = socket.AF_UNIX
 local SOCK_STREAM = socket.SOCK_STREAM
 local SOCK_DGRAM = socket.SOCK_DGRAM
 
@@ -17,6 +20,8 @@ local ETIMEDOUT = errno.ETIMEDOUT
 local ENOTCONN = errno.ENOTCONN
 local ENOTSOCK = errno.ENOTSOCK
 local strerror = errno.strerror
+
+local format = string.format
 
 
 --
@@ -43,6 +48,17 @@ local function timed_poll(self, deadline)
 end -- timed_poll
 
 
+local function logname(so)
+	local af, addr, port = so:peername()
+
+	if af == AF_INET or af == AF_INET6 then
+		return format("%s.%s", addr, port)
+	elseif af == AF_UNIX and #addr > 0 then
+		return format("unix:%s", addr)
+	end
+end -- logname
+
+
 --
 -- E R R O R  M A N A G E M E N T
 --
@@ -63,7 +79,15 @@ local function def_onerror(self, op, why, lvl)
 	elseif why == ETIMEDOUT then
 		return ETIMEDOUT
 	else
-		local msg = string.format("socket.%s: %s", op, strerror(why))
+		local addr = logname(self)
+		local msg
+
+		if addr then
+			msg = format("[%s]:%s: %s", addr, op, strerror(why))
+		else
+			msg = format("socket:%s: %s", op, strerror(why))
+		end
+
 		error(msg, lvl)
 	end
 end -- def_onerror
@@ -133,7 +157,6 @@ end -- oops
 -- portability--Lua 5.1/LuaJIT doesn't support resumption of C routines.
 --
 -- ========================================================================
-
 
 --
 -- Extended socket.pair
