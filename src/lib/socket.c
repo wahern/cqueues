@@ -1635,7 +1635,7 @@ int so_family(struct socket *so, int *error_) {
 int so_localaddr(struct socket *so, void *saddr, socklen_t *slen) {
 	int error;
 
-	if ((error = so_exec(so)))
+	if ((so_state(so) < SO_S_STARTTLS) && (error = so_exec(so)))
 		return error;
 
 	if (0 != getsockname(so->fd, saddr, slen))
@@ -1648,7 +1648,7 @@ int so_localaddr(struct socket *so, void *saddr, socklen_t *slen) {
 int so_remoteaddr(struct socket *so, void *saddr, socklen_t *slen) {
 	int error;
 
-	if ((error = so_exec(so)))
+	if ((so_state(so) < SO_S_STARTTLS) && (error = so_exec(so)))
 		return error;
 
 	if (0 != getpeername(so->fd, saddr, slen))
