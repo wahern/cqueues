@@ -2147,6 +2147,17 @@ static int cqueue_timeout(lua_State *L) {
 } /* cqueue_timeout() */
 
 
+static int cqueue_type(lua_State *L) {
+	if (cqueue_testudata(L, 1, 1)) {
+		lua_pushstring(L, "controller");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* cqueue_type() */
+
+
 static int cqueue_interpose(lua_State *L) {
 	luaL_getmetatable(L, CQUEUE_CLASS);
 	lua_getfield(L, -1, "__index");
@@ -2320,6 +2331,7 @@ static const luaL_Reg cqueue_metatable[] = {
 
 static const luaL_Reg cqueues_globals[] = {
 	{ "new",       &cqueue_new },
+	{ "type",      &cqueue_type },
 	{ "interpose", &cqueue_interpose },
 	{ "monotime",  &cqueue_monotime },
 	{ "cancel",    &cstack_cancel },
