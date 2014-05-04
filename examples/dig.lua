@@ -2,8 +2,6 @@
 
 local cqueues = require"cqueues"
 local resolver = require"cqueues.dns.resolver"
-local packet = require"cqueues.dns.packet"
-local record = require"cqueues.dns.record"
 
 local name, type = ...
 
