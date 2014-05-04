@@ -744,31 +744,12 @@ static void wakecb_add(struct wakecb *cb, struct condition *cv) {
 
 
 static struct condition *cond_testself(lua_State *L, int index) {
-	struct condition *cv = lua_touserdata(L, index);
-	int eq;
-
-	if (!cv || !lua_getmetatable(L, index))
-		return NULL;
-
-	eq = lua_rawequal(L, -1, lua_upvalueindex(1));
-	lua_pop(L, 1);
-
-	return (eq)? cv : NULL;
+	return cqs_testudata(L, index, 1);
 } /* cond_testself() */
 
 
 static struct condition *cond_checkself(lua_State *L, int index) {
-	struct condition *cv;
-
-	if (!(cv = cond_testself(L, index))) {
-		index = lua_absindex(L, index);
-
-		luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", CQS_CONDITION, luaL_typename(L, index)));
-
-		NOTREACHED;
-	}
-
-	return cv;
+	return cqs_checkudata(L, index, 1, CQS_CONDITION);
 } /* cond_checkself() */
 
 
@@ -888,19 +869,10 @@ static const luaL_Reg cond_globals[] = {
 
 
 int luaopen__cqueues_condition(lua_State *L) {
-	if (luaL_newmetatable(L, CQS_CONDITION)) {
-		/*
-		 * capture metatable as upvalue of methods and metamethods
-		 * for fast type checking.
-		 */
-		lua_pushvalue(L, -1);
-		luaL_setfuncs(L, cond_metatable, 1);
-
-		luaL_newlibtable(L, cond_methods);
-		lua_pushvalue(L, -2);
-		luaL_setfuncs(L, cond_methods, 1);
-		lua_setfield(L, -2, "__index");
-	}
+	lua_pushnil(L); /* initial upvalue */
+	cqs_newmetatable(L, CQS_CONDITION, cond_methods, cond_metatable, 1);
+	lua_pushvalue(L, -1); /* push self as replacement upvalue */
+	cqs_setmetaupvalue(L, -2, 1); /* insert self as 1st upvalue  */
 
 	/* capture metatable here, too. */
 	luaL_newlibtable(L, cond_globals);
@@ -1037,37 +1009,8 @@ struct callinfo {
 }; /* struct callinfo */
 
 
-static void *cqueue_testudata(lua_State *L, int index, int upvalue) {
-	void *ud = lua_touserdata(L, index);
-	int eq;
-
-	if (!ud || !lua_getmetatable(L, index))
-		return NULL;
-
-	eq = lua_rawequal(L, -1, lua_upvalueindex(upvalue));
-	lua_pop(L, 1);
-
-	return (eq)? ud : NULL;
-} /* cqueue_testudata() */
-
-
-static void *cqueue_checkudata(lua_State *L, int index, int upvalue, const char *tname) {
-	void *ud;
-
-	if (!(ud = cqueue_testudata(L, index, upvalue))) {
-		index = lua_absindex(L, index);
-
-		luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", tname, luaL_typename(L, index)));
-
-		NOTREACHED;
-	}
-
-	return ud;
-} /* cqueue_checkudata() */
-
-
 static struct cqueue *cqueue_checkself(lua_State *L, int index) {
-	return cqueue_checkudata(L, index, 1, CQUEUE_CLASS);
+	return cqs_checkudata(L, index, 1, CQUEUE_CLASS);
 } /* cqueue_checkself() */
 
 
@@ -1369,13 +1312,13 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 	lua_pushvalue(T->L, index);
 	lua_xmove(T->L, L, 1);
 
-	if (cqueue_testudata(L, -1, 2)) {
+	if (cqs_testudata(L, -1, 2)) {
 		event->fd = cqs_socket_pollfd(L, -1);
 
 		event->events = cqs_socket_events(L, -1);
 
 		event->timeout = abstimeout(cqs_socket_timeout(L, -1));
-	} else if (cqueue_testudata(L, -1, 3)) {
+	} else if (cqs_testudata(L, -1, 3)) {
 		struct condition *cv = lua_touserdata(L, -1);
 		int error;
 
@@ -2148,7 +2091,7 @@ static int cqueue_timeout(lua_State *L) {
 
 
 static int cqueue_type(lua_State *L) {
-	if (cqueue_testudata(L, 1, 1)) {
+	if (cqs_testudata(L, 1, 1)) {
 		lua_pushstring(L, "controller");
 	} else {
 		lua_pushnil(L);
@@ -2350,17 +2293,14 @@ int luaopen__cqueues(lua_State *L) {
 	cqs_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
 	lua_pop(L, 2);
 
-	if (luaL_newmetatable(L, CQUEUE_CLASS)) {
-		lua_pushvalue(L, -1); /* capture metatable as upvalue */
-		luaL_setfuncs(L, cqueue_metatable, 1);
-
-		luaL_newlibtable(L, cqueue_methods);
-		lua_pushvalue(L, -2); /* capture metatable as upvalue */
-		luaL_getmetatable(L, CQS_SOCKET);
-		luaL_getmetatable(L, CQS_CONDITION);
-		luaL_setfuncs(L, cqueue_methods, 3);
-		lua_setfield(L, -2, "__index");
-	}
+	cqs_pushnils(L, 3); /* initial upvalues */
+	cqs_newmetatable(L, CQUEUE_CLASS, cqueue_methods, cqueue_metatable, 3);
+	lua_pushvalue(L, -1); /* push self as replacement upvalue */
+	cqs_setmetaupvalue(L, -2, 1); /* insert self as 1st upvalue */
+	luaL_getmetatable(L, CQS_SOCKET);
+	cqs_setmetaupvalue(L, -2, 2); /* insert socket as 2nd upvalue */
+	luaL_getmetatable(L, CQS_CONDITION);
+	cqs_setmetaupvalue(L, -2, 3); /* insert condition as 3rd upvalue */
 
 	luaL_newlibtable(L, cqueues_globals);
 	lua_pushvalue(L, -2); /* capture metatable as upvalue */
