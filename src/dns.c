@@ -2003,6 +2003,15 @@ static int res_events(lua_State *L) {
 } /* res_events() */
 
 
+static int res_timeout(lua_State *L) {
+	struct dns_resolver *R = res_check(L, 1);
+
+	lua_pushnumber(L, dns_res_timeout(R));
+
+	return 1;
+} /* res_timeout() */
+
+
 static int res_stat(lua_State *L) {
 	struct dns_resolver *R = res_check(L, 1);
 	const struct dns_stat *st = dns_res_stat(R);
@@ -2065,13 +2074,14 @@ static int res__gc(lua_State *L) {
 
 
 static const luaL_Reg res_methods[] = {
-	{ "submit", &res_submit },
-	{ "fetch",  &res_fetch },
-	{ "pollfd", &res_pollfd },
-	{ "events", &res_events },
-	{ "stat",   &res_stat },
-	{ "close",  &res_close },
-	{ NULL,     NULL },
+	{ "submit",  &res_submit },
+	{ "fetch",   &res_fetch },
+	{ "pollfd",  &res_pollfd },
+	{ "events",  &res_events },
+	{ "timeout", &res_timeout },
+	{ "stat",    &res_stat },
+	{ "close",   &res_close },
+	{ NULL,      NULL },
 }; /* res_methods[] */
 
 static const luaL_Reg res_metatable[] = {
