@@ -1265,8 +1265,23 @@ static int wakecb_wakeup(struct wakecb *cb) {
 } /* wakecb_wakeup() */
 
 
-static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
-	int status;
+static inline _Bool object_oneof(lua_State *L, int index, int rtype[], int n) {
+	int type = lua_type(L, index);
+	int i;
+
+	for (i = 0; i < n; i++) {
+		if (type == rtype[i])
+			return 1;
+	}
+
+	return 0;
+} /* object_oneof() */
+
+
+#define object_pcall(L, index, field, ...) object_pcall((L), (index), (field), ((int[]){ __VA_ARGS__ }), countof(((int[]){ __VA_ARGS__ })))
+
+static int (object_pcall)(lua_State *L, int index, const char *field, int rtype[], int n, ...) {
+	int status, i;
 
 	index = lua_absindex(L, index);
 
@@ -1277,21 +1292,33 @@ static int object_pcall(lua_State *L, int index, const char *field, int rtype) {
 
 		if (LUA_OK != (status = lua_pcall(L, 1, 1, 0)))
 			return status;
+	}
 
-		if (!lua_isnil(L, -1) && lua_type(L, -1) != rtype) {
-			lua_pushfstring(L, "%s method: %s expected, got %s", field, lua_typename(L, rtype), luaL_typename(L, -1));
+	if (!object_oneof(L, -1, rtype, n)) {
+		lua_pushfstring(L, "%s method: %s expected, got %s", field, lua_typename(L, rtype[0]), luaL_typename(L, -1));
 
-			return LUA_ERRRUN;
-		}
-	} else {
-		if (!lua_isnil(L, -1) && lua_type(L, -1) != rtype) {
-			lua_pop(L, 1);
-			lua_pushnil(L);
-		}
+		return LUA_ERRRUN;
 	}
 
 	return LUA_OK;
 } /* object_pcall() */
+
+
+static int object_getcv(lua_State *L, struct cqueue *Q, int index, struct event *event) {
+	struct condition *cv = lua_touserdata(L, index);
+	int error;
+
+	if (!(event->wakecb = pool_get(&Q->pool.wakecb, &error))) {
+		lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+
+		return LUA_ERRRUN;
+	}
+
+	wakecb_init(event->wakecb, &wakecb_wakeup, Q, event);
+	wakecb_add(event->wakecb, cv);
+
+	return LUA_OK;
+} /* object_getcv() */
 
 
 static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int index, struct event *event) {
@@ -1319,28 +1346,23 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 
 		event->timeout = abstimeout(cqs_socket_timeout(L, -1));
 	} else if (cqs_testudata(L, -1, 3)) {
-		struct condition *cv = lua_touserdata(L, -1);
-		int error;
-
-		if (!(event->wakecb = pool_get(&Q->pool.wakecb, &error))) {
-			lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
-			status = LUA_ERRRUN;
-
+		if ((LUA_OK != (status = object_getcv(L, Q, -1, event))))
 			goto oops;
+	} else {
+		if (LUA_OK != (status = object_pcall(L, -1, "pollfd", LUA_TNUMBER, LUA_TUSERDATA, LUA_TNIL)))
+			goto oops;
+
+		if (lua_isuserdata(L, -1) && cqs_testudata(L, -1, 3)) {
+			if ((LUA_OK != (status = object_getcv(L, Q, -1, event))))
+				goto oops;
+		} else {
+			event->fd = luaL_optinteger(L, -1, -1);
+			event->fd = MAX(event->fd, -1);
 		}
 
-		wakecb_init(event->wakecb, &wakecb_wakeup, Q, event);
-		wakecb_add(event->wakecb, cv);
-	} else {
-		if (LUA_OK != (status = object_pcall(L, -1, "pollfd", LUA_TNUMBER)))
-			goto oops;
+		lua_pop(L, 1); /* pop fd or condvar */
 
-		event->fd = luaL_optinteger(L, -1, -1);
-		event->fd = MAX(event->fd, -1);
-
-		lua_pop(L, 1); /* pop fd */
-
-		if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TSTRING)))
+		if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TSTRING, LUA_TNIL)))
 			goto oops;
 
 		mode = luaL_optstring(L, -1, "");
@@ -1356,10 +1378,10 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 
 		lua_pop(L, 1); /* pop event mode */
 
-		if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER)))
+		if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER, LUA_TNIL)))
 			goto oops;
 
-		event->timeout = abstimeout(luaL_optnumber(L, -1, NAN));
+		event->timeout = abstimeout(luaL_optnumber(L, -1, event->timeout));
 
 		lua_pop(L, 1); /* pop timeout */
 	}
