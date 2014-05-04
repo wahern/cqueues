@@ -177,17 +177,6 @@ static inline int cqs_interpose(lua_State *L, const char *mt) {
 } /* cqs_interpose() */
 
 
-static inline void cqs_addclass(lua_State *L, const char *name, const luaL_Reg *methods, const luaL_Reg *metamethods) {
-	if (luaL_newmetatable(L, name)) {
-		luaL_setfuncs(L, metamethods, 0);
-		lua_newtable(L);
-		luaL_setfuncs(L, methods, 0);
-		lua_setfield(L, -2, "__index");
-		lua_pop(L, 1);
-	}
-} /* cqs_addclass() */
-
-
 static inline void cqs_pushnils(lua_State *L, int n) {
 	int i;
 

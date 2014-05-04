@@ -690,19 +690,23 @@ static const luaL_Reg spf_metatable[] = {
 
 
 static void rr_loadall(lua_State *L) {
-	cqs_addclass(L, RR_ANY_CLASS, any_methods, any_metatable);
-	cqs_addclass(L, RR_A_CLASS, a_methods, a_metatable);
-	cqs_addclass(L, RR_NS_CLASS, ns_methods, ns_metatable);
-	cqs_addclass(L, RR_CNAME_CLASS, ns_methods, ns_metatable);
-	cqs_addclass(L, RR_SOA_CLASS, soa_methods, soa_metatable);
-	cqs_addclass(L, RR_PTR_CLASS, ns_methods, ns_metatable);
-	cqs_addclass(L, RR_MX_CLASS, mx_methods, mx_metatable);
-	cqs_addclass(L, RR_TXT_CLASS, txt_methods, txt_metatable);
-	cqs_addclass(L, RR_AAAA_CLASS, aaaa_methods, aaaa_metatable);
-	cqs_addclass(L, RR_SRV_CLASS, srv_methods, srv_metatable);
-	cqs_addclass(L, RR_OPT_CLASS, opt_methods, opt_metatable);
-	cqs_addclass(L, RR_SSHFP_CLASS, sshfp_methods, sshfp_metatable);
-	cqs_addclass(L, RR_SPF_CLASS, spf_methods, spf_metatable);
+	int top = lua_gettop(L);
+
+	cqs_newmetatable(L, RR_ANY_CLASS, any_methods, any_metatable, 0);
+	cqs_newmetatable(L, RR_A_CLASS, a_methods, a_metatable, 0);
+	cqs_newmetatable(L, RR_NS_CLASS, ns_methods, ns_metatable, 0);
+	cqs_newmetatable(L, RR_CNAME_CLASS, ns_methods, ns_metatable, 0);
+	cqs_newmetatable(L, RR_SOA_CLASS, soa_methods, soa_metatable, 0);
+	cqs_newmetatable(L, RR_PTR_CLASS, ns_methods, ns_metatable, 0);
+	cqs_newmetatable(L, RR_MX_CLASS, mx_methods, mx_metatable, 0);
+	cqs_newmetatable(L, RR_TXT_CLASS, txt_methods, txt_metatable, 0);
+	cqs_newmetatable(L, RR_AAAA_CLASS, aaaa_methods, aaaa_metatable, 0);
+	cqs_newmetatable(L, RR_SRV_CLASS, srv_methods, srv_metatable, 0);
+	cqs_newmetatable(L, RR_OPT_CLASS, opt_methods, opt_metatable, 0);
+	cqs_newmetatable(L, RR_SSHFP_CLASS, sshfp_methods, sshfp_metatable, 0);
+	cqs_newmetatable(L, RR_SPF_CLASS, spf_methods, spf_metatable, 0);
+
+	lua_settop(L, top);
 } /* rr_loadall() */
 
 
@@ -2119,10 +2123,12 @@ int luaopen__cqueues_dns(lua_State *L) {
 
 static void dnsL_loadall(lua_State *L) {
 	rr_loadall(L);
-	cqs_addclass(L, PACKET_CLASS, pkt_methods, pkt_metatable);
-	cqs_addclass(L, RESCONF_CLASS, resconf_methods, resconf_metatable);
-	cqs_addclass(L, HOSTS_CLASS, hosts_methods, hosts_metatable);
-	cqs_addclass(L, HINTS_CLASS, hints_methods, hints_metatable);
-	cqs_addclass(L, RESOLVER_CLASS, res_methods, res_metatable);
+
+	cqs_newmetatable(L, PACKET_CLASS, pkt_methods, pkt_metatable, 0);
+	cqs_newmetatable(L, RESCONF_CLASS, resconf_methods, resconf_metatable, 0);
+	cqs_newmetatable(L, HOSTS_CLASS, hosts_methods, hosts_metatable, 0);
+	cqs_newmetatable(L, HINTS_CLASS, hints_methods, hints_metatable, 0);
+	cqs_newmetatable(L, RESOLVER_CLASS, res_methods, res_metatable, 0);
+	lua_pop(L, 5);
 } /* dnsL_loadall() */
 

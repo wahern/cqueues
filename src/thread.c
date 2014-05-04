@@ -498,7 +498,7 @@ int luaopen__cqueues_thread(lua_State *L) {
 		}
 	}
 
-	cqs_addclass(L, CQS_THREAD, ct_methods, ct_metamethods);
+	cqs_newmetatable(L, CQS_THREAD, ct_methods, ct_metamethods, 0);
 
 	luaL_newlib(L, ct_globals);
 
