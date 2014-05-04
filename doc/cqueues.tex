@@ -315,6 +315,9 @@ Number describing the running version, formatted as YYYYMMDD. Official releases 
 \subsubsection{\routine{cqueues.COMMIT}}
 Git commit hash string of HEAD.
 
+\subsubsection[\routine{cqueues.type}]{\routine{cqueues.type(obj)}}
+Return the string ``controller'' if $obj$ is a controller object, or $nil$ otherwise.
+
 \subsubsection[\routine{cqueues.interpose}]{\routine{cqueues.interpose(name, function)}}
 Add or interpose a \cqueues controller class method. Returns the previous method, if any.
 
@@ -388,6 +391,9 @@ The default I/O mode is ``tl''---text translation and line buffering. This makes
 \subsubsection[\fn{socket[]}]{\fn{socket[]}}
 
 A table mapping socket related system identifier names to number codes, including AF\_UNSPEC, AF\_INET, AF\_INET6, AF\_UNIX, SOCK\_STREAM, and SOCK\_DGRAM.
+
+\subsubsection[\routine{socket.type}]{\routine{socket.type(obj)}}
+Return the string ``socket'' if $obj$ is a socket object, or $nil$ otherwise.
 
 \subsubsection[\fn{socket.interpose}]{\fn{socket.interpose(name, function)}}
 Add or interpose a socket class method. Returns the previous method, if any.
@@ -685,6 +691,9 @@ Unblock the specified signals.
 \subsubsection[\fn{signal.raise}]{\fn{signal.raise(signal [, signal $\ldots$ ])}}
 raise(3) the specified signals.
 
+\subsubsection[\routine{signal.type}]{\routine{signal.type(obj)}}
+Return the string ``signal listener'' if $obj$ is a signal listener object, or $nil$ otherwise.
+
 \subsubsection[\fn{signal.interpose}]{\fn{signal.interpose(name, function)}}
 Add or interpose a signal listener class method. Returns the previous method, if any.
 
@@ -715,6 +724,9 @@ Set the polling interval for implementations such as Solaris which lack a signal
 \end{Module}
 
 \begin{Module}{cqueues.thread}
+
+\subsubsection[\routine{thread.type}]{\routine{thread.type(obj)}}
+Return the string ``thread'' if $obj$ is a thread object, or $nil$ otherwise.
 
 \subsubsection[\fn{thread.self}]{\fn{thread.self()}}
 Returns the LWP thread object for the running Lua instances. Threads not started via thread.start return nil.
@@ -763,6 +775,9 @@ ALL    & bitwise-or of CREATE, DELETE, ATTRIB, MODIFY, and REVOKE
 \subsubsection[\fn{notify.flags}]{\fn{notify.flags(bitset[, bitset $\ldots$ ])}}
 
 Returns an iterator over the flags in the specified bitwise change sets. Thus, \texttt{notify.flags(bit32.xor(notify.CREATE, notify.DELETE), notify.MODIFY)} returns an iterator returning all three flags.
+
+\subsubsection[\routine{notify.type}]{\routine{notify.type(obj)}}
+Return the string ``file notifier'' if $obj$ is a notification object, or $nil$ otherwise.
 
 \subsubsection[\fn{notify.opendir}]{\fn{notify.opendir(path[, changes ])}}
 
@@ -1081,9 +1096,9 @@ This module implements a condition variable. A condition variable can be used to
 
 The condition variable primitive can be used to implement mutexes, semaphores, and monitors.
 
-\subsubsection[\fn{condition.type}]{\fn{condition.type(object)}}
+\subsubsection[\fn{condition.type}]{\fn{condition.type(obj)}}
 
-Returns the string ``condition'' if the object is a condition variable, or nil otherwise.
+Returns the string ``condition'' if $obj$ is a condition variable, or $nil$ otherwise.
 
 \subsubsection[\fn{condition.interpose}]{\fn{condition.interpose(name, function)}}
 
