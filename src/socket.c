@@ -2276,7 +2276,7 @@ lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 	lua_pushvalue(L, -2); /* push metatable */
 	cqs_setfuncsupvalue(L, -2, LSO_INDEX);
 
-	cqs_addmacros(L, -1, macros, countof(macros), 0);
+	cqs_setmacros(L, -1, macros, countof(macros), 0);
 
 	return 1;
 } /* luaopen__cqueues_socket() */

@@ -739,15 +739,15 @@ int luaopen__cqueues_dns_record(lua_State *L) {
 	luaL_newlib(L, rr_globals);
 
 	lua_newtable(L);
-	cqs_addmacros(L, -1, classes, countof(classes), 1);
+	cqs_setmacros(L, -1, classes, countof(classes), 1);
 	lua_setfield(L, -2, "class");
 
 	lua_newtable(L);
-	cqs_addmacros(L, -1, types, countof(types), 1);
+	cqs_setmacros(L, -1, types, countof(types), 1);
 	lua_setfield(L, -2, "type");
 
 	lua_newtable(L);
-	cqs_addmacros(L, -1, sshfp, countof(sshfp), 1);
+	cqs_setmacros(L, -1, sshfp, countof(sshfp), 1);
 	lua_setfield(L, -2, "sshfp");
 
 	return 1;
@@ -938,15 +938,15 @@ int luaopen__cqueues_dns_packet(lua_State *L) {
 	luaL_newlib(L, pkt_globals);
 
 	lua_newtable(L);
-	cqs_addmacros(L, -1, section, countof(section), 1);
+	cqs_setmacros(L, -1, section, countof(section), 1);
 	lua_setfield(L, -2, "section");
 
 	lua_newtable(L);
-	cqs_addmacros(L, -1, opcode, countof(opcode), 1);
+	cqs_setmacros(L, -1, opcode, countof(opcode), 1);
 	lua_setfield(L, -2, "opcode");
 
 	lua_newtable(L);
-	cqs_addmacros(L, -1, rcode, countof(rcode), 1);
+	cqs_setmacros(L, -1, rcode, countof(rcode), 1);
 	lua_setfield(L, -2, "rcode");
 
 	return 1;

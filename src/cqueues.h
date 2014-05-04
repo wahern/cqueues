@@ -287,7 +287,7 @@ static inline void *cqs_checkudata(lua_State *L, int index, int upvalue, const c
 
 struct cqs_macro { const char *name; int value; };
 
-static inline void cqs_addmacros(lua_State *L, int index, const struct cqs_macro *macro, size_t count, _Bool swap) {
+static inline void cqs_setmacros(lua_State *L, int index, const struct cqs_macro *macro, size_t count, _Bool swap) {
 	index = lua_absindex(L, index);
 
 	for (unsigned i = 0; i < count; i++) {
@@ -304,7 +304,7 @@ static inline void cqs_addmacros(lua_State *L, int index, const struct cqs_macro
 		lua_pushstring(L, macro[i].name);
 		lua_rawset(L, index);
 	}
-} /* cqs_addmacros() */
+} /* cqs_setmacros() */
 
 
 static inline void cqs_closefd(int *fd) {
