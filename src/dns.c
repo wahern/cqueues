@@ -710,6 +710,29 @@ static void rr_loadall(lua_State *L) {
 } /* rr_loadall() */
 
 
+static int rr_type(lua_State *L) {
+	unsigned i;
+
+	lua_settop(L, 2);
+	lua_pushnil(L); /* default result */
+
+	if (lua_isuserdata(L, 2)) {
+		for (i = 0; i < countof(rrinfo); i++) {
+			if (!rrinfo[i].tname)
+				continue;
+			if (!luaL_testudata(L, 2, rrinfo[i].tname) 
+			&&  !luaL_testudata(L, 2, RR_ANY_CLASS))
+				continue;
+
+			lua_pushstring(L, "dns record");
+
+			break;
+		}
+	}
+
+	return 1;
+} /* rr_type() */
+
 
 static const luaL_Reg rr_globals[] = {
 	{ NULL, NULL }
@@ -738,15 +761,20 @@ int luaopen__cqueues_dns_record(lua_State *L) {
 
 	luaL_newlib(L, rr_globals);
 
-	lua_newtable(L);
+	lua_createtable(L, 0, countof(classes));
 	cqs_setmacros(L, -1, classes, countof(classes), 1);
+
 	lua_setfield(L, -2, "class");
 
-	lua_newtable(L);
+	lua_createtable(L, 0, countof(types));
 	cqs_setmacros(L, -1, types, countof(types), 1);
+	lua_createtable(L, 0, 1);
+	lua_pushcfunction(L, &rr_type);
+	lua_setfield(L, -2, "__call");
+	lua_setmetatable(L, -2);
 	lua_setfield(L, -2, "type");
 
-	lua_newtable(L);
+	lua_createtable(L, 0, countof(sshfp));
 	cqs_setmacros(L, -1, sshfp, countof(sshfp), 1);
 	lua_setfield(L, -2, "sshfp");
 
@@ -772,6 +800,17 @@ static int pkt_new(lua_State *L) {
 
 	return 1;
 } /* pkt_new() */
+
+
+static int pkt_type(lua_State *L) {
+	if (luaL_testudata(L, 1, PACKET_CLASS)) {
+		lua_pushstring(L, "dns packet");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* pkt_type() */
 
 
 static int pkt_qid(lua_State *L) {
@@ -910,8 +949,9 @@ static const luaL_Reg pkt_metatable[] = {
 }; /* pkt_metatable[] */
 
 static const luaL_Reg pkt_globals[] = {
-	{ "new", &pkt_new },
-	{ NULL,  NULL }
+	{ "new",  &pkt_new },
+	{ "type", &pkt_type },
+	{ NULL,   NULL }
 };
 
 int luaopen__cqueues_dns_packet(lua_State *L) {
@@ -1021,6 +1061,17 @@ static struct dns_resolv_conf *resconf_test(lua_State *L, int index) {
 	struct dns_resolv_conf **resconf = luaL_testudata(L, index, RESCONF_CLASS);
 	return (resconf)? *resconf : 0;
 } /* resconf_test() */
+
+
+static int resconf_type(lua_State *L) {
+	if (resconf_test(L, 1)) {
+		lua_pushstring(L, "dns config");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* resconf_type() */
 
 
 static int resconf_getns(lua_State *L) {
@@ -1420,6 +1471,7 @@ static const luaL_Reg resconf_globals[] = {
 	{ "stub",      &resconf_stub },
 	{ "root",      &resconf_root },
 	{ "interpose", &resconf_interpose },
+	{ "type",      &resconf_type },
 	{ NULL,        NULL }
 };
 
@@ -1481,6 +1533,17 @@ static struct dns_hosts *hosts_test(lua_State *L, int index) {
 	struct dns_hosts **hosts = luaL_testudata(L, index, HOSTS_CLASS);
 	return (hosts)? *hosts : 0;
 } /* hosts_test() */
+
+
+static int hosts_type(lua_State *L) {
+	if (hosts_test(L, 1)) {
+		lua_pushstring(L, "dns hosts");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* hosts_type() */
 
 
 static int hosts_loadfile(lua_State *L) {
@@ -1590,6 +1653,7 @@ static const luaL_Reg hosts_metatable[] = {
 static const luaL_Reg hosts_globals[] = {
 	{ "new",       &hosts_new },
 	{ "interpose", &hosts_interpose },
+	{ "type",      &hosts_type },
 	{ NULL,        NULL }
 };
 
@@ -1672,6 +1736,17 @@ static struct dns_hints *hints_test(lua_State *L, int index) {
 	struct dns_hints **hints = luaL_testudata(L, index, HINTS_CLASS);
 	return (hints)? *hints : 0;
 } /* hints_test() */
+
+
+static int hints_type(lua_State *L) {
+	if (hints_test(L, 1)) {
+		lua_pushstring(L, "dns hints");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* hints_type() */
 
 
 static int hints_insert(lua_State *L) {
@@ -1799,6 +1874,7 @@ static const luaL_Reg hints_globals[] = {
 	{ "root",      &hints_root },
 	{ "stub",      &hints_stub },
 	{ "interpose", &hints_interpose },
+	{ "type",      &hints_type },
 	{ NULL,        NULL }
 };
 
@@ -1913,6 +1989,17 @@ error:
 static int res_interpose(lua_State *L) {
 	return cqs_interpose(L, RESOLVER_CLASS);
 } /* res_interpose() */
+
+
+static int res_type(lua_State *L) {
+	if (luaL_testudata(L, 1, RESOLVER_CLASS)) {
+		lua_pushstring(L, "dns resolver");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* res_type() */
 
 
 static inline struct dns_resolver *res_check(lua_State *L, int index) {
@@ -2092,6 +2179,7 @@ static const luaL_Reg res_metatable[] = {
 static const luaL_Reg res_globals[] = {
 	{ "new",       &res_new },
 	{ "interpose", &res_interpose },
+	{ "type",      &res_type },
 	{ NULL,        NULL }
 };
 
