@@ -405,8 +405,10 @@ local function read(self, func, what, ...)
 				if not timed_poll(self, deadline) then
 					return nil, oops(self, func, ETIMEDOUT, 2)
 				end
-			else
+			elseif why then
 				return nil, oops(self, func, why, 2)
+			else
+				return -- EOF or end-of-headers
 			end
 
 			data, why = self:recv(what)
