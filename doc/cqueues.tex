@@ -248,6 +248,9 @@ Install Lua 5.3 module.
 
 \subsubsection[\method{object:pollfd}]{\method{:pollfd()}} The \method{:pollfd} method should return a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
 
+Alternatively, \method{:pollfd} may return a condition variable object, or the member field may itself
+be a condition variable instead of a function. This permits user code to create \textit{ad hoc} pollable objects.
+
 \subsubsection[\method{object:events}]{\method{:events()}} The \method{:events} method should return a string or nil. \cqueues searches the string for the flags `r' and `w', which describe the events to associate with the descriptor---respectively, POLLIN and POLLOUT.
 
 \subsubsection[\method{object:timeout}]{\method{:timeout()}} The \method{:timeout} should return a number or nil. This schedules an independent timeout event. To effect a simple one second timeout, you can do
@@ -256,13 +259,7 @@ Install Lua 5.3 module.
         cqueues.poll({ timeout = function() return 1.0 end })
 \end{code}
 
-which is equivalent to
-
-\begin{code}{perl}
-	coroutine.yield({ timeout = function() return 1.0 end })
-\end{code}
-
-but not quite as simple as the shortcut
+which is equivalent to the shortcut
 
 \begin{code}{perl}
 	cqueues.poll(1.0)
