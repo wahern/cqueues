@@ -341,10 +341,10 @@ Returns two values: the immediate controller currently executing, if any, or nil
 Create a new cqueues object.
 
 \subsubsection[\routine{cqueues:attach}]{\routine{cqueue:attach(coroutine)}}
-Attach and manage the specified coroutine.
+Attach and manage the specified coroutine. Returns the controller.
 
 \subsubsection[\routine{cqueues:wrap}]{\routine{cqueue:wrap(function)}}
-        Execute function inside a new coroutine managed by the controller.
+Execute function inside a new coroutine managed by the controller. Returns the controller.
 
 \subsubsection[\routine{cqueues:step}]{\routine{cqueue:step([timeout])}}
 Step once through the event queue. Unless the timeout is explicitly specified as \texttt{0}, or unless the current thread of execution is a \cqueues managed coroutine, \emph{it suspends the process indefinitely or for the specified timeout} until a descriptor event or timeout fires.
@@ -813,6 +813,9 @@ A table mapping DNS record class string identifiers to number values, and vice-v
 
 A table mapping DNS SSHFP record string identifiers to the number values---RSA, DSA, and SHA1.
 
+\subsubsection[\routine{record.type}]{\routine{record.type(obj)}}
+Return the string ``dns record'' if $obj$ is a record object, or $nil$ otherwise.
+
 \subsubsection[\fn{record:section}]{\fn{record:section()}}
 
 Returns the section identifier from whence the record came, if derived from a packet. Specifically, QUESTION, ANSWER, AUTHORITY, or ADDITIONAL. See \module{cqueues.dns.packet.section[]}.
@@ -853,6 +856,9 @@ A table mapping packet opcode string identifiers to number values, and vice-vers
 \subsubsection[\fn{packet.rcode[]}]{\fn{packet.rcode[]}}
 
 A table mapping packet rcode string identifiers to number values, and vice-versa. The currently mapped rcodes are NOERROR, FORMERR, SERVFAIL, NXDOMAIN, NOTIMP, REFUSED, YXDOMAIN, YXRRSET, NXRRSET, NOTAUTH, and NOTZONE.
+
+\subsubsection[\routine{packet.type}]{\routine{packet.type(obj)}}
+Return the string ``dns packet'' if $obj$ is a packet object, or $nil$ otherwise.
 
 \subsubsection[\fn{packet.interpose}]{\fn{packet.interpose}}
 
@@ -920,6 +926,9 @@ RESOLV\_CONF & specifies BSD /etc/resolv.conf input syntax\\
 NSSWITCH\_CONF & specifies Solaris /etc/nsswitch.conf input syntax
 \end{tabular}
 
+\subsubsection[\routine{config.type}]{\routine{config.type(obj)}}
+Return the string ``dns config'' if $obj$ is a config object, or $nil$ otherwise.
+
 \subsubsection[\fn{config.interpose}]{\fn{config.interpose(name, function)}}
 
 Add or interpose a config class method. Returns the previous method, if any.
@@ -977,6 +986,9 @@ The traditional BSD /etc/hosts file is the prototype for this module, and provid
 
 The \fn{\_\_tostring} metamethod composes a string adhering to /etc/hosts syntax.
 
+\subsubsection[\routine{hosts.type}]{\routine{hosts.type(obj)}}
+Return the string ``dns hosts'' if $obj$ is a hosts object, or $nil$ otherwise.
+
 \subsubsection[\fn{hosts.interpose}]{\fn{hosts.interpose(name, function)}}
 
 Add or interpose a hosts class method. Returns the previous method, if any.
@@ -1014,6 +1026,9 @@ The internal DNS library is implemented as a recursive resolver. No matter wheth
 
 The \fn{\_\_tostring} metamethod composes a multi-line string indexing SOA zone names and addresses.
 
+\subsubsection[\routine{hints.type}]{\routine{hints.type(obj)}}
+Return the string ``dns hints'' if $obj$ is a hints object, or $nil$ otherwise.
+
 \subsubsection[\fn{hints.interpose}]{\fn{hints.interpose(name, function)}}
 
 Add or interpose a hints class method. Returns the previous method, if any.
@@ -1040,6 +1055,9 @@ IPv4 and IPv6 addresses can optionally contain a port component, e.g. ``[2001:50
 
 
 \begin{Module}{cqueues.dns.resolver}
+
+\subsubsection[\routine{resolver.type}]{\routine{resolver.type(obj)}}
+Return the string ``dns resolver'' if $obj$ is a resolver object, or $nil$ otherwise.
 
 \subsubsection[\fn{resolver.interpose}]{\fn{resolver.interpose(name, function)}}
 
