@@ -60,7 +60,10 @@
 #define lso_error_t int
 #define lso_nargs_t int
 
-#define LSO_CLASS   "CQS Socket"
+#define LSO_CLASS    "CQS Socket"
+#define LSO_INDEX    1
+#define LSO_UPVALUES 1
+
 #define LSO_BUFSIZ  4096
 #define LSO_MAXLINE 4096
 
@@ -71,7 +74,7 @@
 #define LSO_TEXT    0x08
 #define LSO_BINARY  0x10
 
-#define LSO_INITMODE (LSO_LINEBUF|LSO_TEXT)
+#define LSO_INITMODE  (LSO_LINEBUF|LSO_TEXT)
 #define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
 #define LSO_WRMASK(m) (m)
 
@@ -289,6 +292,11 @@ static int lso_closefd(int *fd, void *arg) {
 } /* lso_closefd() */
 
 
+static struct luasocket *lso_testself(lua_State *L, int index) {
+	return cqs_testudata(L, index, LSO_INDEX);
+} /* lso_testself() */
+
+
 static struct luasocket *lso_checkvalid(lua_State *L, int index, struct luasocket *S) {
 	luaL_argcheck(L, !!S->socket, index, "socket closed");
 	return S;
@@ -296,7 +304,7 @@ static struct luasocket *lso_checkvalid(lua_State *L, int index, struct luasocke
 
 
 static struct luasocket *lso_checkself(lua_State *L, int index) {
-	return lso_checkvalid(L, index, luaL_checkudata(L, index, LSO_CLASS));
+	return lso_checkvalid(L, index, cqs_checkudata(L, index, LSO_INDEX, LSO_CLASS));
 } /* lso_checkself() */
 
 
@@ -2157,6 +2165,16 @@ static lso_nargs_t lso__gc(lua_State *L) {
 } /* lso__gc() */
 
 
+static int lso_type(lua_State *L) {
+	if (lso_testself(L, 1))
+		lua_pushstring(L, "socket");
+	else
+		lua_pushnil(L);
+
+	return 1;
+} /* lso_type() */
+
+
 static int lso_interpose(lua_State *L) {
 	luaL_getmetatable(L, LSO_CLASS);
 	lua_getfield(L, -1, "__index");
@@ -2225,6 +2243,7 @@ static luaL_Reg lso_globals[] = {
 	{ "listen",     &lso_listen2 },
 	{ "fdopen",     &lso_fdopen },
 	{ "pair",       &lso_pair },
+	{ "type",       &lso_type },
 	{ "interpose",  &lso_interpose },
 	{ "setvbuf",    &lso_setvbuf2 },
 	{ "setmode",    &lso_setmode2 },
@@ -2246,16 +2265,16 @@ lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 		{ "SOCK_DGRAM",  SOCK_DGRAM },
 	};
 
-	if (luaL_newmetatable(L, LSO_CLASS)) {
-		luaL_setfuncs(L, lso_metamethods, 0);
+	cqs_pushnils(L, LSO_UPVALUES); /* initial upvalues */
+	cqs_newmetatable(L, LSO_CLASS, lso_methods, lso_metamethods, LSO_UPVALUES);
+	lua_pushvalue(L, -1); /* push self as replacement upvalue */
+	cqs_setmetaupvalue(L, -2, LSO_INDEX); /* insert self as upvalue */
 
-		luaL_newlib(L, lso_methods);
-		lua_setfield(L, -2, "__index");
-	}
-
-	lua_pop(L, 1);
-
-	luaL_newlib(L, lso_globals);
+	luaL_newlibtable(L, lso_globals);
+	cqs_pushnils(L, LSO_UPVALUES); /* initial upvalues */
+	luaL_setfuncs(L, lso_globals, LSO_UPVALUES);
+	lua_pushvalue(L, -2); /* push metatable */
+	cqs_setfuncsupvalue(L, -2, LSO_INDEX);
 
 	cqs_addmacros(L, -1, macros, countof(macros), 0);
 

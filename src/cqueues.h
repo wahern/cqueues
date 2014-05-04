@@ -1,7 +1,7 @@
 /* ==========================================================================
  * cqueues.h - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012  William Ahern
+ * Copyright (c) 2012, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -186,6 +186,114 @@ static inline void cqs_addclass(lua_State *L, const char *name, const luaL_Reg *
 		lua_pop(L, 1);
 	}
 } /* cqs_addclass() */
+
+
+static inline void cqs_pushnils(lua_State *L, int n) {
+	int i;
+
+	luaL_checkstack(L, n, NULL);
+
+	for (i = 0; i < n; i++)
+		lua_pushnil(L);
+} /* cqs_pushnils() */
+
+
+static inline int cqs_regcount(const luaL_Reg *l) {
+	int i;
+
+	for (i = 0; l[i].func; i++)
+		;;
+
+	return i;
+} /* cqs_regcount() */
+
+
+/* create new metatable, capturing upvalues for use by methods and metamethods */
+static inline void cqs_newmetatable(lua_State *L, const char *name, const luaL_Reg *methods, const luaL_Reg *metamethods, int nup) {
+	int i;
+
+	if (luaL_newmetatable(L, name)) {
+		for (i = 0; i < nup; i++) /* copy upvalues */
+			lua_pushvalue(L, -nup - 1);
+		luaL_setfuncs(L, metamethods, nup);
+
+		lua_createtable(L, 0, cqs_regcount(methods));
+		for (i = 0; i < nup; i++) /* copy upvalues */
+			lua_pushvalue(L, -nup - 2);
+		luaL_setfuncs(L, methods, nup);
+		lua_setfield(L, -2, "__index");
+	}
+
+
+	for (i = 0; i < nup; i++) /* remove the upvalues */
+		lua_remove(L, -2);
+} /* cqs_newmetatable() */
+
+
+/*
+ * set the n-th upvalue of every lua_CFunction in the table at tindex to the
+ * value at the top of the stack
+ */
+static inline void cqs_setfuncsupvalue(lua_State *L, int tindex, int n) {
+	tindex = lua_absindex(L, tindex);
+
+	lua_pushnil(L);
+	while (lua_next(L, tindex)) {
+		if (lua_iscfunction(L, -1)) {
+			lua_pushvalue(L, -3);
+			lua_setupvalue(L, -2, n);
+		}
+
+		lua_pop(L, 1); /* pop field value (leaving key) */
+	}
+
+	lua_pop(L, 1); /* pop upvalue */
+} /* cqs_setfuncsupvalue() */
+
+
+static inline void cqs_setmetaupvalue(lua_State *L, int tindex, int n) {
+	tindex = lua_absindex(L, tindex);
+
+	lua_pushvalue(L, -1);
+	cqs_setfuncsupvalue(L, tindex, n);
+
+	lua_getfield(L, tindex, "__index");
+	lua_pushvalue(L, -2);
+	cqs_setfuncsupvalue(L, -2, n);
+	lua_pop(L, 1); /* pop __index */
+
+	lua_pop(L, 1); /* pop upvalue */
+} /* cqs_setmetaupvalue() */
+
+
+/* test metatable against copy at upvalue */
+static inline void *cqs_testudata(lua_State *L, int index, int upvalue) {
+	void *ud = lua_touserdata(L, index);
+	int eq;
+
+	if (!ud || !lua_getmetatable(L, index))
+		return NULL;
+
+	eq = lua_rawequal(L, -1, lua_upvalueindex(upvalue));
+	lua_pop(L, 1);
+
+	return (eq)? ud : NULL;
+} /* cqs_testudata() */
+
+
+static inline void *cqs_checkudata(lua_State *L, int index, int upvalue, const char *tname) {
+	void *ud;
+
+	if (!(ud = cqs_testudata(L, index, upvalue))) {
+		index = lua_absindex(L, index);
+
+		luaL_argerror(L, index, lua_pushfstring(L, "%s expected, got %s", tname, luaL_typename(L, index)));
+
+		NOTREACHED;
+	}
+
+	return ud;
+} /* cqs_checkudata() */
 
 
 struct cqs_macro { const char *name; int value; };
