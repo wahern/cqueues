@@ -1822,7 +1822,7 @@ static int cqueue_attach(lua_State *L) {
 
 	thread_add(L, Q, &I, 2);
 
-	lua_pushboolean(L, 1);
+	lua_pushvalue(L, 1); /* return self */
 
 	return 1;
 } /* cqueue_attach() */
@@ -1844,7 +1844,7 @@ static int cqueue_wrap(lua_State *L) {
 
 	thread_add(L, Q, &I, -1);
 
-	lua_pushboolean(L, 1);
+	lua_pushvalue(L, 1); /* return self */
 
 	return 1;
 } /* cqueue_wrap() */

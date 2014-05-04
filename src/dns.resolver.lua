@@ -2,6 +2,7 @@ local loader = function(loader, ...)
 	local cqueues = require"cqueues"
 	local resolver = require"_cqueues.dns.resolver"
 	local config = require"cqueues.dns.config"
+	local record = require"cqueues.dns.record"
 	local errno = require"cqueues.errno"
 	local EAGAIN = errno.EAGAIN
 	local ETIMEDOUT = errno.ETIMEDOUT
@@ -23,9 +24,30 @@ local loader = function(loader, ...)
 		return resolver.new(config.root(init), nil, nil)
 	end
 
+	local function rrnumber(id, table, what, lvl)
+		local n
+
+		if id == nil then
+			return
+		elseif type(id) == "number" then
+			n = table[id] and id
+		elseif type(id) == "string" then
+			n = table[id] or table[string.upper(id)]
+		end
+
+		if not n then
+			error((tostring(id) .. ": unknown DNS " .. what), lvl + 1)
+		end
+
+		return n
+	end -- rrnumber
+
 	resolver.interpose("query", function (self, name, type, class, timeout)
 		local deadline = timeout and (monotime() + timeout)
 		local ok, why, answer
+
+		type = rrnumber(type, record.type, "type", 2)
+		class = rrnumber(class, record.class, "class", 2)
 
 		ok, why = self:submit(name, type, class)
 
