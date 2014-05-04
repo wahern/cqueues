@@ -6899,6 +6899,33 @@ int dns_res_pollfd(struct dns_resolver *R) {
 } /* dns_res_pollfd() */
 
 
+time_t dns_res_timeout(struct dns_resolver *R) {
+	time_t elapsed;
+
+	switch (R->stack[R->sp].state) {
+#if 0
+	case DNS_R_QUERY_AAAA:
+#endif
+	case DNS_R_QUERY_A:
+		elapsed = dns_so_elapsed(&R->so);
+
+		if (elapsed <= R->resconf->options.timeout)
+			return R->resconf->options.timeout - elapsed;
+
+		break;
+	default:
+		break;
+	} /* switch() */
+
+	/*
+	 * NOTE: We're not in a pollable state, or the user code hasn't
+	 * called dns_res_check properly. The calling code is probably
+	 * broken. Put them into a slow-burn pattern.
+	 */
+	return 1;
+} /* dns_res_timeout() */
+
+
 time_t dns_res_elapsed(struct dns_resolver *R) {
 	return dns_elapsed(&R->elapsed);
 } /* dns_res_elapsed() */
@@ -7326,6 +7353,11 @@ int dns_ai_events(struct dns_addrinfo *ai) {
 int dns_ai_pollfd(struct dns_addrinfo *ai) {
 	return dns_res_pollfd(ai->res);
 } /* dns_ai_pollfd() */
+
+
+time_t dns_ai_timeout(struct dns_addrinfo *ai) {
+	return dns_res_timeout(ai->res);
+} /* dns_ai_timeout() */
 
 
 int dns_ai_poll(struct dns_addrinfo *ai, int timeout) {

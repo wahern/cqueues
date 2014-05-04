@@ -65,9 +65,9 @@
 
 #define DNS_VENDOR "william+cqueues@25thandClement.com"
 
-#define DNS_V_REL  0x20140413
+#define DNS_V_REL  0x20140503
 #define DNS_V_ABI  0x20121013
-#define DNS_V_API  0x20121013
+#define DNS_V_API  0x20140503
 
 
 const char *dns_vendor(void);
@@ -1097,6 +1097,8 @@ int dns_res_events(struct dns_resolver *);
 
 int dns_res_pollfd(struct dns_resolver *);
 
+time_t dns_res_timeout(struct dns_resolver *);
+
 int dns_res_poll(struct dns_resolver *, int);
 
 struct dns_packet *dns_res_query(struct dns_resolver *, const char *, enum dns_type, enum dns_class, int, int *);
@@ -1126,6 +1128,8 @@ void dns_ai_clear(struct dns_addrinfo *);
 int dns_ai_events(struct dns_addrinfo *);
 
 int dns_ai_pollfd(struct dns_addrinfo *);
+
+time_t dns_ai_timeout(struct dns_addrinfo *);
 
 int dns_ai_poll(struct dns_addrinfo *, int);
 
