@@ -847,10 +847,31 @@ error:
 } /* cond_signal() */
 
 
+static int cond_pollfd(lua_State *L) {
+	cond_checkself(L, 1);
+	lua_settop(L, 1);
+
+	return 1;
+} /* cond_pollfd() */
+
+
+static int cond_events(lua_State *L NOTUSED) {
+	return 0;
+} /* cond_events() */
+
+
+static int cond_timeout(lua_State *L NOTUSED) {
+	return 0;
+} /* cond_timeout() */
+
+
 static const luaL_Reg cond_methods[] = {
-	{ "wait",   &cond_wait },
-	{ "signal", &cond_signal },
-	{ NULL,     NULL }
+	{ "wait",    &cond_wait },
+	{ "signal",  &cond_signal },
+	{ "pollfd",  &cond_pollfd },
+	{ "events",  &cond_events },
+	{ "timeout", &cond_timeout },
+	{ NULL,      NULL }
 }; /* cond_methods[] */
 
 
