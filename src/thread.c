@@ -425,6 +425,13 @@ static int ct_events(lua_State *L) {
 } /* ct_events() */
 
 
+static int ct_timeout(lua_State *L) {
+	ct_checkthread(L, 1);
+
+	return 0;
+} /* ct_timeout() */
+
+
 static int ct__eq(lua_State *L) {
 	struct cthread **a = luaL_testudata(L, 1, CQS_THREAD);
 	struct cthread **b = luaL_testudata(L, 2, CQS_THREAD);
@@ -469,10 +476,11 @@ static int ct_self(lua_State *L) {
 
 
 static const luaL_Reg ct_methods[] = {
-	{ "join",   &ct_join },
-	{ "pollfd", &ct_pollfd },
-	{ "events", &ct_events },
-	{ NULL,     NULL }
+	{ "join",    &ct_join },
+	{ "pollfd",  &ct_pollfd },
+	{ "events",  &ct_events },
+	{ "timeout", &ct_timeout },
+	{ NULL,      NULL }
 };
 
 
