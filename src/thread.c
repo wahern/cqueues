@@ -445,6 +445,17 @@ static int ct__gc(lua_State *L) {
 } /* ct__gc() */
 
 
+static int ct_type(lua_State *L) {
+	if (luaL_testudata(L, 1, CQS_THREAD)) {
+		lua_pushstring(L, "thread");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* ct_type() */
+
+
 static int ct_interpose(lua_State *L) {
 	return cqs_interpose(L, CQS_THREAD);
 } /* ct_interpose() */
@@ -474,6 +485,7 @@ static const luaL_Reg ct_metamethods[] = {
 
 static const luaL_Reg ct_globals[] = {
 	{ "start",     &ct_start },
+	{ "type",      &ct_type },
 	{ "interpose", &ct_interpose },
 	{ "self",      &ct_self },
 	{ NULL,        NULL }

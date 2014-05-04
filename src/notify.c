@@ -163,6 +163,17 @@ error:
 } /* ln_opendir */
 
 
+static int ln_type(lua_State *L) {
+	if (luaL_testudata(L, 1, CQS_NOTIFY)) {
+		lua_pushstring(L, "file notifier");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* ln_type() */
+
+
 static int ln_interpose(lua_State *L) {
 	return cqs_interpose(L, CQS_NOTIFY);
 } /* ln_interpose() */
@@ -221,6 +232,7 @@ static int ln_flags(lua_State *L) {
 
 static const luaL_Reg ln_globals[] = {
 	{ "opendir",   &ln_opendir },
+	{ "type",      &ln_type },
 	{ "interpose", &ln_interpose },
 	{ "strflag",   &ln_strflag },
 	{ "flags",     &ln_flags },

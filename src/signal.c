@@ -310,6 +310,17 @@ static int lsl_settimeout(lua_State *L) {
 } /* lsl_settimeout() */
 
 
+static int lsl_type(lua_State *L) {
+	if (luaL_testudata(L, 1, LSL_CLASS)) {
+		lua_pushstring(L, "signal listener");
+	} else {
+		lua_pushnil(L);
+	}
+
+	return 1;
+} /* lsl_type() */
+
+
 static int lsl_interpose(lua_State *L) {
 	luaL_getmetatable(L, LSL_CLASS);
 	lua_getfield(L, -1, "__index");
@@ -455,6 +466,7 @@ static int ls_strsignal(lua_State *L) {
 
 static const luaL_Reg ls_globals[] = {
 	{ "listen",    &lsl_listen },
+	{ "type",      &lsl_type },
 	{ "interpose", &lsl_interpose },
 	{ "ignore",    &ls_ignore },
 	{ "default",   &ls_default },
