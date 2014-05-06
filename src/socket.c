@@ -1004,7 +1004,11 @@ static lso_nargs_t lso_setmaxline3(struct lua_State *L) {
 static lso_nargs_t lso_settimeout_(struct lua_State *L, struct luasocket *S, int index) {
 	double timeout;
 
-	lua_pushnumber(L, S->timeout);
+	if (isnormal(S->timeout) || S->timeout == 0) {
+		lua_pushnumber(L, S->timeout);
+	} else {
+		lua_pushnil(L);
+	}
 
 	timeout = luaL_optnumber(L, index, NAN);
 
