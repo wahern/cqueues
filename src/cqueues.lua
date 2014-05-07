@@ -1,22 +1,68 @@
 local loader = function(loader, ...)
-	local core = require("_cqueues")
+	local core = require"_cqueues"
+	local errno = require"_cqueues.errno"
+	local yield = coroutine.yield
+	local resume = coroutine.resume
 	local monotime = core.monotime
+	local running = core.running
+	local strerror = errno.strerror
+
+	local _POLL = {}
 
 	function core.poll(...)
-		return coroutine.yield(...)
+		local _, immediate = running()
+
+		if immediate then
+			return yield(...)
+		else
+			return yield(_POLL, ...)
+		end
 	end -- core.poll
 
 	function core.sleep(timeout)
 		core.poll(timeout)
 	end -- core.sleep
 
+	--
+	-- Provide coroutine wrappers for inline I/O polling of
+	-- coroutine-wrapped code. The code checks for a special value
+	-- returned by our poll routine (above), and will propogate a yield
+	-- on I/O. Everything else should behave as usual.
+	--
+	local function _iresume(co, ok, arg1, ...)
+		if ok and arg1 == _POLL then
+			return core.iresume(co, yield(_POLL, ...))
+		else
+			return ok, arg1, ...
+		end
+	end -- _iresume
+
+	function core.iresume(co, ...)
+		return _iresume(co, resume(co, ...))
+	end -- core.iresume
+
+	local function _iwrap(co, ok, ...)
+		if ok then
+			return ...
+		else
+			error((...), 0)
+		end
+	end -- _iwrap
+
+	function core.iwrap(f)
+		local co = coroutine.create(f)
+
+		return function(...)
+			return _iwrap(co, _iresume(co, resume(co, ...))) 
+		end
+	end -- core.iwrap
 
 	local function findwhy(x, ...)
 		if x then
 			if type(x) == "number" then
-				return require"cqueues.errno".strerror(x) or x
+				return strerror(x) or x
 			else
-				return x
+				return tostring(x)
 			end
 		elseif select("#", ...) > 0 then
 			return findwhy(...)
@@ -30,7 +76,7 @@ local loader = function(loader, ...)
 			return x, ...
 		end
 
-		return assert(false, findwhy(...))
+		return error(findwhy(...), 2)
 	end -- core.assert
 
 	local step; step = core.interpose("step", function (self, timeout)
