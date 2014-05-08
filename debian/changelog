@@ -1,4 +1,4 @@
-liblua-cqueues (20140507-0) unstable; urgency=low
+liblua-cqueues (20140508-0) unstable; urgency=low
 
   * Add timeout capability to buffered I/O.
   * Add fast metatable checking to sockets code.
@@ -7,7 +7,7 @@ liblua-cqueues (20140507-0) unstable; urgency=low
     :timeout, and :events.
   * Allow :pollfd to return a condition variable.
 
- -- William Ahern <william@25thandClement.com>  Wed, 07 May 2014 19:12:51 -0700
+ -- William Ahern <william@25thandClement.com>  Wed, 08 May 2014 19:12:51 -0700
 
 liblua-cqueues (20140419-0) unstable; urgency=low
 
