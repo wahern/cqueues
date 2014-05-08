@@ -23,40 +23,49 @@ local loader = function(loader, ...)
 		core.poll(timeout)
 	end -- core.sleep
 
+
 	--
-	-- Provide coroutine wrappers for inline I/O polling of
-	-- coroutine-wrapped code. The code checks for a special value
-	-- returned by our poll routine (above), and will propogate a yield
-	-- on I/O. Everything else should behave as usual.
+	-- Provide coroutine wrappers for multilevel coroutine management to
+	-- allow I/O polling of coroutine-wrapped code. The code checks for
+	-- a special value returned by our poll routine (above), and will
+	-- propogate a yield on I/O. Everything else should behave as usual.
 	--
-	local function _iresume(co, ok, arg1, ...)
+	local function _resume(co, ok, arg1, ...)
 		if ok and arg1 == _POLL then
-			return core.iresume(co, yield(_POLL, ...))
+			return core.resume(co, yield(_POLL, ...))
 		else
 			return ok, arg1, ...
 		end
-	end -- _iresume
+	end -- _resume
 
-	function core.iresume(co, ...)
-		return _iresume(co, resume(co, ...))
-	end -- core.iresume
+	function core.resume(co, ...)
+		return _resume(co, resume(co, ...))
+	end -- core.resume
 
-	local function _iwrap(co, ok, ...)
+	local function _wrap(co, ok, ...)
 		if ok then
 			return ...
 		else
 			error((...), 0)
 		end
-	end -- _iwrap
+	end -- _wrap
 
-	function core.iwrap(f)
+	function core.wrap(f)
 		local co = coroutine.create(f)
 
 		return function(...)
-			return _iwrap(co, _iresume(co, resume(co, ...))) 
+			return _wrap(co, _resume(co, resume(co, ...))) 
 		end
-	end -- core.iwrap
+	end -- core.wrap
 
+
+	--
+	-- Many routines return only an integer error number, as errors like
+	-- EAGAIN are very common, and constantly pushing a new string on
+	-- the stack would be inefficient. Also, the failure mode for some
+	-- routines will return multiple false/nil falses which precede the
+	-- error number. This assert routine handles these cases.
+	--
 	local function findwhy(x, ...)
 		if x then
 			if type(x) == "number" then
@@ -79,6 +88,11 @@ local loader = function(loader, ...)
 		return error(findwhy(...), 2)
 	end -- core.assert
 
+
+	--
+	-- Wrappers for the low-level :step interface to make managing event
+	-- loops slightly easier.
+	--
 	local step; step = core.interpose("step", function (self, timeout)
 		if core.running() then
 			core.poll(self, timeout)
@@ -138,6 +152,7 @@ local loader = function(loader, ...)
 			end
 		end
 	end) -- core:errors
+
 
 	core.loader = loader
 
