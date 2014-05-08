@@ -244,7 +244,7 @@ Install Lua 5.3 module.
 
 \subsection{Polling}
 
-\cqueues works through a simple protocol. When a coroutine yields to its parent \cqueues controller, it can pass one or more objects. These objects are introspected for three methods: \method{:pollfd}, \method{:events}, and \method{:timeout}. These methods generate the parameters for installing descriptor and timeout events. When one of these events fires, \cqueues will resume the coroutine, passing the relevant objects which were interested in the triggered event. It's analogous to calling \syscall{poll}, and in fact the routine \routine{cqueues.poll} is provided as a wrapper for \routine{coroutine.yield}.\footnote{In the future this wrapper may be able to detect if the current coroutine was resumed by a controller, and if not chain yield calls until a controller is reached.}
+\cqueues works through a simple protocol. When a coroutine yields to its parent \cqueues controller, it can pass one or more objects. These objects are introspected for three methods: \method{:pollfd}, \method{:events}, and \method{:timeout}. These methods generate the parameters for installing descriptor and timeout events. When one of these events fires, \cqueues will resume the coroutine, passing the relevant objects which were interested in the triggered event. It's analogous to calling Unix \syscall{poll}, and in fact the routine \routine{cqueues.poll} is provided as a wrapper for \routine{coroutine.yield}.\footnote{This wrapper can also detect if the current coroutine was resumed by a controller, and if not chain yield calls---with the cooperation of a \routine{cqueues.resume}---until a controller is reached.}
 
 \subsubsection[\method{object:pollfd}]{\method{:pollfd()}} The \method{:pollfd} method should return a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
 
@@ -336,6 +336,14 @@ Yields to the parent \cqueues controller and schedules a wakeup for `number' sec
 \subsubsection[\routine{cqueues.running}]{\routine{cqueues.running()}}
 
 Returns two values: the immediate controller currently executing, if any, or nil; and a boolean---true if the caller's coroutine is the same coroutine resumed by the controller.
+
+\subsubsection[\routine{cqueues.resume}]{\routine{cqueues.resume(co)}}
+
+Resumes the coroutine $co$. This wrapper for \routine{coroutine.resume} cooperates with \routine{cqueues.poll} to chain yield calls until a controller is reached, and then in-turn chains resume calls to return execution to where the polling occurred.
+
+\subsubsection[\routine{cqueues.wrap}]{\routine{cqueues.wrap(f)}}
+
+Behaves like \routine{coroutine.wrap} by returning a function which executes $f$ in a coroutine, except uses \routine{cqueues.resume} to permit multilevel yielding and resumption when $f$ triggers I/O polling. Unlike \routine{cqueues:wrap}, this does not attach the newly created coroutine to any controller.
 
 \subsubsection[\routine{cqueues.new}]{\routine{cqueues.new()}}
 Create a new cqueues object.
