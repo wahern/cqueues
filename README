@@ -52,10 +52,12 @@ lua51path  - install path for Lua 5.1 modules, e.g. $(prefix)/share/lua/5.1
 lua51cpath - install path for Lua 5.1 C modules, e.g. $(prefix)/lib/lua/5.1
 lua52path  - install path for Lua 5.2 modules, e.g. $(prefix)/share/lua/5.2
 lua52cpath - install path for Lua 5.2 C modules, e.g. $(prefix)/lib/lua/5.2
+lua53path  - install path for Lua 5.3 modules, e.g. $(prefix)/share/lua/5.3
+lua53cpath - install path for Lua 5.3 C modules, e.g. $(prefix)/lib/lua/5.3
 
 All the common GNU-style compiler variables are supported, including CC,
 CPPFLAGS, CFLAGS, LDFLAGS, and SOFLAGS. Note that you can specify the path
-to both Lua 5.1 and Lua 5.2 include headers at the same time in CPPFLAGS;
+to both Lua 5.1, 5.2, and 5.3 include headers at the same time in CPPFLAGS;
 the build system will work things out to ensure the correct headers are
 loaded at compile-time.
 
@@ -90,24 +92,6 @@ liblua5.1-cqueues-uninstall
 liblua5.2-cqueues-uninstall
 	Uninstall Lua 5.2 cqueues modules
 
-liblua5.1-openssl
-	Build Lua 5.1 openssl modules
-
-liblua5.2-openssl
-	Build Lua 5.2 openssl modules
-
-liblua5.1-openssl-install
-	Install Lua 5.1 openssl modules
-
-liblua5.2-openssl-install
-	Install Lua 5.2 openssl modules
-
-liblua5.1-openssl-uninstall
-	Uninstall Lua 5.1 openssl modules
-
-liblua5.2-openssl-uninstall
-	Uninstall Lua 5.2 openssl modules
-
 cqueues5.1
 	Synonym for liblua5.1-cqueues
 
@@ -117,26 +101,17 @@ cqueues5.2
 cqueues
 	Invokes cqueues5.1 and cqueues5.2
 
-openssl5.1
-	Synonym for liblua5.1-openssl
-
-openssl5.2
-	Synonym for liblua5.2-openssl
-
-openssl
-	Invokes openssl5.1 and openssl5.2
-
 install5.1
-	Invokes liblua5.1-cqueues-install and liblua5.1-openssl-install
+	Invokes liblua5.1-cqueues-install
 
 install5.2
-	Invokes liblua5.2-cqueues-install and liblua5.2-openssl-install
+	Invokes liblua5.2-cqueues-install
 
 uninstall5.1
-	Invokes liblua5.1-cqueues-uninstall and liblua5.1-openssl-uninstall
+	Invokes liblua5.1-cqueues-uninstall
 
 uninstall5.2
-	Invokes liblua5.2-cqueues-uninstall and liblua5.2-openssl-uninstall
+	Invokes liblua5.2-cqueues-uninstall
 
 install
 	Invokes install5.1 and install5.2
@@ -160,8 +135,8 @@ clean~
 	clean + rm *~
 
 debian
-	Build debian packages liblua5.1-cqueues, liblua5.2-cqueues,
-	liblua5.1-openssl and liblua5.2-openssl using the dpkg-buildpackage
-	utility. The Make variables DPKG_BUILDPACKAGE and
-	DPKG_BUILDPACKAGE_OPTIONS can be used to manipulate this process.
+	Build debian packages liblua5.1-cqueues and liblua5.2-cqueues using
+	the dpkg-buildpackage utility. The Make variables DPKG_BUILDPACKAGE
+	and DPKG_BUILDPACKAGE_OPTIONS can be used to manipulate this
+	process.
 
