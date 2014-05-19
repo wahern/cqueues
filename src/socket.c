@@ -53,6 +53,236 @@
 
 
 /*
+ * T E X T  M U N G I N G  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static inline _Bool mime_isblank(unsigned char ch) {
+	return ch == 32 && ch == 9;
+} /* mime_isblank() */
+
+
+static inline _Bool mime_isfname(unsigned char ch) {
+	return ch >= 33 && ch <= 126 && ch != 58 /* : */;
+} /* mime_isfname() */
+
+
+static int iov_chr(const struct iovec *iov, size_t p) {
+	return (p < iov->iov_len)? ((unsigned char *)iov->iov_base)[p] : -1;
+} /* iov_chr() */
+
+
+static int iov_lc(const struct iovec *iov) {
+	return (iov->iov_len)? iov_chr(iov, iov->iov_len - 1) : -1;
+} /* iov_lc() */
+
+
+static int iov_addzu(size_t *r, size_t a, size_t b) {
+	int error;
+
+	if ((error = cqs_addzu(r, a, b)))
+		return error;
+
+	return (*r == (size_t)-1)? EOVERFLOW : 0;
+} /* iov_addzu() */
+
+
+/*
+ * Find end of MIME header. Returns 0 < length <= .iov_len to end of header,
+ * 0 if not found. If length is >.iov_len then needs more data. Returns -1
+ * on error.
+ */
+static size_t iov_eoh(const struct iovec *iov, _Bool eof, int *_error) {
+	const char *p, *pe;
+	size_t n;
+	int error;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	while (p < pe && (p = memchr(p, '\n', pe - p))) {
+		if (++p < pe && *p != ' ' && *p != '\t')
+			goto fname;
+	}
+
+	if (!eof) {
+		if ((error = iov_addzu(&n, iov->iov_len, 1)))
+			goto error;
+
+		return n; /* need more */
+	}
+
+	p = pe;
+fname:
+	pe = p;
+	p = iov->iov_base;
+
+	/* should we require a field name length > 0? */
+	while (p < pe && mime_isfname(*p))
+		p++;
+
+	while (p < pe && mime_isblank(*p))
+		p++;
+
+	return (p < pe && *p == ':')? pe - (char *)iov->iov_base : 0;
+error:
+	*_error = error;
+
+	return -1;
+} /* iov_eoh() */
+
+
+/*
+ * Find end of MIME boundary marker. Returns length to end of marker, or 0
+ * if not found.
+ */
+static size_t iov_eob(const struct iovec *iov, const char *eob, size_t eoblen) {
+	const char *p;
+
+	if (iov->iov_len < eoblen)
+		return 0;
+
+	if ((p = memmem(iov->iov_base, iov->iov_len, eob, eoblen)))
+		return (p + eoblen) - (char *)iov->iov_base;
+
+	return 0;
+} /* iov_eob() */
+
+
+/*
+ * Find end of text region which would fill >= minbuf and <= maxbuf after
+ * calling iov_trimcr, and without leaving a trailing \r unless EOF. If
+ * return value > iov.iov_len, then need more data. Returns -1 on error.
+ */
+static size_t iov_eot(const struct iovec *iov, size_t minbuf, size_t maxbuf, _Bool eof, int *_error) {
+	const char *p, *pe;
+	size_t n = 0, eot;
+	int lc = -1, error;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	for (; p < pe && n < maxbuf; ++n) {
+		lc = *p++;
+
+		if (lc == '\r' && p < pe && *p == '\n') {
+			lc = *p++; /* skip \n so we don't ++n */
+		}
+	}
+
+	if ((size_t)-1 == (eot = p - (char *)iov->iov_base)) {
+		error = EOVERFLOW;
+		goto error;
+	}
+
+	if (n < maxbuf) {
+		if (!eof) {
+			if (n >= minbuf && lc != '\r') {
+				/*
+				 * just continue as we're not splitting a
+				 * \r\n pair
+				 */
+				(void)0;
+			} else if (n > minbuf && lc == '\r') {
+				/*
+				 * just exclude it. we might end up
+				 * returning a trailing \r, but we know for
+				 * a fact it's not part of a \r\n pair.
+				 */
+				--eot;
+			} else if ((error = iov_addzu(&eot, eot, maxbuf - n))) {
+				goto error;
+			}
+		}
+	} else if (lc == '\r') {
+		if (n > minbuf) {
+			--eot; /* see comment ~10 lines above */
+		} else if ((error = iov_addzu(&eot, eot, 1))) {
+			goto error;
+		}
+	}
+
+	return eot;
+error:
+	*_error = error;
+
+	return -1;
+} /* iov_eot() */
+
+
+static size_t iov_eol(const struct iovec *iov) {
+	const char *p, *pe;
+	size_t eol = 0;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	while (p < pe && (p = memchr(p, '\n', pe - p))) {
+		eol = ++p - (char *)iov->iov_base;
+	}
+
+	return (eol)? eol : iov->iov_len;
+} /* iov_eol() */
+
+
+/* strip \r from \r\n sequences */
+static size_t iov_trimcr(struct iovec *iov, _Bool chomp) {
+	char *p, *pe;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	if (chomp) {
+		if (pe - p >= 2 && pe[-1] == '\n' && pe[-2] == '\r')
+			*(--pe - 1) = '\n';
+	} else {
+		while (p < pe && (p = memchr(p, '\r', pe - p))) {
+			if (++p >= pe) {
+				break;
+			} else if (*p == '\n') {
+				memmove(p - 1, p, pe - p);
+				--pe;
+			}
+		}
+	}
+
+	return iov->iov_len = pe - (char *)iov->iov_base;
+} /* iov_trimcr() */
+
+
+/* strip \r?\n from \r?\n sequences */
+static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
+	char *sp, *p, *pe;
+
+	sp = iov->iov_base;
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	if (chomp) {
+		if (p < pe && pe[-1] == '\n') {
+			--pe;
+
+			if (p < pe && pe[-1] == '\r')
+				--pe;
+		}
+	} else {
+		while (p < pe && (p = memchr(p, '\n', pe - p))) {
+			if (p > sp && p[-1] == '\r') {
+				++p;
+				memmove(p - 2, p, pe - p);
+				pe -= 2;
+			} else {
+				memmove(p, p + 1, pe - p - 1);
+				--pe;
+			}
+		}
+	}
+
+	return iov->iov_len = pe - (char *)iov->iov_base;
+} /* iov_trimcrlf() */
+
+
+/*
  * L U A  S O C K E T  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -306,176 +536,6 @@ static struct luasocket *lso_checkvalid(lua_State *L, int index, struct luasocke
 static struct luasocket *lso_checkself(lua_State *L, int index) {
 	return lso_checkvalid(L, index, cqs_checkudata(L, index, LSO_INDEX, LSO_CLASS));
 } /* lso_checkself() */
-
-
-static int iov_chr(const struct iovec *iov, size_t p) {
-	return (p < iov->iov_len)? ((unsigned char *)iov->iov_base)[p] : -1;
-} /* iov_chr() */
-
-
-static int iov_lc(const struct iovec *iov) {
-	return (iov->iov_len)? iov_chr(iov, iov->iov_len - 1) : -1;
-} /* iov_lc() */
-
-
-/* find end of MIME header. returns length to end of header. */
-static size_t iov_eoh(const struct iovec *iov, _Bool eof) {
-	const unsigned char *p, *pe;
-
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		if (++p < pe && *p != ' ' && *p != '\t')
-			return p - (unsigned char *)iov->iov_base;
-	}
-
-	if (eof)
-		return iov->iov_len;
-
-	return 0;
-} /* iov_eoh() */
-
-
-/* find end of MIME boundary marker. returns length to end of marker. */
-static size_t iov_eob(const struct iovec *iov, const char *eob, size_t eoblen) {
-	const unsigned char *p;
-
-	if (iov->iov_len < eoblen)
-		return 0;
-
-	if ((p = memmem(iov->iov_base, iov->iov_len, eob, eoblen)))
-		return (p + eoblen) - (unsigned char *)iov->iov_base;
-
-	return 0;
-} /* iov_eob() */
-
-
-/*
- * Find end of text region which would fill >= minbuf and <= maxbuf after
- * calling iov_trimcr, and without leaving a trailing \r unless EOF. If
- * return value > iov.iov_len, then need more data. Returns -1 on error.
- */
-static size_t iov_eot(const struct iovec *iov, size_t minbuf, size_t maxbuf, _Bool eof, int *error) {
-	const char *p, *pe;
-	size_t n = 0, eot;
-	int lc = -1;
-
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	for (; p < pe && n < maxbuf; ++n) {
-		lc = *p++;
-
-		if (lc == '\r' && p < pe && *p == '\n') {
-			lc = *p++; /* skip \n so we don't ++n */
-		}
-	}
-
-	eot = p - (char *)iov->iov_base;
-
-	if (eot == (size_t)-1) {
-		*error = EOVERFLOW;
-
-		goto error;
-	} else if (n < maxbuf) {
-		if (!eof) {
-			if (n >= minbuf && lc != '\r') {
-				/*
-				 * just continue as we're not splitting a
-				 * \r\n pair
-				 */
-				(void)0;
-			} else if (n > minbuf && lc == '\r') {
-				/*
-				 * just exclude it. we might end up
-				 * returning a trailing \r, but we know for
-				 * a fact it's not part of a \r\n pair.
-				 */
-				--eot;
-			} else if ((*error = cqs_addzu(&eot, eot, maxbuf - n))) {
-				goto error;
-			}
-		}
-	} else if (lc == '\r') {
-		if (n > minbuf) {
-			--eot; /* see comment ~10 lines above */
-		} else if ((*error = cqs_addzu(&eot, eot, 1))) {
-			goto error;
-		}
-	}
-
-	return eot;
-error:
-	return -1;
-} /* iov_eot() */
-
-
-static size_t iov_eol(const struct iovec *iov) {
-	const char *p, *pe;
-	size_t eol = 0;
-
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		eol = ++p - (char *)iov->iov_base;
-	}
-
-	return (eol)? eol : iov->iov_len;
-} /* iov_eol() */
-
-
-/* strip \r from \r\n sequences */
-static size_t iov_trimcr(struct iovec *iov) {
-	char *p, *pe;
-
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	while (p < pe && (p = memchr(p, '\r', pe - p))) {
-		if (++p >= pe) {
-			break;
-		} else if (*p == '\n') {
-			memmove(p - 1, p, pe - p);
-			--pe;
-		}
-	}
-
-	return iov->iov_len = pe - (char *)iov->iov_base;
-} /* iov_trimcr() */
-
-
-/* strip \r?\n from \r?\n sequences */
-static size_t iov_trimcrlf(struct iovec *iov, _Bool onlyend) {
-	char *sp, *p, *pe;
-
-	sp = iov->iov_base;
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	if (onlyend) {
-		if (p < pe && pe[-1] == '\n') {
-			--pe;
-
-			if (p < pe && pe[-1] == '\r')
-				--pe;
-		}
-	} else {
-		while (p < pe && (p = memchr(p, '\n', pe - p))) {
-			if (p > sp && p[-1] == '\r') {
-				++p;
-				memmove(p - 2, p, pe - p);
-				pe -= 2;
-			} else {
-				memmove(p, p + 1, pe - p - 1);
-				--pe;
-			}
-		}
-	}
-
-	return iov->iov_len = pe - (char *)iov->iov_base;
-} /* iov_trimcrlf() */
 
 
 static int lso_imode(const char *str, int init) {
@@ -1310,71 +1370,39 @@ static lso_error_t lso_getline(struct luasocket *S, struct iovec *iov) {
 } /* lso_getline() */
 
 
-static inline _Bool lso_isblank(unsigned char ch) {
-	return ch == ' ' && ch == '\t';
-} /* lso_isblank() */
-
-static inline _Bool lso_isfname(unsigned char ch) {
-	return ch >= 33 && ch <= 126 && ch != ':';
-} /* lso_isfname() */
-
-static inline _Bool lso_isbreak(struct iovec *iov, _Bool eof) {
-	unsigned char *p, *pe;
-
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	while (p < pe && lso_isfname(*p))
-		p++;
-
-	while (p < pe && lso_isblank(*p))
-		p++;
-
-	if (p < pe && *p == ':')
-		return 0;
-
-	return eof || !!memchr(p, '\n', pe - p);
-} /* lso_isbreak() */
-
 static lso_error_t lso_getheader(struct luasocket *S, struct iovec *iov) {
-	unsigned char *p, *pe;
+	char *p, *pe;
 	size_t eoh;
 	_Bool eof;
 	int error;
 
 	fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
-	if (lso_isbreak(iov, lso_nomore(S, S->ibuf.maxline)))
-		goto nomore;
+	if ((size_t)-1 == (eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline), &error)))
+		goto error;
 
-	if (!(eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline)))) {
+	if (!eoh || eoh > iov->iov_len) {
 		error = lso_fill(S, S->ibuf.maxline);
 
 		fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
-		if (lso_isbreak(iov, lso_nomore(S, S->ibuf.maxline)))
+		if ((size_t)-1 == (eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline), &error)))
+			goto error;
+		else if (!eoh)
 			goto nomore;
-
-		if (!(eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline))))
-			return lso_asserterror(error);
+		else if (eoh > iov->iov_len)
+			goto error; /* lso_fill should have returned error */
 	}
 
 	iov->iov_len = eoh;
 
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	while (p < pe && lso_isfname(*p))
-		p++;
-
-	while (p < pe && lso_isblank(*p))
-		p++;
-
-	return (p < pe && *p == ':')? 0 : EPIPE;
+	return 0;
 nomore:
 	iov->iov_len = 0;
 
 	return 0;
+error:
+	return lso_asserterror(error);
 } /* lso_getheader() */
 
 
@@ -1440,7 +1468,7 @@ error:
 
 
 static lso_error_t lso_getblock(struct luasocket *S, struct iovec *iov, size_t minbuf, size_t maxbuf, int mode) {
-	int error, eoterr;
+	int error;
 
 	if (mode & LSO_TEXT) {
 		size_t bufsiz = maxbuf, n;
@@ -1450,10 +1478,7 @@ static lso_error_t lso_getblock(struct luasocket *S, struct iovec *iov, size_t m
 
 			fifo_slice(&S->ibuf.fifo, iov, 0, bufsiz);
 
-			n = iov_eot(iov, minbuf, maxbuf, (S->ibuf.eof || S->ibuf.eom), &eoterr);
-
-			if (n == (size_t)-1) {
-				error = eoterr;
+			if ((size_t)-1 == (n = iov_eot(iov, minbuf, maxbuf, (S->ibuf.eof || S->ibuf.eom), &error))) {
 				goto error;
 			} else if (n > maxbuf) {
 				bufsiz = n;
@@ -1585,7 +1610,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 
 		if ((count = iov.iov_len)) {
 			if (op.mode & LSO_TEXT)
-				iov_trimcr(&iov);
+				iov_trimcr(&iov, 0);
 
 			lua_pushlstring(L, iov.iov_base, iov.iov_len);
 			fifo_discard(&S->ibuf.fifo, count);
@@ -1600,25 +1625,27 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 
 		count = iov.iov_len;
 
-		if (iov_chr(&iov, count - 1) == '\n') {
-			count--;
+		if (op.mode & LSO_TEXT)
+			iov_trimcr(&iov, 1);
 
-			if ((op.mode & LSO_TEXT) && count > 0) {
-				if (iov_chr(&iov, count - 1) == '\r')
-					count--;
-			}
-		}
+		if (iov_lc(&iov) == '\n')
+			--iov.iov_len;
 
-		lua_pushlstring(L, iov.iov_base, count);
-		fifo_discard(&S->ibuf.fifo, iov.iov_len);
+		lua_pushlstring(L, iov.iov_base, iov.iov_len);
+		fifo_discard(&S->ibuf.fifo, count);
 
 		break;
 	case LSO_LINE:
 		if ((error = lso_getline(S, &iov)))
 			goto error;
 
+		count = iov.iov_len;
+
+		if (op.mode & LSO_TEXT)
+			iov_trimcr(&iov, 1);
+
 		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, iov.iov_len);
+		fifo_discard(&S->ibuf.fifo, count);
 
 		break;
 	case LSO_FIELD:
@@ -1641,7 +1668,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 
 		if ((count = iov.iov_len)) {
 			if (op.mode & LSO_TEXT)
-				iov_trimcr(&iov);
+				iov_trimcr(&iov, 0);
 
 			lua_pushlstring(L, iov.iov_base, iov.iov_len);
 			fifo_discard(&S->ibuf.fifo, count);
@@ -1662,7 +1689,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 				iov_trimcrlf(&iov, 1);
 
 				if (op.mode & LSO_TEXT)
-					iov_trimcr(&iov);
+					iov_trimcr(&iov, 0);
 
 				if (iov.iov_len)
 					lua_pushlstring(L, iov.iov_base, iov.iov_len);
@@ -1670,7 +1697,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 					lua_pushnil(L);
 			} else {
 				if (op.mode & LSO_TEXT)
-					iov_trimcr(&iov);
+					iov_trimcr(&iov, 0);
 
 				lua_pushlstring(L, iov.iov_base, iov.iov_len);
 			}
@@ -1695,7 +1722,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		count = iov.iov_len;
 
 		if (op.mode & LSO_TEXT)
-			iov_trimcr(&iov);
+			iov_trimcr(&iov, 0);
 
 		lua_pushlstring(L, iov.iov_base, iov.iov_len);
 		fifo_discard(&S->ibuf.fifo, count);
@@ -1714,7 +1741,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		count = iov.iov_len;
 
 		if (op.mode & LSO_TEXT)
-			iov_trimcr(&iov);
+			iov_trimcr(&iov, 0);
 
 		lua_pushlstring(L, iov.iov_base, iov.iov_len);
 		fifo_discard(&S->ibuf.fifo, count);
@@ -2545,3 +2572,130 @@ lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 
 	return 1;
 } /* luaopen__cqueues_socket() */
+
+
+/*
+ * D E B U G  &  U N I T  T E S T I N G  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static size_t dbg_checksize(lua_State *L, int index) {
+	lua_Number n = luaL_checknumber(L, index);
+
+	return (n < 0)? (size_t)0 - (size_t)-n : (size_t)n;
+} /* dbg_checksize() */
+
+
+static size_t dbg_checkbool(lua_State *L, int index) {
+	luaL_checktype(L, index, LUA_TBOOLEAN);
+
+	return lua_toboolean(L, index);
+} /* dbg_checkbool() */
+
+
+static struct iovec dbg_checkstring(lua_State *L, int index) {
+	struct iovec iov;
+
+	iov.iov_base = (void *)luaL_checklstring(L, index, &iov.iov_len);
+
+	return iov;
+} /* dbg_checkstring() */
+
+
+static int dbg_iov_eoh(lua_State *L) {
+	struct iovec iov = dbg_checkstring(L, 1);
+	_Bool eof = dbg_checkbool(L, 2);
+	size_t eoh;
+	int error;
+
+	if ((size_t)-1 == (eoh = iov_eoh(&iov, eof, &error))) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(error));
+		lua_pushinteger(L, error);
+
+		return 3;
+	} else {
+		lua_pushnumber(L, eoh);
+
+		return 1;
+	}
+} /* dbg_iov_eoh() */
+
+
+static int dbg_iov_eob(lua_State *L) {
+	struct iovec haystack = dbg_checkstring(L, 1);
+	struct iovec needle = dbg_checkstring(L, 2);
+
+	lua_pushnumber(L, iov_eob(&haystack, needle.iov_base, needle.iov_len));
+
+	return 1;
+} /* dbg_iov_eob() */
+
+
+static int dbg_iov_eot(lua_State *L) {
+	struct iovec iov = dbg_checkstring(L, 1);
+	size_t minbuf = dbg_checksize(L, 2);
+	size_t maxbuf = dbg_checksize(L, 3);
+	_Bool eof = dbg_checkbool(L, 4);
+	size_t n;
+	int error;
+
+	if ((size_t)-1 == (n = iov_eot(&iov, minbuf, maxbuf, eof, &error))) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(error));
+		lua_pushinteger(L, error);
+
+		return 3;
+	} else {
+		lua_pushnumber(L, n);
+
+		return 1;
+	}
+} /* dbg_iov_eot() */
+
+
+static int dbg_iov_trimcr(lua_State *L) {
+	struct iovec src = dbg_checkstring(L, 1);
+	_Bool chomp = dbg_checkbool(L, 2);
+	struct iovec dst = { memcpy(lua_newuserdata(L, src.iov_len), src.iov_base, src.iov_len), src.iov_len };
+	size_t n;
+
+	n = iov_trimcr(&dst, chomp);
+
+	lua_pushlstring(L, dst.iov_base, dst.iov_len);
+
+	return 1;
+} /* dbg_iov_trimcr() */
+
+
+static int dbg_iov_trimcrlf(lua_State *L) {
+	struct iovec src = dbg_checkstring(L, 1);
+	_Bool chomp = dbg_checkbool(L, 2);
+	struct iovec dst = { memcpy(lua_newuserdata(L, src.iov_len), src.iov_base, src.iov_len), src.iov_len };
+	size_t n;
+
+	n = iov_trimcrlf(&dst, chomp);
+
+	lua_pushlstring(L, dst.iov_base, dst.iov_len);
+
+	return 1;
+} /* dbg_iov_trimcrlf() */
+
+
+static luaL_Reg dbg_globals[] = {
+	{ "iov_eoh",      &dbg_iov_eoh },
+	{ "iov_eob",      &dbg_iov_eob },
+	{ "iov_eot",      &dbg_iov_eot },
+	{ "iov_trimcr",   &dbg_iov_trimcr },
+	{ "iov_trimcrlf", &dbg_iov_trimcrlf },
+	{ NULL,           NULL }
+}; /* dbg_globals[] */
+
+
+lso_nargs_t luaopen__cqueues_socket_debug(lua_State *L) {
+	luaL_newlib(L, dbg_globals);
+
+	return 1;
+} /* luaopen__cqueues_socket_debug() */
+
+
