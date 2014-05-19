@@ -519,6 +519,106 @@ end)
 
 
 --
+-- Smarter socket:read
+--
+local function xswap(arg1, arg2)
+	if tonumber(arg1) then
+		return arg2, arg1
+	else
+		return arg1, arg2
+	end
+end -- xswap
+
+
+local function xopts(self, ...)
+	local mode, timeout = xswap(...)
+
+	return mode, timeout
+end -- xopts
+
+
+local function xdeadline(self, timeout)
+	timeout = timeout or self:timeout()
+
+	return timeout and (monotime() + timeout)
+end -- xdeadline
+
+
+socket.interpose("xread", function (self, what, ...)
+	local mode, timeout = xopts(self, ...)
+
+	local data, why = self:recv(what, mode)
+
+	if not data then
+		local deadline = xdeadline(self, timeout)
+
+		repeat
+			if why == EAGAIN then
+				if not timed_poll(self, deadline) then
+					return nil, oops(self, "read", ETIMEDOUT)
+				end
+			elseif why then
+				return nil, oops(self, "read", why)
+			else
+				return --> EOF
+			end
+
+			data, why = self:recv(what, mode)
+		until data
+	end
+
+	return data
+end) -- xread
+
+
+--
+-- Smarter socket:write
+--
+socket.interpose("xwrite", function (self, data, ...)
+	local mode, timeout = xopts(self, ...)
+	local i = 1
+
+	local n, why = self:send(data, i, #data, mode)
+
+	i = i + n
+
+	if i <= #data then
+		local deadline = xdeadline(self, timeout)
+
+		repeat
+			if why == EAGAIN then
+				if not timed_poll(self, deadline) then
+					return nil, oops(self, "write", ETIMEDOUT)
+				end
+			else
+				return nil, oops(self, "write", why)
+			end
+
+			n, why = self:send(data, i, #data, mode)
+
+			i = i + n
+		until i > #data
+
+		timeout = deadline and math.max(0, deadline - monotime())
+	end
+
+	return fileresult(self, self:flush(mode, timeout))
+end)
+
+
+--
+-- Smarter socket:lines
+--
+socket.interpose("xlines", function (self, what, ...)
+	local mode, timeout = xopts(self, ...)
+
+	return function ()
+		return self:xread(what, mode, timeout)
+	end
+end)
+
+
+--
 -- Yielding socket:sendfd
 --
 local _sendfd; _sendfd = socket.interpose("sendfd", function (self, msg, fd, timeout)
