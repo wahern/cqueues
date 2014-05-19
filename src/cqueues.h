@@ -28,7 +28,7 @@
 
 #include <signal.h>	/* sigset_t */
 
-#include <errno.h>	/* EINTR */
+#include <errno.h>	/* EINTR EOVERFLOW */
 
 #include <sys/types.h>
 #include <sys/socket.h>	/* socketpair(2) */
@@ -428,6 +428,16 @@ static inline void cqs_getref(lua_State *L, cqs_ref_t ref) {
 	else
 		lua_pushnil(L);
 } /* cqs_getref() */
+
+
+static inline cqs_error_t cqs_addzu(size_t *r, size_t a, size_t b) {
+	if (~a < b)
+		return EOVERFLOW;
+
+	*r = a + b;
+
+	return 0;
+} /* cqs_addzu() */
 
 
 /*

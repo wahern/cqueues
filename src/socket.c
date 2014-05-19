@@ -313,6 +313,12 @@ static int iov_chr(const struct iovec *iov, size_t p) {
 } /* iov_chr() */
 
 
+static int iov_lc(const struct iovec *iov) {
+	return (iov->iov_len)? iov_chr(iov, iov->iov_len - 1) : -1;
+} /* iov_lc() */
+
+
+/* find end of MIME header. returns length to end of header. */
 static size_t iov_eoh(const struct iovec *iov, _Bool eof) {
 	const unsigned char *p, *pe;
 
@@ -331,7 +337,7 @@ static size_t iov_eoh(const struct iovec *iov, _Bool eof) {
 } /* iov_eoh() */
 
 
-/* find end of MIME boundary marker */
+/* find end of MIME boundary marker. returns length to end of marker. */
 static size_t iov_eob(const struct iovec *iov, const char *eob, size_t eoblen) {
 	const unsigned char *p;
 
@@ -345,9 +351,84 @@ static size_t iov_eob(const struct iovec *iov, const char *eob, size_t eoblen) {
 } /* iov_eob() */
 
 
-/* strip cr from crlf sequences */
+/*
+ * Find end of text region which would fill >= minbuf and <= maxbuf after
+ * calling iov_trimcr, and without leaving a trailing \r unless EOF. If
+ * return value > iov.iov_len, then need more data. Returns -1 on error.
+ */
+static size_t iov_eot(const struct iovec *iov, size_t minbuf, size_t maxbuf, _Bool eof, int *error) {
+	const char *p, *pe;
+	size_t n = 0, eot;
+	int lc = -1;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	for (; p < pe && n < maxbuf; ++n) {
+		lc = *p++;
+
+		if (lc == '\r' && p < pe && *p == '\n') {
+			lc = *p++; /* skip \n so we don't ++n */
+		}
+	}
+
+	eot = p - (char *)iov->iov_base;
+
+	if (eot == (size_t)-1) {
+		*error = EOVERFLOW;
+
+		goto error;
+	} else if (n < maxbuf) {
+		if (!eof) {
+			if (n >= minbuf && lc != '\r') {
+				/*
+				 * just continue as we're not splitting a
+				 * \r\n pair
+				 */
+				(void)0;
+			} else if (n > minbuf && lc == '\r') {
+				/*
+				 * just exclude it. we might end up
+				 * returning a trailing \r, but we know for
+				 * a fact it's not part of a \r\n pair.
+				 */
+				--eot;
+			} else if ((*error = cqs_addzu(&eot, eot, maxbuf - n))) {
+				goto error;
+			}
+		}
+	} else if (lc == '\r') {
+		if (n > minbuf) {
+			--eot; /* see comment ~10 lines above */
+		} else if ((*error = cqs_addzu(&eot, eot, 1))) {
+			goto error;
+		}
+	}
+
+	return eot;
+error:
+	return -1;
+} /* iov_eot() */
+
+
+static size_t iov_eol(const struct iovec *iov) {
+	const char *p, *pe;
+	size_t eol = 0;
+
+	p = iov->iov_base;
+	pe = p + iov->iov_len;
+
+	while (p < pe && (p = memchr(p, '\n', pe - p))) {
+		eol = ++p - (char *)iov->iov_base;
+	}
+
+	return (eol)? eol : iov->iov_len;
+} /* iov_eol() */
+
+
+/* strip \r from \r\n sequences */
 static size_t iov_trimcr(struct iovec *iov) {
-	unsigned char *p, *pe;
+	char *p, *pe;
 
 	p = iov->iov_base;
 	pe = p + iov->iov_len;
@@ -361,49 +442,39 @@ static size_t iov_trimcr(struct iovec *iov) {
 		}
 	}
 
-	return iov->iov_len = pe - (unsigned char *)iov->iov_base;
+	return iov->iov_len = pe - (char *)iov->iov_base;
 } /* iov_trimcr() */
 
 
-static size_t iov_iftrimcr(const struct iovec *iov) {
-	const unsigned char *p, *pe;
-	size_t nr = 0;
-
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
-
-	while (p < pe && (p = memchr(p, '\r', pe - p))) {
-		if (++p >= pe) {
-			break;
-		} else if (*p == '\n') {
-			++nr;
-		}
-	}
-
-	return iov->iov_len - nr;
-} /* iov_iftrimcr() */
-
-
-/* strip cr?lf from cr?lf sequences */
-static size_t iov_trimcrlf(struct iovec *iov) {
-	unsigned char *sp, *p, *pe;
+/* strip \r?\n from \r?\n sequences */
+static size_t iov_trimcrlf(struct iovec *iov, _Bool onlyend) {
+	char *sp, *p, *pe;
 
 	sp = iov->iov_base;
 	p = iov->iov_base;
 	pe = p + iov->iov_len;
 
-	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		if (p > sp && p[-1] == '\r') {
-			++p;
-			memmove(p - 2, p, pe - p);
-			pe -= 2;
-		} else {
-			memmove(p, p + 1, pe - p - 1);
+	if (onlyend) {
+		if (p < pe && pe[-1] == '\n') {
 			--pe;
+
+			if (p < pe && pe[-1] == '\r')
+				--pe;
+		}
+	} else {
+		while (p < pe && (p = memchr(p, '\n', pe - p))) {
+			if (p > sp && p[-1] == '\r') {
+				++p;
+				memmove(p - 2, p, pe - p);
+				pe -= 2;
+			} else {
+				memmove(p, p + 1, pe - p - 1);
+				--pe;
+			}
 		}
 	}
 
-	return iov->iov_len = pe - (unsigned char *)iov->iov_base;
+	return iov->iov_len = pe - (char *)iov->iov_base;
 } /* iov_trimcrlf() */
 
 
@@ -1307,28 +1378,22 @@ nomore:
 } /* lso_getheader() */
 
 
-static lso_error_t lso_addzu(size_t *r, size_t a, size_t b) {
-	if (~a < b)
-		return EOVERFLOW;
-
-	*r = a + b;
-
-	return 0;
-} /* lso_addzu() */
-
-static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, size_t bufsiz, const char *eob, size_t eoblen) {
+static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, int *eom, size_t bufsiz, const char *eob, size_t eoblen, int mode) {
 	size_t maxbuf, n;
 	const char *p, *pe;
 	int error;
 
+	bufsiz = MAX(bufsiz, 2); /* see comment in text-mode handling below */
+
 	/*
-	 * We need at least 1 + "\r\n" + eoblen to make forward progress.
-	 * But we actually want to return bufsiz-sized intermediate chunks.
-	 * So we want a temporary buffer of bufsiz + "\r\n" + eoblen.
+	 * Adjust window. We need at least 1 + "\r\n" + eoblen to make
+	 * forward progress. But we actually want to return bufsiz-sized
+	 * intermediate chunks. So we want a temporary buffer of bufsiz +
+	 * "\r\n" + eoblen.
 	 */
-	if ((error = lso_addzu(&maxbuf, bufsiz, 2)))
+	if ((error = cqs_addzu(&maxbuf, bufsiz, 2)))
 		return error;
-	if ((error = lso_addzu(&maxbuf, maxbuf, eoblen)))
+	if ((error = cqs_addzu(&maxbuf, maxbuf, eoblen)))
 		return error;
 
 	error = lso_fill(S, maxbuf);
@@ -1338,14 +1403,14 @@ static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, size_t bu
 	if ((n = iov_eob(iov, eob, eoblen))) {
 		iov->iov_len = n - eoblen; /* n >= eoblen */
 
-		S->ibuf.eom = 1;
+		*eom = 1;
 
 		return 0;
 	} else if (iov->iov_len >= maxbuf) {
 		/*
 		 * Because maxbuf is >= bufsiz + 2 + eoblen we can be sure
 		 * that returning bufsiz bytes won't cause problems trimming
-		 * the CRLF preceding the boundary marker. It's inelegant
+		 * the \r\n preceding the boundary marker. It's inelegant
 		 * but very simple. In the case of a stall or broken
 		 * connection we may be leaving more bytes in the buffer
 		 * than strictly necessary, but in those cases something is
@@ -1353,24 +1418,60 @@ static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, size_t bu
 		 */
 		iov->iov_len = bufsiz;
 
+		if (mode & LSO_TEXT) {
+			iov->iov_len = iov_eol(iov);
+
+			/* trim if might be part of \r\n sequence */
+			if (iov_lc(iov) == '\r')
+				--iov->iov_len;
+			/*
+			 * NOTE: we guaranteed above that bufsiz >= 2 so we
+			 * don't accidentally return an empty string if we
+			 * trimmed a \r here.
+			 */
+		}
+
 		return 0;
 	}
 
+error:
 	return lso_asserterror(error);
 } /* lso_getbody() */
 
 
-static lso_error_t lso_getblock(struct luasocket *S, struct iovec *iov, size_t min, size_t max) {
-	int error;
+static lso_error_t lso_getblock(struct luasocket *S, struct iovec *iov, size_t minbuf, size_t maxbuf, int mode) {
+	int error, eoterr;
 
-	error = lso_fill(S, max);
+	if (mode & LSO_TEXT) {
+		size_t bufsiz = maxbuf, n;
 
-	if (fifo_slice(&S->ibuf.fifo, iov, 0, max) >= min)
-		return 0;
+		do {
+			error = lso_fill(S, bufsiz);
 
-	if ((S->ibuf.eof || S->ibuf.eom) && iov->iov_len > 0)
-		return 0;
+			fifo_slice(&S->ibuf.fifo, iov, 0, bufsiz);
 
+			n = iov_eot(iov, minbuf, maxbuf, (S->ibuf.eof || S->ibuf.eom), &eoterr);
+
+			if (n == (size_t)-1) {
+				error = eoterr;
+				goto error;
+			} else if (n > maxbuf) {
+				bufsiz = n;
+			} else if (n >= minbuf) {
+				return 0;
+			}
+		} while (!error);
+	} else {
+		error = lso_fill(S, maxbuf);
+
+		if (fifo_slice(&S->ibuf.fifo, iov, 0, maxbuf) >= minbuf)
+			return 0;
+
+		if ((S->ibuf.eof || S->ibuf.eom) && iov->iov_len > 0)
+			return 0;
+	}
+
+error:
 	return lso_asserterror(error);
 } /* lso_getblock() */
 
@@ -1525,7 +1626,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 			goto error;
 
 		if ((count = iov.iov_len)) {
-			iov_trimcrlf(&iov);
+			iov_trimcrlf(&iov, 0);
 
 			lua_pushlstring(L, iov.iov_base, iov.iov_len);
 			fifo_discard(&S->ibuf.fifo, count);
@@ -1549,20 +1650,16 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		}
 
 		break;
-	case LSO_BODY:
-		if ((error = lso_getbody(S, &iov, S->ibuf.bufsiz, op.eob, op.eoblen)))
+	case LSO_BODY: {
+		int eom = 0; /* it would be confusing to overload ibuf.eom */
+
+		if ((error = lso_getbody(S, &iov, &eom, S->ibuf.bufsiz, op.eob, op.eoblen, op.mode)))
 			goto error;
 
 		if ((count = iov.iov_len)) {
-			if (S->ibuf.eom) {
-				/* trim any CRLF preceding the boundary */
-				if (iov_chr(&iov, iov.iov_len - 1) == '\n') {
-					--iov.iov_len;
-
-					if (iov.iov_len
-					&&  iov_chr(&iov, iov.iov_len - 1) == '\r')
-						--iov.iov_len;
-				}
+			if (eom) {
+				/* trim any \r\n preceding the boundary */
+				iov_trimcrlf(&iov, 1);
 
 				if (op.mode & LSO_TEXT)
 					iov_trimcr(&iov);
@@ -1572,15 +1669,8 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 				else
 					lua_pushnil(L);
 			} else {
-				if (op.mode & LSO_TEXT) {
-					if (iov_chr(&iov, iov.iov_len - 1) == '\r') {
-						/* might be part of CRLF sequence */
-						if (!--iov.iov_len)
-							goto again;
-					}
-
+				if (op.mode & LSO_TEXT)
 					iov_trimcr(&iov);
-				}
 
 				lua_pushlstring(L, iov.iov_base, iov.iov_len);
 			}
@@ -1591,6 +1681,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		}
 
 		break;
+	}
 	case LSO_BLOCK:
 		if (op.size == 0) {
 			lua_pushlstring(L, "", 0);
@@ -1598,11 +1689,16 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 			break;
 		}
 
-		if ((error = lso_getblock(S, &iov, op.size, op.size)))
+		if ((error = lso_getblock(S, &iov, op.size, op.size, op.mode)))
 			goto error;
 
+		count = iov.iov_len;
+
+		if (op.mode & LSO_TEXT)
+			iov_trimcr(&iov);
+
 		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, iov.iov_len);
+		fifo_discard(&S->ibuf.fifo, count);
 
 		break;
 	case LSO_LIMIT:
@@ -1612,11 +1708,16 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 			break;
 		}
 
-		if ((error = lso_getblock(S, &iov, 1, op.size)))
+		if ((error = lso_getblock(S, &iov, 1, op.size, op.mode)))
 			goto error;
 
+		count = iov.iov_len;
+
+		if (op.mode & LSO_TEXT)
+			iov_trimcr(&iov);
+
 		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, iov.iov_len);
+		fifo_discard(&S->ibuf.fifo, count);
 
 		break;
 	default:
@@ -1629,8 +1730,6 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		S->ibuf.eom = 0;
 
 	return 1;
-again:
-	error = EAGAIN;
 error:
 	lua_pushnil(L);
 	lua_pushinteger(L, lso_asserterror(error));
