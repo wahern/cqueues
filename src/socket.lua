@@ -578,6 +578,10 @@ socket.interpose("xwrite", function (self, data, ...)
 	local mode, timeout = xopts(self, ...)
 	local i = 1
 
+	--
+	-- should we default to full-buffering here (and the :send below) if
+	-- mode is nil?
+	--
 	local n, why = self:send(data, i, #data, mode)
 
 	i = i + n
@@ -602,7 +606,7 @@ socket.interpose("xwrite", function (self, data, ...)
 		timeout = deadline and math.max(0, deadline - monotime())
 	end
 
-	return fileresult(self, self:flush(mode, timeout))
+	return fileresult(self, self:flush(mode or "", timeout))
 end)
 
 
