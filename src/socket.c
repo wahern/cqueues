@@ -1406,12 +1406,13 @@ error:
 } /* lso_getheader() */
 
 
-static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, int *eom, size_t bufsiz, const char *eob, size_t eoblen, int mode) {
-	size_t maxbuf, n;
+static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, int *eom, const char *eob, size_t eoblen, int mode) {
+	size_t bufsiz, maxbuf, n;
 	const char *p, *pe;
 	int error;
 
-	bufsiz = MAX(bufsiz, 2); /* see comment in text-mode handling below */
+	bufsiz = (mode & LSO_TEXT)? MAX(S->ibuf.bufsiz, S->ibuf.maxline) : S->ibuf.bufsiz;
+	bufsiz = MAX(bufsiz, 2); /* see comment in text-mode handling below wrt >=2 */
 
 	/*
 	 * Adjust window. We need at least 1 + "\r\n" + eoblen to make
@@ -1471,18 +1472,23 @@ static lso_error_t lso_getblock(struct luasocket *S, struct iovec *iov, size_t m
 	int error;
 
 	if (mode & LSO_TEXT) {
-		size_t bufsiz = maxbuf, n;
+		size_t fillsz = maxbuf, n;
 
 		do {
-			error = lso_fill(S, bufsiz);
+			error = lso_fill(S, fillsz);
 
-			fifo_slice(&S->ibuf.fifo, iov, 0, bufsiz);
+			fifo_slice(&S->ibuf.fifo, iov, 0, -1);
 
 			if ((size_t)-1 == (n = iov_eot(iov, minbuf, maxbuf, (S->ibuf.eof || S->ibuf.eom), &error))) {
 				goto error;
-			} else if (n > maxbuf) {
-				bufsiz = n;
-			} else if (n >= minbuf) {
+			} else if (n > iov->iov_len) {
+				if (fillsz < n)
+					error = 0;
+
+				fillsz = n;
+			} else {
+				iov->iov_len = n;
+
 				return 0;
 			}
 		} while (!error);
@@ -1680,7 +1686,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	case LSO_BODY: {
 		int eom = 0; /* it would be confusing to overload ibuf.eom */
 
-		if ((error = lso_getbody(S, &iov, &eom, S->ibuf.bufsiz, op.eob, op.eoblen, op.mode)))
+		if ((error = lso_getbody(S, &iov, &eom, op.eob, op.eoblen, op.mode)))
 			goto error;
 
 		if ((count = iov.iov_len)) {
@@ -1719,13 +1725,15 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		if ((error = lso_getblock(S, &iov, op.size, op.size, op.mode)))
 			goto error;
 
-		count = iov.iov_len;
+		if ((count = iov.iov_len)) {
+			if (op.mode & LSO_TEXT)
+				iov_trimcr(&iov, 0);
 
-		if (op.mode & LSO_TEXT)
-			iov_trimcr(&iov, 0);
-
-		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, count);
+			lua_pushlstring(L, iov.iov_base, iov.iov_len);
+			fifo_discard(&S->ibuf.fifo, count);
+		} else {
+			lua_pushnil(L);
+		}
 
 		break;
 	case LSO_LIMIT:
@@ -1738,13 +1746,15 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 		if ((error = lso_getblock(S, &iov, 1, op.size, op.mode)))
 			goto error;
 
-		count = iov.iov_len;
+		if ((count = iov.iov_len)) {
+			if (op.mode & LSO_TEXT)
+				iov_trimcr(&iov, 0);
 
-		if (op.mode & LSO_TEXT)
-			iov_trimcr(&iov, 0);
-
-		lua_pushlstring(L, iov.iov_base, iov.iov_len);
-		fifo_discard(&S->ibuf.fifo, count);
+			lua_pushlstring(L, iov.iov_base, iov.iov_len);
+			fifo_discard(&S->ibuf.fifo, count);
+		} else {
+			lua_pushnil(L);
+		}
 
 		break;
 	default:
