@@ -955,6 +955,13 @@ static void st_update(struct st_log *log, size_t len, const struct so_options *o
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+/*
+ * NOTE: We give SO_S_SHUTWR higher precedence because on some systems
+ * shutdown(SHUT_RD) will fail if EOF has already been sent by the peer. A
+ * mitigation was already committed to address this issue (see so_shutrd_),
+ * but it never made it downstream. This makes merging easier and is
+ * otherwise sensible on its own terms.
+ */
 enum so_state {
 	SO_S_INIT     = 1<<0,
 	SO_S_GETADDR  = 1<<1,
@@ -966,8 +973,8 @@ enum so_state {
 	SO_S_SETREAD  = 1<<7,
 	SO_S_SETWRITE = 1<<8,
 	SO_S_RSTLOWAT = 1<<9,
-	SO_S_SHUTRD   = 1<<10,
-	SO_S_SHUTWR   = 1<<11,
+	SO_S_SHUTWR   = 1<<10, /* see NOTE above */
+	SO_S_SHUTRD   = 1<<11,
 
 	SO_S_END,
 	SO_S_ALL = ((SO_S_END - 1) << 1) - 1
@@ -1294,6 +1301,17 @@ static int so_rstlowat_(struct socket *so) {
 } /* so_rstlowat_() */
 
 
+static int so_shutwr_(struct socket *so) {
+	if (so->fd != -1 && 0 != shutdown(so->fd, SHUT_WR))
+		return so_soerr();
+
+	so->shut.wr = 1;
+	so->st.sent.eof = 1;
+
+	return 0;
+} /* so_shutwr_() */
+
+
 static _Bool so_isconn(int fd) {
 		struct sockaddr sa;
 		socklen_t slen = sizeof sa;
@@ -1319,17 +1337,6 @@ static int so_shutrd_(struct socket *so) {
 
 	return 0;
 } /* so_shutrd_() */
-
-
-static int so_shutwr_(struct socket *so) {
-	if (so->fd != -1 && 0 != shutdown(so->fd, SHUT_WR))
-		return so_soerr();
-
-	so->shut.wr = 1;
-	so->st.sent.eof = 1;
-
-	return 0;
-} /* so_shutwr_() */
 
 
 static inline int so_state(const struct socket *so) {
@@ -1430,15 +1437,15 @@ exec:
 		so->todo &= ~state;
 
 		goto exec;
-	case SO_S_SHUTRD:
-		if ((error = so_shutrd_(so)))
+	case SO_S_SHUTWR:
+		if ((error = so_shutwr_(so)))
 			goto error;
 
 		so->done |= state;
 
 		goto exec;
-	case SO_S_SHUTWR:
-		if ((error = so_shutwr_(so)))
+	case SO_S_SHUTRD:
+		if ((error = so_shutrd_(so)))
 			goto error;
 
 		so->done |= state;
