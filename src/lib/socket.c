@@ -286,9 +286,9 @@ static void so_trace(enum so_trace event, int fd, const struct addrinfo *host, .
 
 
 static void so_initdebug(void) {
-	const char *debug = getenv("SOCKET_DEBUG")? : getenv("SO_DEBUG");
+	const char *debug;
 
-	if (debug) {
+	if ((debug = getenv("SOCKET_DEBUG")) || (debug = getenv("SO_DEBUG"))) {
 		switch (*debug) {
 		case 'Y': case 'y':
 		case 'T': case 't':
