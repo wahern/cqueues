@@ -1471,17 +1471,34 @@ error:
 } /* so_exec() */
 
 
-static struct socket *so_init(struct socket *so, const struct so_options *opts) {
+static struct socket *so_make(const struct so_options *opts, int *error) {
 	static const struct socket so_initializer = { .fd = -1, .cred = { (pid_t)-1, (uid_t)-1, (gid_t)-1, } };
+	struct socket *so;
+	size_t len;
 
-	if (!so)
-		return 0;
+	if (!(so = malloc(sizeof *so)))
+		goto syerr;
 
 	*so = so_initializer;
 	so->opts = *opts;
 
+	if (opts->sa_bind) {
+		len = sa_len((void *)opts->sa_bind);
+
+		if (!(so->opts.sa_bind = malloc(len)))
+			goto syerr;
+
+		memcpy((void *)so->opts.sa_bind, opts->sa_bind, len);
+	}
+
 	return so;
-} /* so_init() */
+syerr:
+	*error = so_syerr();
+
+	free(so);
+
+	return NULL;
+} /* so_make() */
 
 
 static int so_destroy(struct socket *so) {
@@ -1497,6 +1514,9 @@ static int so_destroy(struct socket *so) {
 
 	so->events = 0;
 
+	free((void *)so->opts.sa_bind);
+	so->opts.sa_bind = 0;
+
 	return 0;
 } /* so_destroy() */
 
@@ -1507,8 +1527,8 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	struct socket *so;
 	int error;
 
-	if (!(so = so_init(malloc(sizeof *so), opts)))
-		goto syerr;
+	if (!(so = so_make(opts, &error)))
+		goto error;
 
 	nsopts = dns_opts();
 	nsopts->closefd.arg = so->opts.fd_close.arg;
@@ -1524,8 +1544,6 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	so->todo = SO_S_GETADDR | SO_S_SOCKET | SO_S_BIND;
 
 	return so;
-syerr:
-	error = so_syerr();
 error:
 	so_close(so);
 
@@ -1540,8 +1558,8 @@ struct socket *so_dial(const struct sockaddr *sa, int type, const struct so_opti
 	struct socket *so;
 	int error;
 
-	if (!(so = so_init(malloc(sizeof *so), opts)))
-		goto syerr;
+	if (!(so = so_make(opts, &error)))
+		goto error;
 
 	if (!(host = malloc(sizeof *host)))
 		goto syerr;
@@ -1575,8 +1593,8 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct stat st;
 	int family = AF_UNSPEC, type = 0, flags, mask, need, error;
 
-	if (!(so = so_init(malloc(sizeof *so), opts)))
-		goto syerr;
+	if (!(so = so_make(opts, &error)))
+		goto error;
 
 	if (0 != fstat(fd, &st))
 		goto syerr;
