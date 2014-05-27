@@ -1,3 +1,11 @@
+liblua-cqueues (20140527-0) unstable; urgency=low
+
+  * Implement text mode semantics for block read operations.
+  * Add socket:read format for consuming multipart MIME data efficiently.
+  * Add socket.debug module with unit tests.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 27 May 2014 02:22:34 -0700
+
 liblua-cqueues (20140508-0) unstable; urgency=low
 
   * Add timeout capability to buffered I/O.
