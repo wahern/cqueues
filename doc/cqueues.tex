@@ -566,13 +566,46 @@ format & description\\\hline
 {*a} & read until EOF \\
 {*l} & read the next line, trimming the EOL marker \\
 {*L} & read the next line, keeping the EOL marker \\
-number & read `number' bytes or until EOF \\
 {*h} & read and unfold MIME compliant header \\
 {*H} & read MIME compliant header, keeping EOL markers \\
--number & read 1 to `number' bytes, immediately returning if possible \\
+{\texttt{--}$marker$} & read multipart MIME entity chunk delineated by MIME boundary $marker$ \\
+$number$ & read $number$ bytes or until EOF \\
+$-number$ & read 1 to $number$ bytes, immediately returning if possible \\
 \end{tabular}
 
-Note that for SOCK\_DGRAM sockets, each message is treated as-if EOF was reached. The slurp operation returns a single datagram, and line-buffered operations will return the remaining text in a message even without a terminating \lf. Datagrams will be truncated if the message is larger than the input buffer size.
+For SOCK\_DGRAM sockets, each message is treated as-if EOF was reached. The slurp operation returns a single datagram, and line-buffered operations will return the remaining text in a message even without a terminating \lf. Datagrams will be truncated if the message is larger than the input buffer size.
+
+The MIME entity reader allows efficient reading of large MIME-encoded bodies, such as with HTTP POST file uploads. The format will return chunks until the boundary is reached. The last chunk will
+have any trailing EOL marker removed, regardless of input mode, as this is part of the boundary token. In binary mode chunks are sized according to the current input channel buffer size, except that the last chunk will probably be short. In text mode chunks will not exceed the maximum of the current input channel buffer size or maximum line size; and in addition to EOL translation, chunks are broken along line boundaries with multiple lines aggregated into a single chunk.
+
+Both the MIME header and MIME entity reader require a proper terminating condition. In particular, \emph{EOF is not a terminating condition}. Applications must be careful to handle truncation if the stream was prematurely closed. When looping over one of these input formats, the application should read the next line of input after the loop terminates. If the next next line does not match the terminating condition, then the stream is invalid and the application should abort processing the stream.
+
+For MIME headers the next line should be non-$nil$ and should not appear to be a prefix of a header.
+
+\begin{example}{lua}
+local function isbreak(ln) -- requires *L, not *l
+	return find(ln, "\n", #ln, true) and not match(ln, "[%w%-_]+%s*:")
+end
+\end{example}
+
+For MIME entities the next line should begin with the boundary text.
+
+\begin{example}{lua}
+local function isboundary(marker, ln)
+	local p, pe = find(ln, marker, 1, true)
+
+	if p == 1 then
+		if find(ln, "^\r?\n?$", pe + 1) then
+			return "begin"
+		elseif find(ln, "^--\r?\n?$", pe + 1) then
+			return "end" 
+		end
+	end
+
+	return false
+end
+\end{example}
+
 
 \subsubsection[\fn{socket:write}]{\fn{socket:write(...)}}
 Same as Lua \fn{file:write}.
