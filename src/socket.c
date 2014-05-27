@@ -92,39 +92,41 @@ static int iov_addzu(size_t *r, size_t a, size_t b) {
  * 0 if not found. If length is >.iov_len then needs more data. Returns -1
  * on error.
  */
-static size_t iov_eoh(const struct iovec *iov, _Bool eof, int *_error) {
-	const char *p, *pe;
+#define IOV_F_EMPTYFNAME 1
+
+static size_t iov_eoh(const struct iovec *iov, _Bool eof, int flags, int *_error) {
+	const char *tp, *p, *pe;
 	size_t n;
 	int error;
 
-	p = iov->iov_base;
-	pe = p + iov->iov_len;
+	tp = iov->iov_base;
+	p = tp;
+	pe = tp + iov->iov_len;
 
-	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		if (++p < pe && *p != ' ' && *p != '\t')
-			goto fname;
-	}
-
-	if (!eof) {
-		if ((error = iov_addzu(&n, iov->iov_len, 1)))
-			goto error;
-
-		return n; /* need more */
-	}
-
-	p = pe;
-fname:
-	pe = p;
-	p = iov->iov_base;
-
-	/* should we require a field name length > 0? */
 	while (p < pe && mime_isfname(*p))
 		p++;
+
+	if (p == tp && p < pe && !(flags & IOV_F_EMPTYFNAME))
+		return 0; /* not allowing empty field names */
 
 	while (p < pe && mime_isblank(*p))
 		p++;
 
-	return (p < pe && *p == ':')? pe - (char *)iov->iov_base : 0;
+	if (p < pe && *p != ':')
+		return 0; /* not a valid field name */
+
+	while (p < pe && (p = memchr(p, '\n', pe - p))) {
+		if (++p < pe && *p != ' ' && *p != '\t')
+			return p - tp; /* found */
+	}
+
+	if (eof)
+		return 0; /* do not allow truncated headers */
+
+	if ((error = iov_addzu(&n, iov->iov_len, 1)))
+		goto error;
+
+	return n; /* need more */
 error:
 	*_error = error;
 
@@ -1378,7 +1380,7 @@ static lso_error_t lso_getheader(struct luasocket *S, struct iovec *iov) {
 
 	fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
-	if ((size_t)-1 == (eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline), &error)))
+	if ((size_t)-1 == (eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline), 0, &error)))
 		goto error;
 
 	if (!eoh || eoh > iov->iov_len) {
@@ -1386,7 +1388,7 @@ static lso_error_t lso_getheader(struct luasocket *S, struct iovec *iov) {
 
 		fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
 
-		if ((size_t)-1 == (eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline), &error)))
+		if ((size_t)-1 == (eoh = iov_eoh(iov, lso_nomore(S, S->ibuf.maxline), 0, &error)))
 			goto error;
 		else if (!eoh)
 			goto nomore;
@@ -2618,7 +2620,7 @@ static int dbg_iov_eoh(lua_State *L) {
 	size_t eoh;
 	int error;
 
-	if ((size_t)-1 == (eoh = iov_eoh(&iov, eof, &error))) {
+	if ((size_t)-1 == (eoh = iov_eoh(&iov, eof, 0, &error))) {
 		lua_pushnil(L);
 		lua_pushstring(L, strerror(error));
 		lua_pushinteger(L, error);

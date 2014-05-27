@@ -101,13 +101,29 @@ debug.units.new("iov_eoh", function()
 	local n = assert(iov_eoh(txt, false))
 	assert(n > #txt)
 
-	local txt = "Foo: bar\n \n\tbaz"
+	--
+	-- 2014-05-26: Only headers with a valid termination condition will
+	-- parse. A header which is followed by EOF, even with a trailing
+	-- newline, is not considered a valid header. Likewise for headers
+	-- which reach the maximum line length.
+	--
+	local txt = "Foo: bar\n \n\tbaz\n\n"
 	local n = assert(iov_eoh(txt, true))
-	assert(n == #txt)
+	assert(n == #txt - 1)
 
 	local txt = "Foo: bar\n\n"
 	local n = assert(iov_eoh(txt, false))
 	assert(n == #txt - 1)
+
+	-- make sure we handle end-of-headers linebreak
+	local txt = "\n"
+	local n = assert(iov_eoh(txt, false))
+	assert(n == 0)
+
+	-- make sure we stop at first non-header
+	local txt = "foo\n"
+	local n = assert(iov_eoh(txt, false))
+	assert(n == 0)
 end)
 
 
