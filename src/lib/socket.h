@@ -61,9 +61,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20140521
-#define SOCKET_V_ABI  0x20120915
-#define SOCKET_V_API  0x20140328
+#define SOCKET_V_REL  0x20140603
+#define SOCKET_V_ABI  0x20140603
+#define SOCKET_V_API  0x20140603
 
 
 const char *socket_vendor(void);
@@ -141,6 +141,7 @@ struct so_options {
 	_Bool sun_unlink;
 
 	_Bool sin_reuseaddr;
+	_Bool sin_reuseport;
 	_Bool sin_nodelay;
 	_Bool sin_nopush;
 
@@ -390,6 +391,8 @@ int so_cloexec(int, _Bool);
 
 int so_reuseaddr(int, _Bool);
 
+int so_reuseport(int, _Bool);
+
 int so_nodelay(int, _Bool);
 
 int so_nopush(int, _Bool);
@@ -400,9 +403,10 @@ int so_nosigpipe(int, _Bool);
 #define SO_F_CLOEXEC   0x01
 #define SO_F_NONBLOCK  0x02
 #define SO_F_REUSEADDR 0x04
-#define SO_F_NODELAY   0x08
-#define SO_F_NOPUSH    0x10
-#define SO_F_NOSIGPIPE 0x20
+#define SO_F_REUSEPORT 0x08
+#define SO_F_NODELAY   0x10
+#define SO_F_NOPUSH    0x20
+#define SO_F_NOSIGPIPE 0x40
 
 int so_getfl(int fd, int which); /* no failure mode */
 

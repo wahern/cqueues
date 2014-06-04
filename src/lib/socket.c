@@ -733,6 +733,17 @@ int so_reuseaddr(int fd, _Bool reuseaddr) {
 } /* so_reuseaddr() */
 
 
+int so_reuseport(int fd, _Bool reuseport) {
+#if defined SO_REUSEPORT
+	return so_setboolopt(fd, SOL_SOCKET, SO_REUSEPORT, reuseport);
+#else
+	(void)fd;
+	(void)reuseport;
+	return EOPNOTSUPP;
+#endif
+} /* so_reuseport() */
+
+
 int so_nodelay(int fd, _Bool nodelay) {
 	return so_setboolopt(fd, IPPROTO_TCP, TCP_NODELAY, nodelay);
 } /* so_nodelay() */
@@ -788,6 +799,7 @@ static const struct flops {
 	{ SO_F_CLOEXEC,   &so_cloexec,   optoffset(fd_cloexec),    },
 	{ SO_F_NONBLOCK,  &so_nonblock,  optoffset(fd_nonblock),   },
 	{ SO_F_REUSEADDR, &so_reuseaddr, optoffset(sin_reuseaddr), },
+	{ SO_F_REUSEPORT, &so_reuseport, optoffset(sin_reuseport), },
 	{ SO_F_NODELAY,   &so_nodelay,   optoffset(sin_nodelay),   },
 	{ SO_F_NOPUSH,    &so_nopush,    optoffset(sin_nopush),    },
 	{ SO_F_NOSIGPIPE, &so_nosigpipe, optoffset(fd_nosigpipe),  },
@@ -831,6 +843,11 @@ int so_getfl(int fd, int which) {
 
 	if ((which & SO_F_REUSEADDR) && so_getboolopt(fd, SOL_SOCKET, SO_REUSEADDR))
 		flags |= SO_F_REUSEADDR;
+
+#if defined SO_REUSEPORT
+	if ((which & SO_F_REUSEPORT) && so_getboolopt(fd, SOL_SOCKET, SO_REUSEPORT))
+		flags |= SO_F_REUSEPORT;
+#endif
 
 	if ((which & SO_F_NODELAY) && so_getboolopt(fd, IPPROTO_TCP, TCP_NODELAY))
 		flags |= SO_F_NODELAY;
