@@ -197,16 +197,16 @@ local _listen; _listen = socket.interpose("listen", function(self, timeout)
 	while not ok do
 		if why == EAGAIN then
 			if not timed_poll(self, deadline) then
-				return false, oops(self, "listen", ETIMEDOUT)
+				return nil, oops(self, "listen", ETIMEDOUT)
 			end
 		else
-			return false, oops(self, "listen", why)
+			return nil, oops(self, "listen", why)
 		end
 
 		ok, why = _listen(self)
 	end
 
-	return true
+	return self
 end)
 
 
@@ -253,16 +253,16 @@ local _connect; _connect = socket.interpose("connect", function(self, timeout)
 	while not ok do
 		if why == EAGAIN then
 			if not timed_poll(self, deadline) then
-				return false, oops(self, "connect", ETIMEDOUT)
+				return nil, oops(self, "connect", ETIMEDOUT)
 			end
 		else
-			return false, oops(self, "connect", why)
+			return nil, oops(self, "connect", why)
 		end
 
 		ok, why = _connect(self)
 	end
 
-	return true
+	return self
 end)
 
 
@@ -303,16 +303,16 @@ local _starttls; _starttls = socket.interpose("starttls", function(self, arg1, a
 	while not ok do
 		if why == EAGAIN then
 			if not timed_poll(self, deadline) then
-				return false, oops(self, "starttls", ETIMEDOUT)
+				return nil, oops(self, "starttls", ETIMEDOUT)
 			end
 		else
-			return false, oops(self, "starttls", why)
+			return nil, oops(self, "starttls", why)
 		end
 
 		ok, why = _starttls(self, ctx)
 	end
 
-	return true
+	return self
 end)
 
 

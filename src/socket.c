@@ -755,11 +755,11 @@ static lso_nargs_t lso_connect1(lua_State *L) {
 	so_clear(S->socket);
 
 	if (!(error = so_connect(S->socket))) {
-		lua_pushboolean(L, 1);
+		lua_pushvalue(L, 1);
 
 		return 1;
 	} else {
-		lua_pushboolean(L, 0);
+		lua_pushnil(L);
 		lua_pushinteger(L, error);
 
 		return 2;
@@ -843,11 +843,11 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 	so_clear(S->socket);
 
 	if (!(error = so_listen(S->socket))) {
-		lua_pushboolean(L, 1);
+		lua_pushvalue(L, 1);
 
 		return 1;
 	} else {
-		lua_pushboolean(L, 0);
+		lua_pushnil(L);
 		lua_pushinteger(L, error);
 
 		return 2;
@@ -863,11 +863,11 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 	so_clear(S->socket);
 
 	if (!(error = so_starttls(S->socket, (ctx)? *ctx : 0))) {
-		lua_pushboolean(L, 1);
+		lua_pushvalue(L, 1);
 
 		return 1;
 	} else {
-		lua_pushboolean(L, 0);
+		lua_pushnil(L);
 		lua_pushinteger(L, error);
 
 		return 2;
