@@ -47,20 +47,44 @@ end -- huh
 
 
 --
+-- Simple semaphore
+--
+local semaphore = {}
+
+function semaphore.new()
+	return setmetatable({
+		counter = 0,
+		condvar = assert(require"cqueues.condition".new()),
+	}, { __index = semaphore })
+end -- semaphore.new
+
+function semaphore:post()
+	self.counter = self.counter + 1
+	self.condvar:signal()
+end -- semaphore:post
+
+function semaphore:wait()
+	while self.counter == 0 do
+		self.condvar:wait()
+	end
+
+	self.counter = self.counter - 1
+end -- semaphore:wait
+
+
+--
 -- iobox - provide environment for running cqueues code
 --
 local function iobox(f)
 	return function()
 		local cqueues = require"cqueues"
+		local loop = cqueues.running()
 
-		if cqueues.running() then
-			f()
+		if loop then
+			f(loop)
 		else
-			local ok, why = cqueues.new():wrap(f):loop()
-
-			if not ok then
-				error(why, 0)
-			end
+			local loop = cqueues.new()
+			assert(loop:wrap(function() f(loop) end):loop())
 		end
 	end
 end -- iobox
@@ -313,6 +337,43 @@ debug.units.new("io.block.text", iobox(function(loop)
 	end
 
 	assert(table.concat(buff) == string.gsub(message, "\r\n", "\n"))
+end))
+
+
+--
+-- sys.reuseport - test SO_REUSEPORT
+--
+debug.units.new("sys.reuseport", iobox(function(loop)
+	local socket = require"cqueues.socket"
+	local A = assert(assert(socket.listen{ host = "127.0.0.1", port = 0, sin_reuseport = true}):listen())
+	local _, _, port = assert(A:localname())
+	local B = assert(assert(socket.listen{ host = "127.0.0.1", port = port, sin_reuseport = true}):listen())
+	local sem = semaphore.new()
+	local behavior = nil
+
+	loop:wrap(function()
+		sem:wait()
+		assert(socket.connect("127.0.0.1", port)):connect(1)
+		sem:wait()
+		assert(socket.connect("127.0.0.1", port)):connect(1)
+	end)
+
+	loop:wrap(function()
+		sem:post()
+		if B:accept(1) then
+			behavior = "bsd"
+		end
+
+		sem:post()
+		if A:accept(1) then
+			behavior = "linux"
+		end
+
+		io.stderr:write(string.format("sys.reuseport: %s\n", assert(behavior)))
+
+		A:close()
+		B:close()
+	end)
 end))
 
 
