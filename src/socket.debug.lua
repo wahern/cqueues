@@ -345,9 +345,9 @@ end))
 --
 debug.units.new("sys.reuseport", iobox(function(loop)
 	local socket = require"cqueues.socket"
-	local A = assert(assert(socket.listen{ host = "127.0.0.1", port = 0, sin_reuseport = true}):listen())
+	local A = assert(assert(socket.listen{ host = "127.0.0.1", port = 0, sin_reuseport = true }):listen())
 	local _, _, port = assert(A:localname())
-	local B = assert(assert(socket.listen{ host = "127.0.0.1", port = port, sin_reuseport = true}):listen())
+	local B = assert(assert(socket.listen{ host = "127.0.0.1", port = port, sin_reuseport = true }):listen())
 	local sem = semaphore.new()
 	local behavior = nil
 

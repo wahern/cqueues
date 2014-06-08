@@ -738,8 +738,7 @@ int so_reuseport(int fd, _Bool reuseport) {
 	return so_setboolopt(fd, SOL_SOCKET, SO_REUSEPORT, reuseport);
 #else
 	(void)fd;
-	(void)reuseport;
-	return EOPNOTSUPP;
+	return (reuseport)? EOPNOTSUPP : 0 /* already disabled */;
 #endif
 } /* so_reuseport() */
 
@@ -1019,6 +1018,8 @@ struct socket {
 	short events;
 
 	int done, todo;
+
+	int lerror;
 
 	int olowat;
 
@@ -1385,6 +1386,8 @@ exec:
 			/* NOTE: Return the last error if possible. */
 			if (error)
 				error_ = error;
+			else if (so->lerror)
+				error_ = so->lerror;
 
 			/* FALL THROUGH */
 		default:
@@ -1478,6 +1481,7 @@ retry:
 	 */
 	if (so->todo & SO_S_GETADDR) {
 		so->done = 0;
+		so->lerror = error;
 
 		goto exec;
 	}
