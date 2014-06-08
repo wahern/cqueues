@@ -1,3 +1,9 @@
+liblua-cqueues (20140607-0) unstable; urgency=low
+
+  * Add SO_REUSEPORT support.
+
+ -- William Ahern <william@25thandClement.com>  Sat, 07 Jun 2014 19:22:32 -0700
+
 liblua-cqueues (20140527-0) unstable; urgency=low
 
   * Implement text mode semantics for block read operations.
