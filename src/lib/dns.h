@@ -65,9 +65,9 @@
 
 #define DNS_VENDOR "william+cqueues@25thandClement.com"
 
-#define DNS_V_REL  0x20140503
+#define DNS_V_REL  0x20140612
 #define DNS_V_ABI  0x20121013
-#define DNS_V_API  0x20140503
+#define DNS_V_API  0x20140612
 
 
 const char *dns_vendor(void);
@@ -105,6 +105,9 @@ enum dns_errno {
 	DNS_ESECTION,
 	DNS_EUNKNOWN,
 	DNS_EADDRESS,
+	DNS_ENOQUERY,
+	DNS_ENOANSWER,
+	DNS_EFETCHED,
 	DNS_ELAST,
 }; /* dns_errno */
 

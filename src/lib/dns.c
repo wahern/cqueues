@@ -269,6 +269,12 @@ const char *dns_strerror(int error) {
 		return "Unknown DNS error";
 	case DNS_EADDRESS:
 		return "Invalid textual address form";
+	case DNS_ENOQUERY:
+		return "Bad execution state (missing query packet)";
+	case DNS_ENOANSWER:
+		return "Bad execution state (missing answer packet)";
+	case DNS_EFETCHED:
+		return "Answer already fetched";
 	default:
 		return strerror(error);
 	} /* switch() */
@@ -1622,7 +1628,6 @@ unsigned short dns_d_skip(unsigned short src, struct dns_packet *P) {
 	} /* while() */
 
 invalid:
-//assert(0);
 	return P->end;
 } /* dns_d_skip() */
 
@@ -1837,7 +1842,6 @@ int dns_rr_parse(struct dns_rr *rr, unsigned short src, struct dns_packet *P) {
 
 	return 0;
 invalid:
-//assert(0);
 	return DNS_EILLEGAL;
 } /* dns_rr_parse() */
 
@@ -6372,7 +6376,8 @@ exec:
 		if (R->sp == 0)
 			goto(R->sp, DNS_R_SWITCH);
 
-		assert(F->query);
+		if (!F->query)
+			goto noquery;
 
 		if (!(F->answer = dns_res_glue(R, F->query)))
 			goto(R->sp, DNS_R_SWITCH);
@@ -6507,7 +6512,8 @@ exec:
 		goto(R->sp, DNS_R_SWITCH);
 	case DNS_R_BIND:
 		if (R->sp > 0) {
-			assert(F->query);
+			if (!F->query)
+				goto noquery;
 
 			goto(R->sp, DNS_R_HINTS);
 		}
@@ -6713,7 +6719,8 @@ exec:
 
 		goto(R->sp, DNS_R_FINISH);
 	case DNS_R_FINISH:
-		assert(F->answer);
+		if (!F->answer)
+			goto noanswer;
 
 		if (!R->resconf->options.smart || R->sp > 0)
 			goto(R->sp, DNS_R_DONE);
@@ -6799,7 +6806,8 @@ exec:
 
 		goto(R->sp, DNS_R_DONE);
 	case DNS_R_SMART1_A:
-		assert(F[1].answer);
+		if (!F[1].answer)
+			goto noanswer;
 
 		/*
 		 * FIXME: For CNAME chains (which are typically illegal in
@@ -6823,7 +6831,8 @@ exec:
 
 		goto(R->sp, DNS_R_SMART0_A);
 	case DNS_R_DONE:
-		assert(F->answer);
+		if (!F->answer)
+			goto noanswer;
 
 		if (R->sp > 0)
 			goto(--R->sp, F[-1].state);
@@ -6849,8 +6858,18 @@ exec:
 	} /* switch () */
 
 	return 0;
+noquery:
+	error = DNS_ENOQUERY;
+
+	goto error;
+noanswer:
+	error = DNS_ENOANSWER;
+
+	goto error;
 toolong:
 	error = DNS_EILLEGAL;
+
+	/* FALL THROUGH */
 error:
 	return error;
 } /* dns_res_exec() */
@@ -6954,8 +6973,10 @@ int dns_res_submit(struct dns_resolver *R, const char *qname, enum dns_type qtyp
 int dns_res_check(struct dns_resolver *R) {
 	int error;
 
-	if ((error = dns_res_exec(R)))
-		return error;
+	if (R->stack[0].state != DNS_R_DONE) {
+		if ((error = dns_res_exec(R)))
+			return error;
+	}
 
 	return 0;
 } /* dns_res_check() */
@@ -6965,13 +6986,18 @@ struct dns_packet *dns_res_fetch(struct dns_resolver *R, int *error) {
 	struct dns_packet *answer;
 
 	if (R->stack[0].state != DNS_R_DONE) {
-		*error	= DNS_EUNKNOWN;
+		*error = DNS_EUNKNOWN;
 
 		return 0;
 	}
 
-	answer			= R->stack[0].answer;
-	R->stack[0].answer	= 0;
+	if (!(answer = R->stack[0].answer)) {
+		*error = DNS_EFETCHED;
+
+		return 0;
+	}
+
+	R->stack[0].answer = 0;
 
 	return answer;
 } /* dns_res_fetch() */
