@@ -24,15 +24,15 @@ local loader = function(loader, ...)
 		return resolver.new(config.root(init), nil, nil)
 	end
 
-	local function rrnumber(id, table, what, lvl)
+	local function toconst(id, map, what, lvl)
 		local n
 
 		if id == nil then
 			return
 		elseif type(id) == "number" then
-			n = table[id] and id
+			n = map[id] and id
 		elseif type(id) == "string" then
-			n = table[id] or table[string.upper(id)]
+			n = map[id] or map[string.upper(id)]
 		end
 
 		if not n then
@@ -40,14 +40,14 @@ local loader = function(loader, ...)
 		end
 
 		return n
-	end -- rrnumber
+	end -- toconst
 
 	resolver.interpose("query", function (self, name, type, class, timeout)
 		local deadline = timeout and (monotime() + timeout)
 		local ok, why, answer
 
-		type = rrnumber(type, record.type, "type", 2)
-		class = rrnumber(class, record.class, "class", 2)
+		type = toconst(type, record.type, "type", 2)
+		class = toconst(class, record.class, "class", 2)
 
 		ok, why = self:submit(name, type, class)
 

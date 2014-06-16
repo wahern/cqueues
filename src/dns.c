@@ -813,6 +813,11 @@ static int pkt_type(lua_State *L) {
 } /* pkt_type() */
 
 
+static int pkt_interpose(lua_State *L) {
+	return cqs_interpose(L, PACKET_CLASS);
+} /* pkt_interpose() */
+
+
 static int pkt_qid(lua_State *L) {
 	struct dns_packet *P = lua_touserdata(L, 1);
 
@@ -949,15 +954,20 @@ static const luaL_Reg pkt_metatable[] = {
 }; /* pkt_metatable[] */
 
 static const luaL_Reg pkt_globals[] = {
-	{ "new",  &pkt_new },
-	{ "type", &pkt_type },
-	{ NULL,   NULL }
+	{ "new",       &pkt_new },
+	{ "type",      &pkt_type },
+	{ "interpose", &pkt_interpose },
+	{ NULL,        NULL }
 };
 
 int luaopen__cqueues_dns_packet(lua_State *L) {
 	static const struct cqs_macro section[] = {
 		{ "QUESTION", DNS_S_QD }, { "ANSWER", DNS_S_AN },
 		{ "AUTHORITY", DNS_S_NS }, { "ADDITIONAL", DNS_S_AR },
+	};
+	static const struct cqs_macro shortsec[] = {
+		{ "QD", DNS_S_QD }, { "AN", DNS_S_AN },
+		{ "NS", DNS_S_NS }, { "AR", DNS_S_AR },
 	};
 	static const struct cqs_macro opcode[] = {
 		{ "QUERY", DNS_OP_QUERY }, { "IQUERY", DNS_OP_IQUERY },
@@ -979,6 +989,7 @@ int luaopen__cqueues_dns_packet(lua_State *L) {
 
 	lua_newtable(L);
 	cqs_setmacros(L, -1, section, countof(section), 1);
+	cqs_setmacros(L, -1, shortsec, countof(shortsec), 0);
 	lua_setfield(L, -2, "section");
 
 	lua_newtable(L);

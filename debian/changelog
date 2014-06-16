@@ -1,3 +1,10 @@
+liblua-cqueues (20140615-0) unstable; urgency=low
+
+  * Add automagic string-to-integer conversion of type, class, and section
+    parameters to packet:grep method.
+
+ -- William Ahern <william@25thandClement.com>  Sun, 15 Jun 2014 22:03:01 -0700
+
 liblua-cqueues (20140612-0) unstable; urgency=low
 
   * Don't abort on assert when caller improperly calls dns_res_check after
