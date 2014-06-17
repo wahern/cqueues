@@ -836,6 +836,30 @@ Returns an iterator over the \method{notify:get} method.
 \end{Module}
 
 
+\begin{Module}{cqueues.dns}
+
+As the internal DNS implementation has no global state, \module{cqueues.dns} is mostly a convenience wrapper around other facilities.
+
+\subsubsection[\fn{dns.version}]{\fn{dns.version()}}
+
+Returns the release, ABI, and API version numbers of the internal DNS implementation as three numbers.
+
+\subsubsection[\fn{dns.query}]{\fn{dns.query(name[, type][, class][, timeout])}}
+
+Proxies the \fn{resolvers:query} method of the internal resolver pool. If no resolver pool has been set with \fn{dns:setpool}, creates a new stub resolver pool.
+
+\subsubsection[\fn{dns.setpool}]{\fn{dns.setpool(pool)}}
+
+Sets the internal resolver pool for use by subsequent calls to \fn{dns.query} to $pool$.
+
+\subsubsection[\fn{dns.getpool}]{\fn{dns.getpool()}}
+
+Returns the internal resolver pool. This routine should never return nil, as it will automatically
+create a new resolver pool if none has been set yet.
+
+\end{Module}
+
+
 \begin{Module}{cqueues.dns.record}
 
 DNS resource record objects are implemented within \module{cqueues.dns.record}. The global tables and shared methods are documented below. The type-specific accessory methods are quite numerous. Until documented please confer with cqueues/src/dns.c. Also, the accessory method names are usually equivalent to the structure member names in cqueues/src/lib/dns.h, which in return usually reflect the member names in the relevant RFC.
@@ -1097,6 +1121,10 @@ IPv4 and IPv6 addresses can optionally contain a port component, e.g. ``[2001:50
 
 \begin{Module}{cqueues.dns.resolver}
 
+This module implements a comprehensive DNS resolution algorithm, capable of working in both stub and recursive modes, and automatically querying for missing glue records.
+
+The resolver implementation only supports one outstanding query per resolver, with a 1:1 mapping between resolvers and sockets. This is intended to promote both simplicity and security---it maximizes port number and QID entropy to mitigate spoofing. An additional module, \module{cqueues.dns.resolvers}, implements a resolver pool to assist with bulk querying.
+
 \subsubsection[\routine{resolver.type}]{\routine{resolver.type(obj)}}
 Return the string ``dns resolver'' if $obj$ is a resolver object, or $nil$ otherwise.
 
@@ -1118,9 +1146,19 @@ Returns a recursive resolver, optionally initialized to the defined config param
 
 \subsubsection[\fn{resolver:query}]{\fn{resolver:query(name[, type][, class][, timeout])}}
 
-Query for the DNS resource record with the specified type and class. `name' is the fully-qualified or prefix domain name string. `type' and `class' are numbers corresponding to the IANA assigned numeric identifier, and default to A (0x01) and IN (0x01), respectively. `timeout' is the total elapsed time for resolution, irrespective of the .attempts and .timeout option values of the  configuration.
+Query for the DNS resource record with the specified type and class. $name$ is the fully-qualified or prefix domain name string. $type$ and $class$ corresponding to the IANA-assigned numeric or string identifier for the type of answer desired, and default to A (0x01) and IN (0x01), respectively. $timeout$ is the total elapsed time for resolution, irrespective of the $.attempts$ and $.timeout$ configuration values.\footnote{The \texttt{resolv.conf} $.timeout$ controls the time to wait on each query to a nameserver, while $.attempts$ controls how many times to query each nameserver in the nameserver list. Thus in the absence of an overall timeout, the effective timeout is $.timeout$ x $.attempts$ x number of nameservers.}
 
 Returns a \module{cqueues.dns.packet} answer packet on success, or nil and a numeric error code on failure. The answer may not actually have anything in the ANSWERS section; e.g. if the RCODE is NXDOMAIN.
+
+This routine is a simple wrapper around \fn{resolver:submit} and \fn{resolver:fetch}.
+
+\subsubsection[\fn{resolver:submit}]{\fn{resolver:submit(name[, type][, class])}}
+
+Resets the query state and submits a new query. Returns true on success, or false and an error number on failure. This routine does not poll.
+
+\subsubsection[\fn{resolver:fetch}]{\fn{resolver:fetch()}}
+
+Process a previously submitted query. Returns a \module{dns.packet} object on success, or nil and an error number on failure---usually \texttt{EAGAIN}. This routine does not poll.
 
 \subsubsection[\fn{resolver:stat}]{\fn{resolver:stat()}}
 
@@ -1142,6 +1180,40 @@ field & description\\\hline
 \subsubsection[\fn{resolver:close}]{\fn{resolver:close()}}
 
 Explicitly destroy the resolver object, immediately closing all internal descriptors. This routine ensures all descriptors are properly cancelled.
+
+\end{Module}
+
+
+\begin{Module}{cqueues.dns.resolvers}
+
+A resolver pool is both a factory and container for resolver objects. When a resolver is requested it attempts to pull one from the internal queue. If none is available and the $.hiwat$ mark has not been reached, a new resolver is created, otherwise the calling coroutine waits on a conditional variable until a resolver becomes available, or the request times-out. When a resolver is placed back into the queue it is cached if the number of cached resolvers is below $.lowat$, otherwise it is closed and discarded.
+
+\subsubsection[\routine{resolvers.type}]{\routine{resolvers.type(obj)}}
+Return the string ``dns resolver pool'' if $obj$ is a resolver pool object, or $nil$ otherwise.
+
+\subsubsection[\fn{resolvers.new}]{\fn{resolvers.new([resconf][,hosts][,hints])}}
+
+Behaves similar to \fn{resolver:new}. Returns a new resolver pool object. 
+
+\subsubsection[\fn{resolvers.stub}]{\fn{resolvers.stub\{ $\ldots$ \}}}
+
+Returns a stub resolver pool, with each resolver optionally initialized to the defined config parameters, which should have a structure suitable for passing to \fn{cqueues.dns.config.new}.
+
+\subsubsection[\fn{resolvers.root}]{\fn{resolvers.root\{ $\ldots$ \}}}
+
+Returns a recursive resolver pool, with each resolver optionally initialized to the defined config parameters, which should have a structure suitable for passing to \fn{cqueues.dns.config.new}.
+
+\subsubsection[\fn{resolvers:query}]{\fn{resolvers:query(name[, type][, class][, timeout])}}
+
+Behaves similar to \fn{resolver:query}, except that $timeout$ is inclusive of the time spent waiting for a resolver to become available in the pool.
+
+\subsubsection[\fn{resolvers:get}]{\fn{resolvers:get([timeout])}}
+
+Return a resolver from the pool. If $timeout$ is expires, returns nil and ETIMEDOUT.
+
+\subsubsection[\fn{resolvers:put}]{\fn{resolvers:put(resolver)}}
+
+Returns $resolver$ back to the pool. Any waiting coroutines are woken.
 
 \end{Module}
 
