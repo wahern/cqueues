@@ -1,7 +1,7 @@
 /* ==========================================================================
  * dns.h - Recursive, Reentrant DNS Resolver.
  * --------------------------------------------------------------------------
- * Copyright (c) 2009, 2010, 2012  William Ahern
+ * Copyright (c) 2009, 2010, 2012, 2013, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
