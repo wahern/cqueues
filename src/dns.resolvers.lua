@@ -107,7 +107,7 @@ local loader = function(loader, ...)
 		return res
 	end -- tryget
 
-	function pool:get(deadline)
+	local function getby(self, deadline)
 		local res, why = tryget(self)
 
 		while not res and not why do
@@ -120,6 +120,11 @@ local loader = function(loader, ...)
 		end
 
 		return res, why
+	end -- getby
+
+
+	function pool:get(timeout)
+		return getby(self, todeadline(timeout))
 	end -- pool:get
 
 
@@ -148,7 +153,7 @@ local loader = function(loader, ...)
 
 	function pool:query(name, type, class, timeout) 
 		local deadline = todeadline(timeout or self.timeout)
-		local res, why = self:get(deadline)
+		local res, why = getby(self, deadline)
 
 		if not res then
 			return nil, why
