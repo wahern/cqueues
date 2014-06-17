@@ -2793,7 +2793,7 @@ int dns_srv_parse(struct dns_srv *srv, struct dns_rr *rr, struct dns_packet *P) 
 
 	rp	= rr->rd.p;
 
-	if (rr->rd.len < 6)
+	if (rr->rd.len < 7)
 		return DNS_EILLEGAL;
 
 	for (i = 0; i < 2; i++, rp++) {
