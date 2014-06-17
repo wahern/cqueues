@@ -1,3 +1,10 @@
+liblua-cqueues (20140616-0) unstable; urgency=low
+
+  * Add resolver pool factory.
+  * Add dns.random binding.
+
+ -- William Ahern <william@25thandClement.com>  Mon, 16 Jun 2014 18:05:27 -0700
+
 liblua-cqueues (20140615-0) unstable; urgency=low
 
   * Add automagic string-to-integer conversion of type, class, and section
