@@ -117,12 +117,14 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/cqueues/thread.lua \
 	$$(DESTDIR)$(3)/cqueues/notify.lua \
 	$$(DESTDIR)$(3)/cqueues/condition.lua \
+	$$(DESTDIR)$(3)/cqueues/dns.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/resolver.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/config.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/hosts.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/hints.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/record.lua \
-	$$(DESTDIR)$(3)/cqueues/dns/packet.lua
+	$$(DESTDIR)$(3)/cqueues/dns/packet.lua \
+	$$(DESTDIR)$(3)/cqueues/dns/resolvers.lua 
 
 .SECONDARY: liblua$(1)-cqueues-install cqueues$(1)-install
 

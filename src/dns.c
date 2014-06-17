@@ -23,6 +23,7 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include <limits.h>	/* UINT_MAX */
 #include <stddef.h>	/* offsetof */
 #include <stdlib.h>	/* free(3) */
 #include <stdio.h>	/* tmpfile(3) fclose(3) */
@@ -2216,8 +2217,37 @@ static int dnsL_version(lua_State *L) {
 	return 3;
 } /* dnsL_version() */
 
+
+static int dnsL_random(lua_State *L) {
+	lua_Number modn = luaL_optnumber(L, 1, UINT_MAX + 1.0);
+
+	if (modn >= (UINT_MAX + 1.0)) {
+		lua_pushnumber(L, dns_random());
+	} else {
+		unsigned n = (unsigned)modn;
+		unsigned r, min;
+
+		luaL_argcheck(L, n > 1, 1, lua_pushfstring(L, "[0, %d): interval is empty", (int)n));
+
+		min = -n % n;
+
+		for (;;) {
+			r = dns_random();
+
+			if (r >= min)
+				break;
+		}
+
+		lua_pushnumber(L, r % n);
+	}
+
+	return 1;
+} /* dnsL_random() */
+
+
 static const luaL_Reg dnsL_globals[] = {
 	{ "version", &dnsL_version },
+	{ "random",  &dnsL_random },
 	{ NULL,      NULL }
 };
 

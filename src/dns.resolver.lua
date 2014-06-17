@@ -8,12 +8,12 @@ local loader = function(loader, ...)
 	local ETIMEDOUT = errno.ETIMEDOUT
 	local monotime = cqueues.monotime
 
-	local new = resolver.new; resolver.new = function (resconf, hosts, hints)
+	local _new = resolver.new; resolver.new = function (resconf, hosts, hints)
 		if type(resconf) == "table" then
 			resconf = config.new(resconf)
 		end
 
-		return new(resconf, hosts, hints)
+		return _new(resconf, hosts, hints)
 	end
 
 	resolver.stub = function (init)
@@ -63,7 +63,7 @@ local loader = function(loader, ...)
 					if deadline then
 						local curtime = monotime()
 
-						if deadline < curtime then
+						if deadline <= curtime then
 							return nil, ETIMEDOUT
 						else
 							cqueues.poll(self, math.min(deadline - curtime, 1))
@@ -79,6 +79,8 @@ local loader = function(loader, ...)
 
 		return answer
 	end)
+
+	resolver.loader = loader
 
 	return resolver
 end

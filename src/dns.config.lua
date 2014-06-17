@@ -89,6 +89,8 @@ local loader = function(loader, ...)
 		}
 	end)
 
+	config.loader = loader
+
 	return config
 end
 
