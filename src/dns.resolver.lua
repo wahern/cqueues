@@ -42,12 +42,16 @@ local loader = function(loader, ...)
 		return n
 	end -- toconst
 
+	local _submit; _submit = resolver.interpose("submit", function (self, name, type, class)
+		type = toconst(type, record.type, "type", 2)
+		class = toconst(class, record.class, "class", 2)
+
+		return _submit(self, name, type, class)
+	end)
+
 	resolver.interpose("query", function (self, name, type, class, timeout)
 		local deadline = timeout and (monotime() + timeout)
 		local ok, why, answer
-
-		type = toconst(type, record.type, "type", 2)
-		class = toconst(class, record.class, "class", 2)
 
 		ok, why = self:submit(name, type, class)
 
