@@ -4896,8 +4896,11 @@ struct dns_hints *dns_hints_root(struct dns_resolv_conf *resconf, int *error_) {
 		{ AF_INET,	"198.41.0.4"		},	/* A.ROOT-SERVERS.NET. */
 		{ AF_INET6,	"2001:503:ba3e::2:30"	},	/* A.ROOT-SERVERS.NET. */
 		{ AF_INET,	"192.228.79.201"	},	/* B.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:500:84::b"	},	/* B.ROOT-SERVERS.NET. */
 		{ AF_INET,	"192.33.4.12"		},	/* C.ROOT-SERVERS.NET. */
-		{ AF_INET,	"128.8.10.90"		},	/* D.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:500:2::c"		},	/* C.ROOT-SERVERS.NET. */
+		{ AF_INET,	"199.7.91.13"		},	/* D.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:500:2d::d"	},	/* D.ROOT-SERVERS.NET. */
 		{ AF_INET,	"192.203.230.10"	},	/* E.ROOT-SERVERS.NET. */
 		{ AF_INET,	"192.5.5.241"		},	/* F.ROOT-SERVERS.NET. */
 		{ AF_INET6,	"2001:500:2f::f"	},	/* F.ROOT-SERVERS.NET. */
@@ -4905,8 +4908,15 @@ struct dns_hints *dns_hints_root(struct dns_resolv_conf *resconf, int *error_) {
 		{ AF_INET,	"128.63.2.53"		},	/* H.ROOT-SERVERS.NET. */
 		{ AF_INET6,	"2001:500:1::803f:235"	},	/* H.ROOT-SERVERS.NET. */
 		{ AF_INET,	"192.36.148.17"		},	/* I.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:7FE::53"		},	/* I.ROOT-SERVERS.NET. */
 		{ AF_INET,	"192.58.128.30"		},	/* J.ROOT-SERVERS.NET. */
 		{ AF_INET6,	"2001:503:c27::2:30"	},	/* J.ROOT-SERVERS.NET. */
+		{ AF_INET,	"193.0.14.129"		},	/* K.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:7FD::1"		},	/* K.ROOT-SERVERS.NET. */
+		{ AF_INET,	"199.7.83.42"		},	/* L.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:500:3::42"	},	/* L.ROOT-SERVERS.NET. */
+		{ AF_INET,	"202.12.27.33"		},	/* M.ROOT-SERVERS.NET. */
+		{ AF_INET6,	"2001:DC3::35"		},	/* M.ROOT-SERVERS.NET. */
 	};
 	struct dns_hints *hints		= 0;
 	struct sockaddr_storage ss;
