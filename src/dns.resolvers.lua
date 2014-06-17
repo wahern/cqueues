@@ -207,6 +207,15 @@ local loader = function(loader, ...)
 	end -- resolvers.root
 
 
+	function resolvers.type(o)
+		local mt = getmetatable(o)
+
+		if mt and mt.__index == pool then
+			return "dns resolver pool"
+		end
+	end -- resolvers.type
+
+
 	resolvers.loader = loader
 
 	return resolvers
