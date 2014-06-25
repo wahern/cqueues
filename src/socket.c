@@ -1038,12 +1038,15 @@ error:
 
 
 static int lso_checkvbuf(struct lua_State *L, int index) {
-	switch (luaL_checkoption(L, index, "line", (const char *[]){ "line", "full", "nobuf", NULL })) {
-	case 0:
+	switch (luaL_checkoption(L, index, "line", (const char *[]){ "line", "full", "nobuf", "no", NULL })) {
+	case 0: /* "line" */
 		return LSO_LINEBUF;
-	case 1:
+	case 1: /* "full" */
 		return LSO_FULLBUF;
-	case 2:
+	case 2: /* "nobuf" */
+		/* FALL THROUGH */
+	case 3: /* "no" */
+		/* FALL THROUGH */
 	default:
 		return LSO_NOBUF;
 	}
