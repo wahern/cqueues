@@ -1652,7 +1652,7 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 	if (!(iobuf).error) \
 		return 0; \
 	if (++(iobuf).numerrs > (iobuf).maxerrs) \
-		luaL_error((L), "%d errors: exceeded error limit of %d", MIN(INT_MAX, (iobuf).numerrs), MIN(INT_MAX, (iobuf).maxerrs)); \
+		luaL_error((L), "exceeded unchecked error limit (%s)", so_strerror((iobuf).error)); \
 	return (iobuf).error; \
 } while (0)
 
