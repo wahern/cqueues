@@ -432,6 +432,8 @@ field & type:default & description\\\hline
 
 .reuseaddr & boolean:true & SO\_REUSEADDDR socket option \\
 
+.reuseport & boolean:false & SO\_REUSEPORT socket option \\
+
 .nodelay & boolean:false & TCP\_NODELAY IP option \\
 
 .nopush & boolean:false & TCP\_NOPUSH, TCP\_CORK, or equivalent IP option \\
@@ -469,7 +471,10 @@ Returns two bound sockets. Type should be the system type number, e.g. \fn{socke
 	Set the default I/O line-buffering limits for all new sockets. See \fn{socket:setmaxline}.
 
 \subsubsection[\fn{socket.settimeout}]{\fn{socket.settimeout([timeout])}}
-	Set the default timeout for all new sockets. See \fn{socket:setmaxline}.
+	Set the default timeout for all new sockets. See \fn{socket:settimeout}.
+
+\subsubsection[\fn{socket.setmaxerrs}]{\fn{socket.setmaxerrs([which,][limit])}}
+	Set the default error limit for all new sockets. See \fn{socket:setmaxerrs}.
 
 \subsubsection[\fn{socket.onerror}]{\fn{socket.onerror([function])}}
 	Set the default error handler for all new sockets. See \fn{socket:onerror}.
@@ -542,6 +547,16 @@ Sets the default timeout period for I/O. If nil or none, then clears any default
 
 Sockets are instantiated without a default timeout.
 
+\subsubsection[\fn{socket:setmaxerrs}]{\fn{socket:setmaxerrs([which,] limit)}}
+
+Set the maximum number of times an error will be returned to a caller before throwing an error, instead. $which$ specifies which I/O channel limit to set---``r'' for the input channel, ``w'' for the output channel, or ``rw'' for both. $which$ defaults to ``rw''. $limit$ is an integer limit. The initial $limit$ is 100.
+
+Returns the previous channel limits in the order specified.
+
+Note that \fn{socket:clearerr} will clear the error counters as well as any errors.
+
+\paragraph{Unchecked error loops} The default error handler will throw on most errors. However, EPIPE and ETIMEDOUT are returned directly as they're common errors that normally need to be handled explicitly in correct applications. Furthermore, errors will be repeated until cleared. If errors were not repeated then unchecked transient errors could lead to difficult to detect loss of data bugs by giving the illusion of successful forward progress.\footnote{This is especially true of Lua's for-loop iterator pattern.} Code which loops and fails to check the success of I/O calls could enter an infinite loop which never yields to the controller and stalls the process. This is a fail-safe mechanism to catch such code.
+
 \subsubsection[\fn{socket:onerror}]{\fn{socket:onerror([function])}}
 Set the error handler. The error handler is passed four arguments: socket object, method name, error number, and stack level of caller. The handler is expected to either throw an error or return an error code---to be returned to the caller as part of the documented return interface.
 
@@ -555,7 +570,7 @@ Returns the saved error conditions for the input and output channels. $which$ is
 
 \subsubsection[\fn{socket:clearerr}]{\fn{socket:clearerr([which])}}
 
-Clears the error conditions for the input and output channels and returns any previous errors. $which$ is a string containing one or more of the characters `r' and `w', which clears the input and output channel errors respectively, and returns the previous error numbers (or nil) in the order specified. $which$ defaults to the string ``rw''.
+Clears the error conditions and counters for the specified I/O channels and returns any previous errors. $which$ is a string containing one or more of the characters ``r'' and ``w'', which clears the input and output channel errors respectively, and returns the previous error numbers (or nil) in the order specified. $which$ defaults to the string ``rw''.
 
 \subsubsection[\fn{socket:read}]{\fn{socket:read(...)}}
 Similar to Lua's \fn{file:read}, with additional formats.
