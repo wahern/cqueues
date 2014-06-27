@@ -26,6 +26,7 @@
 #include <stddef.h>	/* NULL offsetof size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* abs(3) strtol(3) */
+#include <limits.h>	/* INT_MAX */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) */
 
 #include <math.h>	/* NAN */
@@ -296,6 +297,8 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_INDEX    1
 #define LSO_UPVALUES 1
 
+#define LSO_MAXERRS 100
+
 #define LSO_BUFSIZ  4096
 #define LSO_MAXLINE 4096
 
@@ -331,6 +334,8 @@ struct luasocket {
 		_Bool eom;
 
 		int error;
+		size_t numerrs;
+		size_t maxerrs;
 	} ibuf;
 
 	struct {
@@ -344,6 +349,8 @@ struct luasocket {
 		size_t eol;
 
 		int error;
+		size_t numerrs;
+		size_t maxerrs;
 	} obuf;
 
 	int family;
@@ -359,8 +366,8 @@ struct luasocket {
 
 
 static struct luasocket lso_initializer = {
-	.ibuf = { .mode = LSO_RDMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ },
-	.obuf = { .mode = LSO_WRMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ },
+	.ibuf = { .mode = LSO_RDMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
+	.obuf = { .mode = LSO_WRMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
 	.type = AF_UNSPEC,
 	.type = SOCK_STREAM,
 	.onerror = LUA_NOREF,
@@ -1203,6 +1210,50 @@ static lso_nargs_t lso_settimeout2(struct lua_State *L) {
 } /* lso_settimeout2() */
 
 
+static lso_nargs_t lso_setmaxerrs_(struct lua_State *L, struct luasocket *S, int index) {
+	const char *what = "rw";
+	int nret = 0;
+
+	if (lua_type(L, index) == LUA_TSTRING) {
+		what = luaL_checkstring(L, index);
+		index++;
+	}
+
+	for (; *what; what++) {
+		switch (*what) {
+		case 'r':
+			lua_pushnumber(L, S->ibuf.maxerrs);
+			nret++;
+
+			S->ibuf.maxerrs = luaL_optunsigned(L, index, S->ibuf.maxerrs);
+
+			break;
+		case 'w':
+			lua_pushnumber(L, S->obuf.maxerrs);
+			nret++;
+
+			S->obuf.maxerrs = luaL_optunsigned(L, index, S->obuf.maxerrs);
+
+			break;
+		default:
+			return luaL_argerror(L, 1, lua_pushfstring(L, "%s: %c: only `r' or `w' accepted", what, *what));
+		}
+	}
+
+	return nret;
+} /* lso_setmaxerrs_() */
+
+
+static lso_nargs_t lso_setmaxerrs1(struct lua_State *L) {
+	return lso_setmaxerrs_(L, lso_prototype(L), 1);
+} /* lso_setmaxerrs1() */
+
+
+static lso_nargs_t lso_setmaxerrs2(struct lua_State *L) {
+	return lso_setmaxerrs_(L, lso_checkself(L, 1), 2);
+} /* lso_setmaxerrs2() */
+
+
 static lso_nargs_t lso_onerror_(struct lua_State *L, struct luasocket *S, int fidx) {
 	cqs_getref(L, S->onerror);
 
@@ -1244,14 +1295,16 @@ static lso_nargs_t lso_seterror_(struct lua_State *L, struct luasocket *S, const
 			lso_pusherror(L, S->ibuf.error);
 			nret++;
 
-			S->ibuf.error = error;
+			if (!(S->ibuf.error = error))
+				S->ibuf.numerrs = 0;
 
 			break;
 		case 'w':
 			lso_pusherror(L, S->obuf.error);
 			nret++;
 
-			S->obuf.error = error;
+			if (!(S->obuf.error = error))
+				S->obuf.numerrs = 0;
 
 			break;
 		default:
@@ -1595,6 +1648,23 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 } /* lso_checkrcvop() */
 
 
+#define LSO_CHECKERRS(L, iobuf) do { \
+	if (!(iobuf).error) \
+		return 0; \
+	if (++(iobuf).numerrs > (iobuf).maxerrs) \
+		luaL_error((L), "%d errors: exceeded error limit of %d", MIN(INT_MAX, (iobuf).numerrs), MIN(INT_MAX, (iobuf).maxerrs)); \
+	return (iobuf).error; \
+} while (0)
+
+static int lso_checkrcverrs(lua_State *L, struct luasocket *S) {
+	LSO_CHECKERRS(L, S->ibuf);
+} /* lso_checkrcverrs() */
+
+static int lso_checksnderrs(lua_State *L, struct luasocket *S) {
+	LSO_CHECKERRS(L, S->obuf);
+} /* lso_checksnderrs() */
+
+
 static lso_nargs_t lso_recv3(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	struct lso_rcvop op;
@@ -1602,7 +1672,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	size_t count;
 	int error;
 
-	if ((error = S->ibuf.error))
+	if ((error = lso_checkrcverrs(L, S)))
 		goto error;
 
 	lua_settop(L, 3);
@@ -1860,7 +1930,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	size_t tp, p, pe, end, n;
 	int mode, byline, error;
 
-	if ((error = S->obuf.error)) {
+	if ((error = lso_checksnderrs(L, S))) {
 		lua_pushnumber(L, 0);
 		lua_pushinteger(L, error);
 
@@ -1941,7 +2011,7 @@ static lso_nargs_t lso_flush(lua_State *L) {
 	int mode = lso_imode(luaL_optstring(L, 2, "n"), S->obuf.mode);
 	int error;
 
-	if ((error = S->obuf.error) || (error = lso_doflush(S, mode))) {
+	if ((error = lso_checksnderrs(L, S)) || (error = lso_doflush(S, mode))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
@@ -1989,7 +2059,7 @@ static lso_nargs_t lso_sendfd3(lua_State *L) {
 	luaL_Stream *fh;
 	int fd, error;
 
-	if ((error = S->obuf.error))
+	if ((error = lso_checksnderrs(L, S)))
 		goto error;
 
 	lua_settop(L, 3);
@@ -2026,7 +2096,7 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	struct so_options opts;
 	int fd = -1, error;
 
-	if ((error = S->ibuf.error))
+	if ((error = lso_checkrcverrs(L, S)))
 		goto error;
 
 	if ((error = fifo_grow(&S->ibuf.fifo, bufsiz)))
@@ -2080,7 +2150,7 @@ static lso_nargs_t lso_pack4(lua_State *L) {
 	unsigned count;
 	int mode, error;
 
-	if ((error = S->obuf.error))
+	if ((error = lso_checksnderrs(L, S)))
 		goto error;
 
 	lua_settop(L, 4);
@@ -2114,7 +2184,7 @@ static lso_nargs_t lso_unpack2(lua_State *L) {
 	unsigned count;
 	int error;
 
-	if ((error = S->ibuf.error))
+	if ((error = lso_checkrcverrs(L, S)))
 		goto error;
 
 	lua_settop(L, 2);
@@ -2155,7 +2225,7 @@ static lso_nargs_t lso_fill2(lua_State *L) {
 	size_t size = lso_checksize(L, 2);
 	int error;
 
-	if ((error = S->ibuf.error) || (error = lso_fill(S, size))) {
+	if ((error = lso_checkrcverrs(L, S)) || (error = lso_fill(S, size))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
@@ -2511,6 +2581,7 @@ static luaL_Reg lso_methods[] = {
 	{ "setmaxline", &lso_setmaxline3 },
 	{ "settimeout", &lso_settimeout2 },
 	{ "seterror",   &lso_seterror },
+	{ "setmaxerrs", &lso_setmaxerrs2 },
 	{ "error",      &lso_error },
 	{ "clearerr",   &lso_clearerr },
 	{ "onerror",    &lso_onerror2 },
@@ -2560,6 +2631,7 @@ static luaL_Reg lso_globals[] = {
 	{ "setbufsiz",  &lso_setbufsiz2 },
 	{ "setmaxline", &lso_setmaxline2 },
 	{ "settimeout", &lso_settimeout1 },
+	{ "setmaxerrs", &lso_setmaxerrs1 },
 	{ "onerror",    &lso_onerror1 },
 	{ 0, 0 }
 }; /* lso_globals[] */
