@@ -1,3 +1,10 @@
+liblua-cqueues (20140627-0) unstable; urgency=low
+
+  * Add maxerrs limit to catch unchecked error loops.
+  * Add :setmaxerrs method to change the limit from default of 100.
+
+ -- William Ahern <william@25thandClement.com>  Fri, 27 Jun 2014 15:08:41 -0700
+
 liblua-cqueues (20140616-0) unstable; urgency=low
 
   * Add resolver pool factory.
