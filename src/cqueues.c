@@ -782,6 +782,13 @@ static int cond_new(lua_State *L) {
 } /* cond_new() */
 
 
+static int cond__call(lua_State *L NOTUSED) {
+	lua_settop(L, 1);
+
+	return 1;
+} /* cond__call() */
+
+
 static int cond__gc(lua_State *L) {
 	struct condition *cv = cond_checkself(L, 1);
 	int empty = TAILQ_EMPTY(&cv->waiting);
@@ -876,8 +883,9 @@ static const luaL_Reg cond_methods[] = {
 
 
 static const luaL_Reg cond_metatable[] = {
-	{ "__gc", &cond__gc },
-	{ NULL,   NULL }
+	{ "__call", &cond__call },
+	{ "__gc",   &cond__gc },
+	{ NULL,     NULL }
 }; /* cond_metatable[] */
 
 
