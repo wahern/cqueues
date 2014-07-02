@@ -1,21 +1,25 @@
 local loader = function(loader, ...)
 	local cqueues = require"cqueues"
 	local condition = require"cqueues.condition"
-	local assert = cqueues.assert
+	local auxlib = require"auxlib"
+	local assert3 = auxlib.assert3
 	local unpack = assert(table.unpack or unpack)
 	local pcall = pcall
 	local error = error
 	local getmetatable = getmetatable
+	local tostring = auxlib.tostring
 
 	local promise = {}
+
+	promise.__index = promise -- keep things simple
 
 	function promise.new(...)
 		local self = setmetatable({
 			pollfd = condition.new(),
 			state = "pending",
-		}, { __index = promise })
+		}, promise)
 
-		cqueues.running:wrap(function(f, ...)
+		cqueues.running():wrap(function(f, ...)
 			self:set(pcall(f, ...))
 		end, ...)
 
@@ -29,6 +33,8 @@ local loader = function(loader, ...)
 	end -- promise.type
 
 	function promise:set(ok, ...)
+		assert3(self.state == "pending", "attempt to set value of resolved promise")
+
 		if not ok then
 			self.state = "rejected"
 			self.reason = ...
@@ -44,10 +50,11 @@ local loader = function(loader, ...)
 		end
 
 		self.pollfd:signal()
+		self.timeout = 0
 	end -- promise:set
 
 	function promise:wait(...)
-		if self.state == "pending" do
+		if self.state == "pending" then
 			self.pollfd:wait(timeout)
 		end
 
@@ -71,6 +78,17 @@ local loader = function(loader, ...)
 	function promise:status()
 		return self.state
 	end -- promise:status
+
+	-- NOTE: Only LuaJIT supports metamethod yielding.
+	function promise:__tostring()
+		return tostring(self:get())
+	end -- promise:__tostring
+
+	function promise:__call()
+		return self:get()
+	end -- promise:__call
+
+	promise.loader = loader
 
 	return promise
 end
