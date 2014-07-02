@@ -10,6 +10,8 @@ liblua-cqueues (20140702-0) unstable; urgency=low
   * Add auxlib.fileresult to convert socket API return protocol to
     Lua's file API return protocol.
 
+ -- William Ahern <william@25thandClement.com>  Wed, 02 Jul 2014 16:41:32 -0700
+
 liblua-cqueues (20140627-0) unstable; urgency=low
 
   * Add maxerrs limit to catch unchecked error loops.
