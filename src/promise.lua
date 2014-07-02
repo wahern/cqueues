@@ -1,7 +1,7 @@
 local loader = function(loader, ...)
 	local cqueues = require"cqueues"
 	local condition = require"cqueues.condition"
-	local auxlib = require"auxlib"
+	local auxlib = require"cqueues.auxlib"
 	local assert3 = auxlib.assert3
 	local unpack = assert(table.unpack or unpack)
 	local pcall = pcall
