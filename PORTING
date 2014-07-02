@@ -220,7 +220,20 @@ Linux connect(2) associations
 	    OK : NetBSD 5.1.2
 
 	Last updated 2013-03-02.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+SO_ACCEPTCONN
 
+	SO_ACCEPTCONN is unsupported on many BSDs due to an old bug which
+	(supposedly) has been intentionally carried forward.
+
+	         OK : Linux 3.2.0
+	ENOPROTOOPT : OS X 10.9.3
+	ENOPROTOOPT : OpenBSD 5.5
+	         OK : Solaris 11.1
+	         OK : FreeBSD 9.0
+	ENOPROTOOPT : NetBSD 6.1.1
+
+	Last updated 2014-07-01.
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 A P P E N D I X
