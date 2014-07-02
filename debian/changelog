@@ -1,3 +1,15 @@
+liblua-cqueues (20140702-0) unstable; urgency=low
+
+  * Pass on any additional arguments to cqueues:wrap when first resuming, so
+    user code doesn't have to create an expensive closure every time.
+  * Add promise module.
+  * Add auxlib module.
+  * Move cqueues.assert, cqueues.resume, and cqueues.wrap to auxlib.
+  * Add yieldable tostring to auxlib and use in promise __tostring metamethod.
+  * Add assert3, assert4, which calls error with a greater stack level.
+  * Add auxlib.fileresult to convert socket API return protocol to
+    Lua's file API return protocol.
+
 liblua-cqueues (20140627-0) unstable; urgency=low
 
   * Add maxerrs limit to catch unchecked error loops.
