@@ -48,7 +48,7 @@
 
 #include <poll.h>	/* POLLIN POLLOUT */
 
-#include <math.h>	/* NAN isnormal(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
+#include <math.h>	/* NAN fmax(3) isnormal(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -250,7 +250,7 @@ static inline double monotime(void) {
 
 
 static inline double abstimeout(double timeout) {
-	return (isfinite(timeout))? monotime() + timeout : NAN;
+	return (isfinite(timeout))? monotime() + fmax(timeout, 0) : NAN;
 } /* abstimeout() */
 
 
@@ -691,6 +691,67 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 
 
 /*
+ * A U X I L I A R Y  L I B R A R Y  R O U T I N E S
+ *
+ * Routines which can be used to improve integration, including extending
+ * Lua's support for implicit yielding.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if LUA_VERSION_NUM >= 502
+
+#if LUA_VERSION_NUM >= 503
+static int auxlib_tostringk(lua_State *L NOTUSED, int status NOTUSED, int ctx NOTUSED) {
+#else
+static int auxlib_tostringk(lua_State *L NOTUSED) {
+#endif
+	if (luaL_getmetafield(L, 1, "__tostring")) {
+		lua_pushfstring(L, "%s: %p", luaL_typename(L, 1), lua_topointer(L, 1));
+	} else {
+		luaL_tolstring(L, 1, NULL);
+	}
+
+	return 1;
+} /* auxlib_tostringk() */
+
+static int auxlib_tostring(lua_State *L) {
+	luaL_checkany(L, 1);
+
+	if (luaL_getmetafield(L, 1, "__tostring")) {
+		lua_insert(L, 1);
+		lua_settop(L, 2);
+		lua_callk(L, 1, 1, 0, &auxlib_tostringk);
+
+#if LUA_VERSION_NUM >= 503
+		return auxlib_tostringk(L, LUA_OK, 0);
+#else
+		return auxlib_tostringk(L);
+#endif
+	} else {
+		luaL_tolstring(L, 1, NULL);
+
+		return 1;
+	}
+} /* auxlib_tostring() */
+#endif
+
+
+static const luaL_Reg auxlib_globals[] = {
+#if LUA_VERSION_NUM >= 502
+	{ "tostring", &auxlib_tostring },
+#endif
+	{ NULL,       NULL }
+}; /* auxlib_globals[] */
+
+
+int luaopen__cqueues_auxlib(lua_State *L) {
+	luaL_newlib(L, auxlib_globals);
+
+	return 1;
+} /* luaopen__cqueues_auxlib() */
+
+
+/*
  * C O N D I T I O N  V A R I A B L E  R O U T I N E S
  *
  * FIXME: Add logic to the scheduler that prevents two coroutines from
@@ -920,6 +981,9 @@ int luaopen__cqueues_condition(lua_State *L) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define CQUEUE_CLASS "Continuation Queue"
+
+#define CQUEUE__POLL ((void *)&cqueue__poll)
+static const char cqueue__poll[] = "poll magic"; // signals multilevel yield
 
 typedef int luaref_t;
 
@@ -1689,11 +1753,19 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 	switch (status) {
 	case LUA_YIELD:
 		for (index = 1; index <= lua_gettop(T->L); index++) {
-			if (lua_isnil(T->L, index))
+			switch (lua_type(T->L, index)) {
+			case LUA_TNIL:
 				continue;
+			case LUA_TLIGHTUSERDATA:
+				/* ignore _POLL magic value */
+				if (lua_topointer(T->L, index) == CQUEUE__POLL)
+					continue;
 
-			if (LUA_OK != (status = event_add(L, Q, T, index)))
-				goto error;
+				/* FALL THROUGH */
+			default:
+				if (LUA_OK != (status = event_add(L, Q, T, index)))
+					goto error;
+			}
 		}
 
 		if (LUA_OK != (status = cqueue_update(L, Q)))
@@ -2348,14 +2420,12 @@ static const luaL_Reg cqueues_globals[] = {
 
 
 int luaopen__cqueues(lua_State *L) {
-	/*
-	 * initialize our dependencies, which we use for fast metatable
-	 * lookup.
-	 */
+	/* initialize our dependencies used for fast metatable lookup */
 	cqs_requiref(L, "_cqueues.socket", &luaopen__cqueues_socket, 0);
 	cqs_requiref(L, "_cqueues.condition", &luaopen__cqueues_condition, 0);
 	lua_pop(L, 2);
 
+	/* push functions with shared upvalues for fast metatable lookup */
 	cqs_pushnils(L, 3); /* initial upvalues */
 	cqs_newmetatable(L, CQUEUE_CLASS, cqueue_methods, cqueue_metatable, 3);
 	lua_pushvalue(L, -1); /* push self as replacement upvalue */
@@ -2371,6 +2441,12 @@ int luaopen__cqueues(lua_State *L) {
 	luaL_getmetatable(L, CQS_CONDITION);
 	luaL_setfuncs(L, cqueues_globals, 3);
 
+	/* add magic value used to accomplish multilevel yielding */
+	static const int _POLL;
+	lua_pushlightuserdata(L, CQUEUE__POLL);
+	lua_setfield(L, -2, "_POLL");
+
+	/* add our version constants */
 	lua_pushliteral(L, CQUEUES_VENDOR);
 	lua_setfield(L, -2, "VENDOR");
 

@@ -1,97 +1,75 @@
 local loader = function(loader, ...)
 	local core = require"_cqueues"
 	local errno = require"_cqueues.errno"
-	local yield = coroutine.yield
-	local resume = coroutine.resume
 	local monotime = core.monotime
 	local running = core.running
 	local strerror = errno.strerror
 
-	local _POLL = {}
+	-- lazily load auxlib to prevent circular or unused dependencies
+	local auxlib = setmetatable({}, { __index = function (t, k)
+		local v = require"cqueues.auxlib"[k]
+		rawset(t, k, v)
+		return v
+	end })
+
+	-- load deprecated APIs into shadow table to keep hidden unless used
+	local notsupp = {}
+	setmetatable(core, { __index = notsupp })
+
+	--
+	-- core.poll
+	--
+	-- Wrap the cqueues yield protocol to support polling across
+	-- multilevel resume/yield. Requires explicit or implicit use
+	-- (through monkey patching of coroutine.resume and coroutine.wrap)
+	-- of auxlib.resume or auxlib.wrap.
+	--
+	-- Also supports polling from outside of a running event loop using
+	-- a cheap hack. NOT RECOMMENDED.
+	--
+	local _POLL = core._POLL
+	local yield = coroutine.yield
+	local poller
 
 	function core.poll(...)
-		local _, immediate = running()
+		local yes, main = running()
 
-		if immediate then
-			return yield(...)
+		if yes then
+			if main then
+				return yield(...)
+			else
+				return yield(_POLL, ...)
+			end
 		else
-			return yield(_POLL, ...)
+			local poller = poller or auxlib.assert3(core.new())
+			local tuple
+
+			poller:wrap(function (...)
+				tuple = { core.poll(...) }
+			end, ...)
+
+			auxlib.assert3(poller:step())
+
+			if tuple then
+				return table.unpack(tuple)
+			end
 		end
 	end -- core.poll
 
+	--
+	-- core.sleep
+	--
+	-- Sleep primitive. 
+	--
 	function core.sleep(timeout)
 		core.poll(timeout)
 	end -- core.sleep
 
-
 	--
-	-- Provide coroutine wrappers for multilevel coroutine management to
-	-- allow I/O polling of coroutine-wrapped code. The code checks for
-	-- a special value returned by our poll routine (above), and will
-	-- propogate a yield on I/O. Everything else should behave as usual.
+	-- core:step
 	--
-	local function _resume(co, ok, arg1, ...)
-		if ok and arg1 == _POLL then
-			return core.resume(co, yield(_POLL, ...))
-		else
-			return ok, arg1, ...
-		end
-	end -- _resume
-
-	function core.resume(co, ...)
-		return _resume(co, resume(co, ...))
-	end -- core.resume
-
-	local function _wrap(co, ok, ...)
-		if ok then
-			return ...
-		else
-			error((...), 0)
-		end
-	end -- _wrap
-
-	function core.wrap(f)
-		local co = coroutine.create(f)
-
-		return function(...)
-			return _wrap(co, _resume(co, resume(co, ...))) 
-		end
-	end -- core.wrap
-
-
-	--
-	-- Many routines return only an integer error number, as errors like
-	-- EAGAIN are very common, and constantly pushing a new string on
-	-- the stack would be inefficient. Also, the failure mode for some
-	-- routines will return multiple false/nil falses which precede the
-	-- error number. This assert routine handles these cases.
-	--
-	local function findwhy(x, ...)
-		if x then
-			if type(x) == "number" then
-				return strerror(x) or x
-			else
-				return tostring(x)
-			end
-		elseif select("#", ...) > 0 then
-			return findwhy(...)
-		else
-			return
-		end
-	end
-
-	function core.assert(x, ...)
-		if x then
-			return x, ...
-		end
-
-		return error(findwhy(...), 2)
-	end -- core.assert
-
-
-	--
-	-- Wrappers for the low-level :step interface to make managing event
-	-- loops slightly easier.
+	-- Wrap the low-level :step interface to make managing event loops
+	-- slightly easier.
 	--
 	local step; step = core.interpose("step", function (self, timeout)
 		if core.running() then
@@ -103,6 +81,11 @@ local loader = function(loader, ...)
 		end
 	end) -- core:step
 
+	--
+	-- core:loop
+	--
+	-- Step until an error is encountered.
+	--
 	core.interpose("loop", function (self, timeout)
 		local ok, why
 
@@ -123,6 +106,11 @@ local loader = function(loader, ...)
 		return ok, why
 	end) -- core:loop
 
+	--
+	-- core:errors
+	--
+	-- Return iterator over core:loop.
+	--
 	core.interpose("errors", function (self, timeout)
 		if timeout then
 			local deadline = monotime() + timeout
@@ -153,6 +141,32 @@ local loader = function(loader, ...)
 		end
 	end) -- core:errors
 
+	--
+	-- core.assert
+	--
+	-- DEPRECATED. See auxlib.assert.
+	--
+	function notsupp.assert(...)
+		return auxlib.assert(...)
+	end -- notsupp.assert
+
+	--
+	-- core.resume
+	--
+	-- DEPRECATED. See auxlib.resume.
+	--
+	function notsupp.resume(...)
+		return auxlib.resume(...)
+	end -- notsupp.resume
+
+	--
+	-- core.wrap
+	--
+	-- DEPRECATED. See auxlib.wrap.
+	--
+	function notsupp.wrap(...)
+		return auxlib.wrap(...)
+	end -- notsupp.wrap
 
 	core.loader = loader
 
