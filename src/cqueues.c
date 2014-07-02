@@ -36,6 +36,8 @@
 
 #include <errno.h>	/* errno */
 
+#include <assert.h>	/* assert */
+
 #include <sys/queue.h>	/* LIST TAILQ */
 #include <sys/time.h>	/* struct timeval */
 #include <sys/select.h>	/* pselect(3) */
@@ -1646,26 +1648,33 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 	struct event *event;
 	struct stackinfo info;
 
-	/*
-	 * Preserve any previously yielded objects on another stack until we
-	 * can call cqueue_update() because when lua_resume() returns the
-	 * thread stack will only contain new objects. Pausing the GC isn't
-	 * a viable option because we don't know if or when lua_resume()
-	 * will return.
-	 */
-	otop  = lua_gettop(L);
-	ntmp = (lua_status(T->L) == LUA_YIELD)? lua_gettop(T->L) : 0;
-	luacq_xcopy(T->L, L, ntmp);
+	if (lua_status(T->L) == LUA_YIELD) {
+		/*
+		 * Preserve any previously yielded objects on another stack
+		 * until we can call cqueue_update() because when
+		 * lua_resume() returns the thread stack will only contain
+		 * new objects. Pausing the GC isn't a viable option because
+		 * we don't know if or when lua_resume() will return.
+		 */
+		otop  = lua_gettop(L);
+		ntmp = lua_gettop(T->L);
+		luacq_xcopy(T->L, L, ntmp);
 
-	nargs = 0;
+		nargs = 0;
 
-	while((event = TAILQ_FIRST(&T->events))) {
-		if (event->pending) {
-			lua_pushvalue(T->L, event->index);
-			nargs++;
+		while((event = TAILQ_FIRST(&T->events))) {
+			if (event->pending) {
+				lua_pushvalue(T->L, event->index);
+				nargs++;
+			}
+
+			event_del(Q, event);
 		}
-
-		event_del(Q, event);
+	} else {
+		otop = 0;
+		ntmp = 0;
+		nargs = lua_gettop(T->L) - 1;
+		assert(nargs >= 0);
 	}
 
 	timer_del(Q, &T->timer);
@@ -1840,15 +1849,18 @@ static int cqueue_wrap(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
 	struct lua_State *newL;
+	int top, i;
 
-	lua_settop(L, 2);
+	top = lua_gettop(L);
 
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TFUNCTION);
 
 	newL = lua_newthread(L);
-	lua_pushvalue(L, 2);
-	lua_xmove(L, newL, 1);
+	for (i = 2; i <= top; i++) {
+		lua_pushvalue(L, i);
+	}
+	lua_xmove(L, newL, top - 1);
 
 	thread_add(L, Q, &I, -1);
 
