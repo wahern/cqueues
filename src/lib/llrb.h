@@ -1,7 +1,7 @@
 /* ==========================================================================
  * llrb.h - Iterative Left-leaning Red-Black Tree.
  * --------------------------------------------------------------------------
- * Copyright (c) 2011  William Ahern <william@25thandClement.com>
+ * Copyright (c) 2011, 2013  William Ahern <william@25thandClement.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -53,7 +53,15 @@
 #define LLRB_H
 
 #define LLRB_VENDOR "william@25thandClement.com"
-#define LLRB_VERSION 0x20120315
+#define LLRB_VERSION 0x20130925
+
+#ifndef LLRB_STATIC
+#ifdef __GNUC__
+#define LLRB_STATIC __attribute__((__unused__)) static
+#else
+#define LLRB_STATIC static
+#endif
+#endif
 
 #define LLRB_HEAD(name, type) \
 struct name { struct type *rbh_root; }
@@ -78,14 +86,22 @@ struct { struct type *rbe_left, *rbe_right, *rbe_parent; _Bool rbe_color; }
 #define LLRB_ISRED(elm, field) ((elm) && LLRB_COLOR((elm), field) == LLRB_RED)
 
 #define LLRB_PROTOTYPE(name, type, field, cmp) \
-struct type *name##_LLRB_INSERT(struct name *, struct type *); \
-struct type *name##_LLRB_DELETE(struct name *, struct type *); \
-struct type *name##_LLRB_FIND(struct name *, struct type *); \
-struct type *name##_LLRB_MIN(struct type *); \
-struct type *name##_LLRB_MAX(struct type *); \
-struct type *name##_LLRB_NEXT(struct type *);
+	LLRB_PROTOTYPE_INTERNAL(name, type, field, cmp,)
+#define LLRB_PROTOTYPE_STATIC(name, type, field, cmp) \
+	LLRB_PROTOTYPE_INTERNAL(name, type, field, cmp, LLRB_STATIC)
+#define LLRB_PROTOTYPE_INTERNAL(name, type, field, cmp, attr) \
+attr struct type *name##_LLRB_INSERT(struct name *, struct type *); \
+attr struct type *name##_LLRB_DELETE(struct name *, struct type *); \
+attr struct type *name##_LLRB_FIND(struct name *, struct type *); \
+attr struct type *name##_LLRB_MIN(struct type *); \
+attr struct type *name##_LLRB_MAX(struct type *); \
+attr struct type *name##_LLRB_NEXT(struct type *);
 
 #define LLRB_GENERATE(name, type, field, cmp) \
+	LLRB_GENERATE_INTERNAL(name, type, field, cmp,)
+#define LLRB_GENERATE_STATIC(name, type, field, cmp) \
+	LLRB_GENERATE_INTERNAL(name, type, field, cmp, LLRB_STATIC)
+#define LLRB_GENERATE_INTERNAL(name, type, field, cmp, attr) \
 static inline void name##_LLRB_ROTL(struct type **pivot) { \
 	struct type *a = *pivot; \
 	struct type *b = LLRB_RIGHT(a, field); \
@@ -123,7 +139,7 @@ static inline void name##_LLRB_FIXUP(struct type **root) { \
 	if (LLRB_ISRED(LLRB_LEFT(*root, field), field) && LLRB_ISRED(LLRB_RIGHT(*root, field), field)) \
 		name##_LLRB_FLIP(*root); \
 } \
-struct type *name##_LLRB_INSERT(struct name *head, struct type *elm) { \
+attr struct type *name##_LLRB_INSERT(struct name *head, struct type *elm) { \
 	struct type **root = &LLRB_ROOT(head); \
 	struct type *parent = 0; \
 	while (*root) { \
@@ -181,7 +197,7 @@ static inline struct type *name##_DELETEMIN(struct name *head, struct type **roo
 	} \
 	return deleted; \
 } \
-struct type *name##_LLRB_DELETE(struct name *head, struct type *elm) { \
+attr struct type *name##_LLRB_DELETE(struct name *head, struct type *elm) { \
 	struct type **root = &LLRB_ROOT(head), *parent = 0, *deleted = 0; \
 	int comp; \
 	while (*root) { \
@@ -230,7 +246,7 @@ struct type *name##_LLRB_DELETE(struct name *head, struct type *elm) { \
 		LLRB_COLOR(LLRB_ROOT(head), field) = LLRB_BLACK; \
 	return deleted; \
 } \
-struct type *name##_LLRB_FIND(struct name *head, struct type *key) { \
+attr struct type *name##_LLRB_FIND(struct name *head, struct type *key) { \
 	struct type *elm = LLRB_ROOT(head); \
 	while (elm) { \
 		int comp = (cmp)(key, elm); \
@@ -243,17 +259,17 @@ struct type *name##_LLRB_FIND(struct name *head, struct type *key) { \
 	} \
 	return 0; \
 } \
-struct type *name##_LLRB_MIN(struct type *elm) { \
+attr struct type *name##_LLRB_MIN(struct type *elm) { \
 	while (elm && LLRB_LEFT(elm, field)) \
 		elm = LLRB_LEFT(elm, field); \
 	return elm; \
 } \
-struct type *name##_LLRB_MAX(struct type *elm) { \
+attr struct type *name##_LLRB_MAX(struct type *elm) { \
 	while (elm && LLRB_RIGHT(elm, field)) \
 		elm = LLRB_RIGHT(elm, field); \
 	return elm; \
 } \
-struct type *name##_LLRB_NEXT(struct type *elm) { \
+attr struct type *name##_LLRB_NEXT(struct type *elm) { \
 	if (LLRB_RIGHT(elm, field)) { \
 		return name##_LLRB_MIN(LLRB_RIGHT(elm, field)); \
 	} else if (LLRB_PARENT(elm, field)) { \

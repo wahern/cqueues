@@ -1079,14 +1079,14 @@ static inline int fileno_cmp(const struct fileno *const a, const struct fileno *
 	return a->fd - b->fd;
 } /* fileno_cmp() */
 
-LLRB_GENERATE(table, fileno, rbe, fileno_cmp)
+LLRB_GENERATE_STATIC(table, fileno, rbe, fileno_cmp)
 
 
 static inline int timer_cmp(const struct timer *const a, const struct timer *const b) {
 	return (a->timeout < b->timeout)? -1 : (a->timeout > b->timeout)? 1 : (a < b)? -1 : (a > b)? 1 : 0;
 } /* timer_cmp() */
 
-LLRB_GENERATE(timers, timer, rbe, timer_cmp)
+LLRB_GENERATE_STATIC(timers, timer, rbe, timer_cmp)
 
 
 struct stackinfo {
