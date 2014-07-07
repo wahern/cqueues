@@ -1592,7 +1592,7 @@ struct lso_rcvop {
 		struct {
 			const char *eob;
 			size_t eoblen;
-		};
+		} body;
 	};
 }; /* struct lso_rcvop */
 
@@ -1628,8 +1628,8 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 			}
 		} else if (fmt[0] == '-' && fmt[1] == '-') {
 			op.type = LSO_BODY;
-			op.eob = fmt;
-			op.eoblen = len;
+			op.body.eob = fmt;
+			op.body.eoblen = len;
 		}
 	} else {
 		if ((size = luaL_checknumber(L, index)) < 0) {
@@ -1764,7 +1764,7 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	case LSO_BODY: {
 		int eom = 0; /* it would be confusing to overload ibuf.eom */
 
-		if ((error = lso_getbody(S, &iov, &eom, op.eob, op.eoblen, op.mode)))
+		if ((error = lso_getbody(S, &iov, &eom, op.body.eob, op.body.eoblen, op.mode)))
 			goto error;
 
 		if ((count = iov.iov_len)) {
