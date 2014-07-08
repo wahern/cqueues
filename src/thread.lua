@@ -56,16 +56,16 @@ local loader = function(loader, ...)
 
 			local enter = unpack(nloaders, ...)
 
-			return loadblob(enter)(pipe, select(nloaders * 2 + 2, ...))
+			return enter(pipe, select(nloaders * 2 + 2, ...))
 		end
 
 		local function pack(i, enter, ...)
 			if i == 1 then
-				return dump(init), #include, pack(i + 1, enter, ...)
+				return init, #include, pack(i + 1, enter, ...)
 			elseif include[i - 1] then
 				return include[i - 1], dump(require(include[i - 1]).loader), pack(i + 1, enter, ...)
 			else
-				return dump(enter), ...
+				return enter, ...
 			end
 		end
 

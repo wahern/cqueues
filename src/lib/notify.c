@@ -414,7 +414,7 @@ struct notify {
 }; /* struct notify */
 
 
-LLRB_GENERATE(files, file, rbe, filecmp)
+LLRB_GENERATE_STATIC(files, file, rbe, filecmp)
 
 
 static struct file *lookup(struct notify *nfy, const char *name, size_t namelen) {

@@ -23,6 +23,7 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
@@ -37,10 +38,12 @@
 #include <dlfcn.h>
 
 #include "cqueues.h"
+#include "lib/llrb.h"
 
 
 struct cthread_arg {
 	int type;
+	int iscfunction:1;
 
 	union {
 		struct iovec string;
@@ -49,6 +52,14 @@ struct cthread_arg {
 		void *pointer;
 	} v;
 }; /* struct cthread_arg */
+
+
+struct cthread_lib {
+	Dl_info info;
+	void *ref;
+
+	LLRB_ENTRY(cthread_lib) rbe;
+}; /* struct cthread_lib */
 
 
 struct cthread {
@@ -63,6 +74,8 @@ struct cthread {
 	jmp_buf trap;
 
 	int pipe[2];
+
+	LLRB_HEAD(libs, cthread_lib) libs;
 
 	struct {
 		struct cthread_arg *arg;
@@ -96,6 +109,48 @@ static int atpanic_trap(lua_State *L NOTUSED) {
 } /* atpanic_trap() */
 
 
+static int lib_cmp(struct cthread_lib *a, struct cthread_lib *b) {
+	if ((intptr_t)a->info.dli_fbase < (intptr_t)b->info.dli_fbase)
+		return -1;
+	if ((intptr_t)a->info.dli_fbase > (intptr_t)b->info.dli_fbase)
+		return 1;
+	return 0;
+} /* lib_cmp() */
+
+LLRB_GENERATE_STATIC(libs, cthread_lib, rbe, lib_cmp)
+
+static int ct_addfunc(struct cthread *ct, lua_CFunction f) {
+	struct cthread_lib key, *ent;
+	void *ref = NULL;
+
+	if (!dladdr((void *)f, &key.info))
+		goto dlerr;
+
+	if ((ent = LLRB_FIND(libs, &ct->libs, &key)))
+		return 0;
+
+	if (!(ref = dlopen(key.info.dli_fname, RTLD_NOW|RTLD_LOCAL)))
+		goto dlerr;
+
+	if (!(ent = calloc(1, sizeof *ent)))
+		goto syerr;
+
+	ent->info = key.info;
+	ent->ref = ref;
+
+	LLRB_INSERT(libs, &ct->libs, ent);
+
+	return 0;
+dlerr:
+	return -1;
+syerr:
+	if (ref)
+		dlclose(ref);
+
+	return errno;
+} /* ct_addfunc() */
+
+
 static struct cthread *ct_checkthread(lua_State *L, int index) {
 	struct cthread **ct = luaL_checkudata(L, index, CQS_THREAD);
 
@@ -107,6 +162,7 @@ static struct cthread *ct_checkthread(lua_State *L, int index) {
 
 static void ct_release(struct cthread *ct) {
 	_Bool destroy;
+	struct cthread_lib *ent, *nxt;
 
 	pthread_mutex_lock(&ct->mutex);
 	destroy = !--ct->refs;
@@ -121,6 +177,13 @@ static void ct_release(struct cthread *ct) {
 
 	cqs_closefd(&ct->pipe[0]);
 	cqs_closefd(&ct->pipe[1]);
+
+	for (ent = LLRB_MIN(libs, &ct->libs); ent; ent = nxt) {
+		nxt = LLRB_NEXT(libs, &ct->libs, ent);
+		LLRB_REMOVE(libs, &ct->libs, ent);
+		dlclose(ent->ref);
+		free(ent);
+	}
 
 	cqs_closefd(&ct->tmp.fd[0]);
 	cqs_closefd(&ct->tmp.fd[1]);
@@ -181,7 +244,11 @@ static void *ct_enter(void *arg) {
 	luaL_openlibs(L);
 	cqs_openlibs(L);
 
-	luaL_loadbuffer(L, ct->tmp.arg[0].v.string.iov_base, ct->tmp.arg[0].v.string.iov_len, "[thread enter]");
+	if (ct->tmp.arg[0].iscfunction) {
+		lua_pushcfunction(L, (lua_CFunction)ct->tmp.arg[0].v.pointer);
+	} else {
+		luaL_loadbuffer(L, ct->tmp.arg[0].v.string.iov_base, ct->tmp.arg[0].v.string.iov_len, "[thread enter]");
+	}
 
 	ud = lua_newuserdata(L, sizeof *ud);
 	*ud = NULL;
@@ -213,6 +280,13 @@ static void *ct_enter(void *arg) {
 			break;
 		case LUA_TSTRING:
 			lua_pushlstring(L, arg->v.string.iov_base, arg->v.string.iov_len);
+			break;
+		case LUA_TFUNCTION:
+			if (arg->iscfunction) {
+				lua_pushcfunction(L, (lua_CFunction)arg->v.pointer);
+			} else {
+				luaL_loadbuffer(L, arg->v.string.iov_base, arg->v.string.iov_len, NULL);
+			}
 			break;
 		default:
 			lua_pushnil(L);
@@ -265,13 +339,75 @@ error: /* NOTE: Only critical section errors reach here. */
 } /* ct_enter() */
 
 
+static int dump_add(lua_State *L NOTUSED, const void *p, size_t sz, void *ud) {
+	luaL_addlstring(((luaL_Buffer *)ud), p, sz);
+	return 0;
+} /* dump_add() */
+
+static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg, int index) {
+	lua_Debug info;
+	lua_CFunction f;
+	int error;
+
+	lua_pushvalue(L, index);
+	lua_getinfo(L, ">u", &info);
+
+	if ((f = lua_tocfunction(L, index))) {
+		if (info.nups > 0)
+			goto uperr;
+
+		if ((error = ct_addfunc(ct, f))) {
+			if (error == -1)
+				return luaL_argerror(L, index, dlerror());
+
+			return error;
+		}
+
+		arg->v.pointer = (void *)f;
+		arg->iscfunction = 1;
+	} else {
+		lua_State *T;
+		luaL_Buffer B;
+
+		/* _ENV is always first upvalue (if any) in Lua 5.2+ */
+		if ((LUA_VERSION_NUM < 502 && info.nups > 0) || info.nups > 1)
+			goto uperr;
+
+		luaL_checkstack(L, 2, NULL);
+
+		/*
+		 * NOTE: Must put luaL_Buffer on a different stack because
+		 * luaL_Buffer has stack constraints that lua_dump is not
+		 * guaranteed to meet--we don't know if and how lua_dump
+		 * will keep intermediate objects on top of the stack.
+		 */
+		T = lua_newthread(L);
+		luaL_buffinit(T, &B);
+		lua_pushvalue(L, index);
+#if LUA_VERSION_NUM >= 503
+		lua_dump(L, &dump_add, &B, 0);
+#else
+		lua_dump(L, &dump_add, &B);
+#endif
+		luaL_pushresult(&B);
+
+		arg->v.string.iov_base = (char *)luaL_checklstring(T, -1, &arg->v.string.iov_len);
+	}
+
+	arg->type = LUA_TFUNCTION;
+
+	return 0;
+uperr:
+	return luaL_argerror(L, index, "function has upvalues");
+} /* ct_setfarg() */
+
+
 static int ct_start(lua_State *L) {
 	struct cthread **ud, *ct;
 	sigset_t mask, omask;
 	int top, error;
 
-	if (!(top = lua_gettop(L)))
-		return luaL_argerror(L, 1, "expected string, got none");
+	top = lua_gettop(L);
 
 	ud = lua_newuserdata(L, sizeof *ud);
 	*ud = NULL;
@@ -307,7 +443,7 @@ static int ct_start(lua_State *L) {
 			goto error;
 	}
 
-	luaL_checktype(L, 1, LUA_TSTRING); /* must be serialized function */
+	luaL_checktype(L, 1, LUA_TFUNCTION);
 
 	if (!(ct->tmp.arg = calloc(sizeof *ct->tmp.arg, top)))
 		goto syerr;
@@ -331,6 +467,10 @@ static int ct_start(lua_State *L) {
 			arg->v.pointer = lua_touserdata(L, index);
 			arg->type = LUA_TLIGHTUSERDATA;
 			break;
+		case LUA_TFUNCTION:
+			if ((error = ct_setfarg(L, ct, arg, index)))
+				goto error;
+			break;
 		default:
 			/* FALL THROUGH (maybe has __tostring metamethod) */ 
 		case LUA_TSTRING:
@@ -341,6 +481,10 @@ static int ct_start(lua_State *L) {
 
 		ct->tmp.argc++;
 	}
+
+	/* we may have added more stack objects above the thread object */
+	luaL_checkstack(L, 2, NULL);
+	lua_pushvalue(L, top + 1);
 
 	if (0 != cqs_socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->tmp.fd, O_NONBLOCK|O_CLOEXEC))
 		goto syerr;
@@ -371,6 +515,8 @@ static int ct_start(lua_State *L) {
 syerr:
 	error = errno;
 error:
+	lua_settop(L, 0);
+
 	lua_pushnil(L);
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
