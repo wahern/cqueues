@@ -2127,7 +2127,9 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	else
 		lua_pushliteral(L, "");
 
-	if ((error = cqs_socket_fdopen(L, fd, so_opts())))
+	if (fd == -1)
+		lua_pushnil(L);
+	else if ((error = cqs_socket_fdopen(L, fd, so_opts())))
 		goto error;
 
 	return 2;
