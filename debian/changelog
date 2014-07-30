@@ -1,3 +1,12 @@
+liblua-cqueues (20140729-0) unstable; urgency=low
+
+  * Fix compilation on NetBSD 5.1, which lacks constant NAN definition.
+  * Make promise.new function optional.
+  * Fix :recvfd to handle no descriptor in message.
+  * Document promise module.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 29 Jul 2014 21:08:15 -0700
+
 liblua-cqueues (20140707-0) unstable; urgency=low
 
   * Add ability to pass functions as arguments to thread start routine.
