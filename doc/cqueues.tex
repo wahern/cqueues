@@ -29,6 +29,9 @@
 \newcommand*{\errno}[1]{\texttt{#1}\xspace}
 \newcommand*{\crlf}[0]{$\backslash$r$\backslash$n\xspace}
 \newcommand*{\lf}[0]{$\backslash$n\xspace}
+\newcommand*{\true}[0]{\texttt{true}\xspace}
+\newcommand*{\false}[0]{\texttt{false}\xspace}
+\newcommand*{\nil}[0]{\texttt{nil}\xspace}
 
 %
 % ENVIRONMENTS
@@ -1265,6 +1268,45 @@ You can also directly yield a condition variable, along with other condition var
 \subsubsection[\fn{condition:signal}]{\fn{condition:signal([n])}}
 
 Signal a condition, wakening one or more waiting threads. If specified, a maximum of `n' threads are woken, otherwise all threads are woken.
+
+\end{Module}
+
+
+\begin{Module}{cqueues.promise}
+
+This module implements the promise/future pattern. It most closely resembles the C++11 std::promise and std::future APIs rather than the JavaScript Promise API. JavaScript lacks coroutines, so JavaScript Promises are overloaded with complex functionality intended to mitigate the problems with lacking such a primitive. The typical usage of promises/futures with C++11's threading model mirrors how they would be typically used in \cqueues' thread--like model.
+
+The promise object uses a condition variable to wakeup any coroutines waiting inside \fn{promise:wait} or \fn{promise:get}.
+
+\subsubsection[\fn{promise.type}]{\fn{promise.type(obj)}}
+
+Returns the string ``promise'' if $obj$ is a promise, or $nil$ otherwise.
+
+\subsubsection[\fn{promise.new}]{\fn{promise.new([$f$[, $\ldots$]])}}
+
+Returns a new promise object. $f$ is an optional function to run asynchronously, to which any subsequent arguments are passed. $f$ is called using \fn{pcall}, and the return values of \fn{pcall} are passed directly to \fn{promise:set}.
+
+\subsubsection[\fn{promise:status}]{\fn{promise:status()}}
+
+Returns ``pending'' if the promise is yet unresolved, ``fulfilled'' if the promise has been resolved (\fn{promise:get} will return the values), or ``rejected'' if the promise failed (\fn{promise:get} will throw an error).
+
+\subsubsection[\fn{promise:set}]{\fn{promise:set($ok$[, $\ldots$])}}
+
+Resolves the state of the promise object. If $ok$ is \true then any subsequent arguments will be returned to \fn{promise:get} callers. If $ok$ is \false then an error will be thrown to \fn{promise:get} callers, with the error value taken from the first subsequent argument, if any.
+
+\fn{promise:set} can only be called once. Subsequent invocations will throw an error.
+
+\subsubsection[\fn{promise:get}]{\fn{promise:get([$timeout$])}}
+
+Wait for resolution of the promise object (if unresolved) and either return the resolved values directly or, if the promise was ``rejected'', throw an error. If $timeout$ is specified, returns nothing if the promise is not resolved within the timeout.
+
+\subsubsection[\fn{promise:wait}]{\fn{promise:wait([$timeout$])}}
+
+Wait for resolution of the promise object or until $timeout$ expires. Returns promise object if the status is no longer pending (i.e. ``fulfilled'' or ``rejected''), otherwise \nil.
+
+\subsubsection[\fn{promise:pollfd}]{\fn{promise:pollfd()}}
+
+Returns a condition variable suitable for polling which is used to signal resolution of the promise to any waiting threads.\footnote{To improve performance of the scheduler the pollfd member is itself the condition variable, but it can be called as a function because condition variables support the \_\_call metamethod.}
 
 \end{Module}
 
