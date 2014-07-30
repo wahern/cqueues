@@ -13,15 +13,17 @@ local loader = function(loader, ...)
 
 	promise.__index = promise -- keep things simple
 
-	function promise.new(...)
+	function promise.new(f, ...)
 		local self = setmetatable({
 			pollfd = condition.new(),
 			state = "pending",
 		}, promise)
 
-		cqueues.running():wrap(function(f, ...)
-			self:set(pcall(f, ...))
-		end, ...)
+		if f then
+			cqueues.running():wrap(function(f, ...)
+				self:set(pcall(f, ...))
+			end, f, ...)
+		end
 
 		return self
 	end -- promise.new
