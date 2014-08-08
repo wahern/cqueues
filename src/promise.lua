@@ -55,12 +55,12 @@ local loader = function(loader, ...)
 		self.timeout = 0
 	end -- promise:set
 
-	function promise:wait(...)
+	function promise:wait(timeout)
 		if self.state == "pending" then
 			self.pollfd:wait(timeout)
 		end
 
-		return (self.state == "pending" and self) or nil
+		return (self.state ~= "pending" and self) or nil
 	end -- promise:wait
 
 	function promise:get(timeout)
