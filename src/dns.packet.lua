@@ -21,6 +21,15 @@ local loader = function(loader, ...)
 	end -- toconst
 
 
+	local _push; _push = packet.interpose("push", function (self, section, name, type, class, ttl, rdata)
+		section = toconst(section, packet.section, "section", 2)
+		type = toconst(type, record.type, "type", 2)
+		class = toconst(class, record.class, "class", 2)
+
+		return _push(self, section, name, type, class, ttl, rdata)
+	end) -- packet:push
+
+
 	--
 	-- TODO: Don't restrict ourselves to the C iteration interface,
 	-- which is limited by fixed-sized fields. For example, you cannot

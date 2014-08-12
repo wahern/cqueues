@@ -1,7 +1,7 @@
 /* ==========================================================================
  * dns.c - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012  William Ahern
+ * Copyright (c) 2012, 2014  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -27,7 +27,7 @@
 #include <stddef.h>	/* offsetof */
 #include <stdlib.h>	/* free(3) */
 #include <stdio.h>	/* tmpfile(3) fclose(3) */
-#include <string.h>	/* memset(3) strerror(3) */
+#include <string.h>	/* memset(3) strerror(3) strcmp(3) */
 
 #include <errno.h>
 
@@ -788,16 +788,43 @@ int luaopen__cqueues_dns_record(lua_State *L) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+static void pkt_reload(struct dns_packet *P, const void *data, size_t size) {
+	if (P->size < size) {
+		memcpy(P->data, data, P->size);
+		P->end = P->size;
+		dns_header(P)->tc = 1;
+	} else {
+		memcpy(P->data, data, size);
+		P->end = size;
+	}
+
+	dns_p_study(P);
+
+	memset(P->dict, 0, sizeof P->dict);
+	dns_p_dictadd(P, 12); /* add query name to dictionary */
+} /* pkt_reload() */
+
+
 static int pkt_new(lua_State *L) {
 	struct dns_packet *P;
-	size_t prepbufsiz, size;
+	const char *data = NULL;
+	size_t prepbufsiz, datasiz, size;
 
-	prepbufsiz = luaL_optunsigned(L, 1, DNS_P_QBUFSIZ);
+	if (lua_isnoneornil(L, 1) || lua_isnumber(L, 1)) {
+		prepbufsiz = luaL_optunsigned(L, 1, DNS_P_QBUFSIZ);
+	} else {
+		data = luaL_checklstring(L, 1, &datasiz);
+		prepbufsiz = luaL_optunsigned(L, 2, datasiz);
+	}
+
 	size = dns_p_calcsize(prepbufsiz);
 	P = memset(lua_newuserdata(L, size), '\0', size);
 	luaL_setmetatable(L, PACKET_CLASS);
 
 	dns_p_init(P, size);
+
+	if (data)
+		pkt_reload(P, data, datasiz);
 
 	return 1;
 } /* pkt_new() */
@@ -828,13 +855,25 @@ static int pkt_qid(lua_State *L) {
 } /* pkt_qid() */
 
 
+static int pkt_setqid(lua_State *L) {
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
+	int qid = luaL_checkint(L, 2);
+
+	dns_header(P)->qid = htons(qid);
+
+	lua_settop(L, 1);
+
+	return 1;
+} /* pkt_setqid() */
+
+
 static int pkt_flags(lua_State *L) {
 	struct dns_packet *P = lua_touserdata(L, 1);
 	struct dns_header *hdr = dns_header(P);
 
 	lua_newtable(L);
 
-	lua_pushinteger(L, hdr->qr);
+	lua_pushboolean(L, hdr->qr);
 	lua_setfield(L, -2, "qr");
 
 	lua_pushinteger(L, hdr->opcode);
@@ -860,6 +899,83 @@ static int pkt_flags(lua_State *L) {
 
 	return 1;
 } /* pkt_flags() */
+
+
+#define pkt_isflag(a, b) (0 == strcmp((a), (b)))
+
+static _Bool pkt_tobool(lua_State *L, int index) {
+	if (lua_isnumber(L, index)) {
+		return lua_tointeger(L, index);
+	} else {
+		return lua_toboolean(L, index);
+	}
+} /* pkt_tobool() */
+
+static int pkt_setflags(lua_State *L) {
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
+	struct dns_header *hdr = dns_header(P);
+
+	if (lua_isnumber(L, 2)) {
+		int flags = luaL_checkint(L, 2);
+
+		hdr->qr = 0x01 & (flags >> 15);
+		hdr->opcode = 0x0f & (flags >> 11);
+		hdr->aa = 0x01 & (flags >> 10);
+		hdr->tc = 0x01 & (flags >> 9);
+		hdr->rd = 0x01 & (flags >> 8);
+		hdr->ra = 0x01 & (flags >> 7);
+		hdr->unused = 0x07 & (flags >> 4);
+		hdr->rcode = 0x0f & (flags >> 0);
+	} else {
+		luaL_checktype(L, 2, LUA_TTABLE);
+
+		for (lua_pushnil(L); lua_next(L, 2); lua_pop(L, 1)) {
+			const char *flag = luaL_checkstring(L, -2);
+
+			if (pkt_isflag(flag, "qr")) {
+				hdr->qr = pkt_tobool(L, -1);
+			} else if (pkt_isflag(flag, "opcode")) {
+				hdr->opcode = luaL_checkint(L, -1);
+			} else if (pkt_isflag(flag, "aa")) {
+				hdr->aa = pkt_tobool(L, -1);
+			} else if (pkt_isflag(flag, "tc")) {
+				hdr->tc = pkt_tobool(L, -1);
+			} else if (pkt_isflag(flag, "rd")) {
+				hdr->rd = pkt_tobool(L, -1);
+			} else if (pkt_isflag(flag, "ra")) {
+				hdr->ra = pkt_tobool(L, -1);
+			} else if (pkt_isflag(flag, "z")) {
+				hdr->unused = luaL_checkint(L, -1);
+			} else if (pkt_isflag(flag, "rcode")) {
+				hdr->rcode = luaL_checkint(L, -1);
+			}
+		}
+	}
+
+	lua_settop(L, 1);
+
+	return 1;
+} /* pkt_setflags() */
+
+
+static int pkt_push(lua_State *L) {
+	struct dns_packet *P = lua_touserdata(L, 1);
+	int section = luaL_checkint(L, 2);
+	size_t namelen;
+	const char *name = luaL_checklstring(L, 3, &namelen);
+	int type = luaL_optint(L, 4, DNS_T_A);
+	int class = luaL_optint(L, 5, DNS_C_IN);
+	int error;
+
+	luaL_argcheck(L, section == DNS_S_QUESTION, 2, "pushing RDATA not yet supported");
+
+	if ((error = dns_p_push(P, section, name, namelen, type, class, 0, NULL)))
+		return lua_pushnil(L), lua_pushinteger(L, error), 2;
+
+	lua_settop(L, 1);
+
+	return 1;
+} /* pkt_push() */
 
 
 static int pkt_count(lua_State *L) {
@@ -914,6 +1030,29 @@ static int pkt_grep(lua_State *L) {
 } /* pkt_grep() */
 
 
+static int pkt_load(lua_State *L) {
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
+	size_t size;
+	const char *data = luaL_checklstring(L, 2, &size);
+
+	pkt_reload(P, data, size);
+
+	lua_settop(L, 1);
+
+	return 1;
+} /* pkt_load() */
+
+
+/* like Lua string.dump, which has opposite meaning from dns.c usage */
+static int pkt_dump(lua_State *L) {
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
+
+	lua_pushlstring(L, (char *)P->data, P->end);
+
+	return 1;
+} /* pkt_dump() */
+
+
 /* FIXME: Potential memory leak on Lua panic. */
 static int pkt__tostring(lua_State *L) {
 	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
@@ -942,11 +1081,16 @@ static int pkt__tostring(lua_State *L) {
 
 
 static const luaL_Reg pkt_methods[] = {
-	{ "qid",    &pkt_qid },
-	{ "flags",  &pkt_flags },
-	{ "count",  &pkt_count },
-	{ "grep",   &pkt_grep },
-	{ NULL,     NULL },
+	{ "qid",      &pkt_qid },
+	{ "setqid",   &pkt_setqid },
+	{ "flags",    &pkt_flags },
+	{ "setflags", &pkt_setflags },
+	{ "push",     &pkt_push },
+	{ "count",    &pkt_count },
+	{ "grep",     &pkt_grep },
+	{ "load",     &pkt_load },
+	{ "dump",     &pkt_dump },
+	{ NULL,       NULL },
 }; /* pkt_methods[] */
 
 static const luaL_Reg pkt_metatable[] = {
@@ -983,6 +1127,9 @@ int luaopen__cqueues_dns_packet(lua_State *L) {
 		{ "NXRRSET", DNS_RC_NXRRSET }, { "NOTAUTH", DNS_RC_NOTAUTH },
 		{ "NOTZONE", DNS_RC_NOTZONE },
 	};
+	static const struct cqs_macro other[] = {
+		{ "QBUFSIZ", DNS_P_QBUFSIZ },
+	};
 
 	dnsL_loadall(L);
 
@@ -1000,6 +1147,8 @@ int luaopen__cqueues_dns_packet(lua_State *L) {
 	lua_newtable(L);
 	cqs_setmacros(L, -1, rcode, countof(rcode), 1);
 	lua_setfield(L, -2, "rcode");
+
+	cqs_setmacros(L, -1, other, countof(other), 0);
 
 	return 1;
 } /* luaopen__cqueues_dns_packet() */
