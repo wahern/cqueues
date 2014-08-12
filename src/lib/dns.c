@@ -998,6 +998,30 @@ struct dns_packet *dns_p_make(size_t len, int *error) {
 } /* dns_p_make() */
 
 
+static void dns_p_free(struct dns_packet *P) {
+	free(P);
+} /* dns_p_free() */
+
+
+/* convience routine to free any existing packet before storing new packet */
+static struct dns_packet *dns_p_setptr(struct dns_packet **dst, struct dns_packet *src) {
+	dns_p_free(*dst);
+
+	*dst = src;
+
+	return src;
+} /* dns_p_setptr() */
+
+
+static struct dns_packet *dns_p_movptr(struct dns_packet **dst, struct dns_packet **src) {
+	dns_p_setptr(dst, *src);
+
+	*src = NULL;
+
+	return *dst;
+} /* dns_p_movptr() */
+
+
 int dns_p_grow(struct dns_packet **P) {
 	struct dns_packet *tmp;
 	size_t size;
@@ -1084,7 +1108,7 @@ merge:
 
 	return M;
 error:
-	free(M); M = 0;
+	dns_p_setptr(&M, NULL);
 
 	if (error == DNS_ENOBUFS && bufsiz < 65535) {
 		bufsiz = MIN(65535, bufsiz * 2);
@@ -3685,7 +3709,7 @@ toolong:
 error:
 	*error_	= error;
 
-	free(A);
+	dns_p_free(A);
 
 	return 0;
 } /* dns_hosts_query() */
@@ -5559,7 +5583,7 @@ void dns_so_close(struct dns_socket *so) {
 
 
 void dns_so_reset(struct dns_socket *so) {
-	free(so->answer); so->answer = NULL;
+	dns_p_setptr(&so->answer, NULL);
 
 	memset(&so->state, '\0', sizeof *so - offsetof(struct dns_socket, state));
 } /* dns_so_reset() */
@@ -6025,6 +6049,10 @@ struct dns_resolver {
 
 	struct dns_rr_i smart;
 
+	struct dns_packet *nodata; /* answer if nothing better */
+
+	unsigned sp;
+
 	struct dns_res_frame {
 		enum dns_res_state state;
 
@@ -6038,8 +6066,6 @@ struct dns_resolver {
 		struct dns_rr_i hints_i, hints_j;
 		struct dns_rr hints_ns, ans_cname;
 	} stack[DNS_R_MAXDEPTH];
-
-	unsigned sp;
 }; /* struct dns_resolver */
 
 
@@ -6141,9 +6167,9 @@ epilog:
 
 
 static void dns_res_reset_frame(struct dns_resolver *R, struct dns_res_frame *frame) {
-	free(frame->query); frame->query = NULL;
-	free(frame->answer); frame->answer = NULL;
-	free(frame->hints); frame->hints = NULL;
+	dns_p_setptr(&frame->query, NULL);
+	dns_p_setptr(&frame->answer, NULL);
+	dns_p_setptr(&frame->hints, NULL);
 
 	memset(frame, '\0', sizeof *frame);
 } /* dns_res_reset_frame() */
@@ -6153,6 +6179,8 @@ void dns_res_reset(struct dns_resolver *R) {
 	unsigned i;
 
 	dns_so_reset(&R->so);
+
+	dns_p_setptr(&R->nodata, NULL);
 
 	for (i = 0; i < lengthof(R->stack); i++)
 		dns_res_reset_frame(R, &R->stack[i]);
@@ -6226,7 +6254,7 @@ retry:
 
 				if (copy && (error = dns_rr_copy(P[2], &rr[i], P[i]))) {
 					if (error == DNS_ENOBUFS && bufsiz < 65535) {
-						free(P[2]); P[2] = 0;
+						dns_p_setptr(&P[2], NULL);
 
 						bufsiz	= MAX(65535, bufsiz * 2);
 
@@ -6243,7 +6271,7 @@ retry:
 error:
 	*error_	= error;
 
-	free(P[2]);
+	dns_p_free(P[2]);
 
 	return 0;
 } /* dns_res_merge() */
@@ -6320,7 +6348,7 @@ static struct dns_packet *dns_res_mkquery(struct dns_resolver *R, const char *qn
 syerr:
 	error	= dns_syerr();
 error:
-	free(Q);
+	dns_p_free(Q);
 
 	*error_	= error;
 
@@ -6425,18 +6453,42 @@ exec:
 			}
 		}
 
-		goto(R->sp, DNS_R_SERVFAIL);	/* FIXME: Right behavior? */
+		/*
+		 * FIXME: Examine more closely whether our logic is correct
+		 * and DNS_R_SERVFAIL is the correct default response.
+		 *
+		 * Case 1: We got here because we never got an answer on the
+		 *   wire. All queries timed-out and we reached maximum
+		 *   attempts count. See DNS_R_FOREACH_NS. In that case
+		 *   DNS_R_SERVFAIL is the correct state, unless we want to
+		 *   return DNS_ETIMEDOUT.
+		 *
+		 * Case 2: We were a stub resolver and got an unsatisfactory
+		 *   answer (empty ANSWER section) which caused us to jump
+		 *   back to DNS_R_SEARCH and ultimately to DNS_R_SWITCH. We
+		 *   return the answer returned from the wire, which we
+		 *   stashed in R->nodata.
+		 *
+		 * Case 3: We reached maximum attempts count as in case #1,
+		 *   but never got an authoritative response which caused us
+		 *   to short-circuit. See end of DNS_R_QUERY_A case. We
+		 *   should probably prepare R->nodata as in case #2.
+		 */
+		if (R->sp == 0 && R->nodata) { /* XXX: can we just return nodata regardless? */
+			dns_p_movptr(&F->answer, &R->nodata);
+			goto(R->sp, DNS_R_FINISH);
+		}
+
+		goto(R->sp, DNS_R_SERVFAIL);
 	case DNS_R_FILE:
 		if (R->sp > 0) {
-			free(F->answer);
-
-			if (!(F->answer = dns_hosts_query(R->hosts, F->query, &error)))
+			if (!dns_p_setptr(&F->answer, dns_hosts_query(R->hosts, F->query, &error)))
 				goto error;
 
 			if (dns_p_count(F->answer, DNS_S_AN) > 0)
 				goto(R->sp, DNS_R_FINISH);
 
-			free(F->answer); F->answer = 0;
+			dns_p_setptr(&F->answer, NULL);
 		} else {
 			R->search	= 0;
 
@@ -6462,15 +6514,13 @@ exec:
 				if ((error = dns_p_push(query, DNS_S_QD, host, len, R->qtype, R->qclass, 0, 0)))
 					goto error;
 
-				free(F->answer);
-
-				if (!(F->answer = dns_hosts_query(R->hosts, query, &error)))
+				if (!dns_p_setptr(&F->answer, dns_hosts_query(R->hosts, query, &error)))
 					goto error;
 
 				if (dns_p_count(F->answer, DNS_S_AN) > 0)
 					goto(R->sp, DNS_R_FINISH);
 
-				free(F->answer); F->answer = 0;
+				dns_p_setptr(&F->answer, NULL);
 			}
 		}
 
@@ -6481,13 +6531,11 @@ exec:
 		if (!F->query && !(F->query = dns_res_mkquery(R, R->qname, R->qtype, R->qclass, &error)))
 			goto error;
 
-		free(F->answer);
-
-		if ((F->answer = R->cache->query(F->query, R->cache, &error))) {
+		if (dns_p_setptr(&F->answer, R->cache->query(F->query, R->cache, &error))) {
 			if (dns_p_count(F->answer, DNS_S_AN) > 0)
 				goto(R->sp, DNS_R_FINISH);
 
-			free(F->answer); F->answer = 0;
+			dns_p_setptr(&F->answer, NULL);
 
 			goto(R->sp, DNS_R_SWITCH);
 		} else if (error)
@@ -6507,13 +6555,11 @@ exec:
 	case DNS_R_FETCH:
 		error = 0;
 
-		free(F->answer);
-
-		if ((F->answer = R->cache->fetch(R->cache, &error))) {
+		if (dns_p_setptr(&F->answer, R->cache->fetch(R->cache, &error))) {
 			if (dns_p_count(F->answer, DNS_S_AN) > 0)
 				goto(R->sp, DNS_R_FINISH);
 
-			free(F->answer); F->answer = 0;
+			dns_p_setptr(&F->answer, NULL);
 
 			goto(R->sp, DNS_R_SWITCH);
 		} else if (error)
@@ -6532,6 +6578,10 @@ exec:
 
 		F->state++;
 	case DNS_R_SEARCH:
+		/*
+		 * XXX: We probably should only apply the domain search
+		 * algorithm if R->sp == 0.
+		 */
 		if (!(len = dns_resconf_search(host, sizeof host, R->qname, R->qlen, R->resconf, &R->search)))
 			goto(R->sp, DNS_R_SWITCH);
 
@@ -6540,16 +6590,14 @@ exec:
 
 		dns_header(P)->rd	= !R->resconf->options.recurse;
 
-		free(F->query); F->query = P;
+		dns_p_setptr(&F->query, P);
 
 		if ((error = dns_p_push(F->query, DNS_S_QD, host, len, R->qtype, R->qclass, 0, 0)))
 			goto error;
 
 		F->state++;
 	case DNS_R_HINTS:
-		free(F->hints);
-
-		if (!(F->hints = dns_hints_query(R->hints, F->query, &error)))
+		if (!dns_p_setptr(&F->hints, dns_hints_query(R->hints, F->query, &error)))
 			goto error;
 
 		F->state++;
@@ -6659,9 +6707,7 @@ exec:
 		if ((error = dns_so_check(&R->so)))
 			goto error;
 
-		free(F->answer);
-
-		if (!(F->answer = dns_so_fetch(&R->so, &error)))
+		if (!dns_p_setptr(&F->answer, dns_so_fetch(&R->so, &error)))
 			goto error;
 
 		if (DNS_DEBUG) {
@@ -6686,14 +6732,21 @@ exec:
 			goto(R->sp, DNS_R_CNAME0_A);
 		}
 
-		if (!R->resconf->options.recurse)
+		/*
+		 * XXX: The condition here should probably check whether
+		 * R->sp == 0, because DNS_R_SEARCH runs regardless of
+		 * options.recurse. See DNS_R_BIND.
+		 */
+		if (!R->resconf->options.recurse) {
+			/* Make first answer our tentative answer */
+			if (!R->nodata)
+				dns_p_movptr(&R->nodata, &F->answer);
+
 			goto(R->sp, DNS_R_SEARCH);
+		}
 
 		dns_rr_foreach(&rr, F->answer, .section = DNS_S_NS, .type = DNS_T_NS) {
-			free(F->hints);
-
-			F->hints	= F->answer;
-			F->answer	= 0;
+			dns_p_movptr(&F->hints, &F->answer);
 
 			goto(R->sp, DNS_R_ITERATE);
 		}
@@ -6701,6 +6754,8 @@ exec:
 		/* XXX: Should this go further up? */
 		if (dns_header(F->answer)->aa)
 			goto(R->sp, DNS_R_FINISH);
+
+		/* XXX: Should we copy F->answer to R->nodata? */
 
 		goto(R->sp, DNS_R_FOREACH_A);
 	case DNS_R_CNAME0_A:
@@ -6725,7 +6780,7 @@ exec:
 		if (!(P = dns_res_merge(F->answer, F[1].answer, &error)))
 			goto error;
 
-		free(F->answer); F->answer = P;
+		dns_p_setptr(&F->answer, P);
 
 		goto(R->sp, DNS_R_FINISH);
 	case DNS_R_FINISH:
@@ -6849,9 +6904,7 @@ exec:
 
 		break;
 	case DNS_R_SERVFAIL:
-		free(F->answer);
-
-		if (!(F->answer = dns_p_make(DNS_P_QBUFSIZ, &error)))
+		if (!dns_p_setptr(&F->answer, dns_p_make(DNS_P_QBUFSIZ, &error)))
 			goto error;
 
 		dns_header(F->answer)->qr	= 1;
@@ -7122,9 +7175,9 @@ void dns_ai_close(struct dns_addrinfo *ai) {
 	dns_res_close(ai->res);
 
 	if (ai->answer != ai->glue)
-		free(ai->glue);
+		dns_p_free(ai->glue);
 
-	free(ai->answer);
+	dns_p_free(ai->answer);
 	free(ai);
 } /* dns_ai_close() */
 
@@ -7344,13 +7397,13 @@ exec:
 
 		glue = dns_p_merge(ai->glue, DNS_S_ALL, ans, DNS_S_ALL, &error);
 
-		free(ans);
+		dns_p_free(ans);
 
 		if (!glue)
 			return error;
 
 		if (ai->glue != ai->answer)
-			free(ai->glue);
+			dns_p_free(ai->glue);
 
 		ai->glue = glue;
 
