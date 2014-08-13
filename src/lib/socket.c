@@ -1977,7 +1977,7 @@ retry:
 		count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
 #else
 #if defined(MSG_NOSIGNAL)
-		if (S_ISSOCK(so->fd))
+		if (S_ISSOCK(so->mode) && so->opts.fd_nosigpipe)
 			count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
 		else
 			count = write(so->fd, src, SO_MIN(len, LONG_MAX));
