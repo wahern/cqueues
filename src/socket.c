@@ -2754,9 +2754,8 @@ static int dbg_iov_trimcr(lua_State *L) {
 	struct iovec src = dbg_checkstring(L, 1);
 	_Bool chomp = dbg_checkbool(L, 2);
 	struct iovec dst = { memcpy(lua_newuserdata(L, src.iov_len), src.iov_base, src.iov_len), src.iov_len };
-	size_t n;
 
-	n = iov_trimcr(&dst, chomp);
+	iov_trimcr(&dst, chomp);
 
 	lua_pushlstring(L, dst.iov_base, dst.iov_len);
 
@@ -2768,9 +2767,8 @@ static int dbg_iov_trimcrlf(lua_State *L) {
 	struct iovec src = dbg_checkstring(L, 1);
 	_Bool chomp = dbg_checkbool(L, 2);
 	struct iovec dst = { memcpy(lua_newuserdata(L, src.iov_len), src.iov_base, src.iov_len), src.iov_len };
-	size_t n;
 
-	n = iov_trimcrlf(&dst, chomp);
+	iov_trimcrlf(&dst, chomp);
 
 	lua_pushlstring(L, dst.iov_base, dst.iov_len);
 
