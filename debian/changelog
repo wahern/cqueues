@@ -1,3 +1,9 @@
+liblua-cqueues (20140916-0) unstable; urgency=low
+
+  * Fix out-of-bounds write when reading inotify events, reported by Timo Teräs.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 16 Sep 2014 15:18:16 -0700
+
 liblua-cqueues (20140729-0) unstable; urgency=low
 
   * Fix compilation on NetBSD 5.1, which lacks constant NAN definition.

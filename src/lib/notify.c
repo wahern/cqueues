@@ -679,14 +679,14 @@ static int decode(int flags) {
 #define in_msgnxt(msg) (struct inotify_event *)((unsigned char *)(msg) + offsetof(struct inotify_event, name) + (msg)->len)
 
 static int in_step1(struct notify *nfy) {
-	struct inotify_event *msg, *end;
+	struct inotify_event *buf, *msg, *end;
 	ssize_t len;
 	int count = 0;
 
-	msg = in_msgbuf(IN_BUFSIZ);
+	buf = in_msgbuf(IN_BUFSIZ);
 
-	while ((len = read(nfy->fd, msg, IN_BUFSIZ)) > 0) {
-		for (end = in_msgend(msg, len); msg < end; msg = in_msgnxt(msg)) {
+	while ((len = read(nfy->fd, buf, IN_BUFSIZ)) > 0) {
+		for (msg = buf, end = in_msgend(buf, len); msg < end; msg = in_msgnxt(msg)) {
 			size_t namelen = strlen(msg->name);
 
 			if (namelen) {
