@@ -1595,6 +1595,10 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	if (!(so = so_make(opts, &error)))
 		goto error;
 
+	/*
+	 * TODO: Distinguish and exclude IP address literals by default. See
+	 * note at so_setnamebyaddr.
+	 */
 	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
 		if (!(so->opts.tls_sendname = strdup(host)))
 			goto syerr;
@@ -1628,6 +1632,18 @@ error:
 static int so_setnamebyaddr(struct socket *so, union sockaddr_arg addr) {
 	int error;
 
+	/*
+	 * TODO: Don't send IP addresses by default.
+	 *
+	 * All the TLS RFCs (from RFC 3546 to RFC 6066) declare
+	 *
+	 * 	Literal IPv4 and IPv6 addresses are not permitted in
+	 * 	"HostName".
+	 *
+	 * Safari 7.0.6 WILL send IP addresses.
+	 * Chrome 37.0.2062.120 WILL NOT send IP addresses.
+	 * Firefox 32.0.2 WILL NOT send IP addresses.
+	 */
 	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
 		char name[INET6_ADDRSTRLEN];
 
