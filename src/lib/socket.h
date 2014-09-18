@@ -26,23 +26,21 @@
 #ifndef SOCKET_H
 #define SOCKET_H
 
-#include <time.h>		/* time_t */
+#include <time.h>        /* time_t */
+#include <string.h>      /* memcpy(3) */
+#include <errno.h>       /* EAFNOSUPPORT */
 
-#include <string.h>		/* memcpy(3) */
-
-#include <sys/types.h>		/* socklen_t in_port_t uid_t gid_t pid_t */
-#include <sys/uio.h>		/* struct iovec */
-#include <sys/socket.h>		/* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr struct msghdr struct cmsghdr */
+#include <sys/types.h>   /* socklen_t in_port_t uid_t gid_t pid_t */
+#include <sys/uio.h>     /* struct iovec */
+#include <sys/socket.h>	 /* AF_INET AF_INET6 AF_UNIX SOCK_STREAM SHUT_RD SHUT_WR SHUT_RDWR struct sockaddr struct msghdr struct cmsghdr */
 #if defined(AF_UNIX)
 #include <sys/un.h>
 #endif
+#include <poll.h>        /* POLLIN POLLOUT */
+#include <netinet/in.h>  /* struct sockaddr_in struct sockaddr_in6 */
 
-#include <poll.h>		/* POLLIN POLLOUT */
-
-#include <netinet/in.h>		/* struct sockaddr_in struct sockaddr_in6 */
-
-#include <openssl/ssl.h>	/* SSL_CTX SSL */
-#include <openssl/err.h>	/* ERR_get_error */
+#include <openssl/ssl.h> /* SSL_CTX SSL */
+#include <openssl/err.h> /* ERR_get_error() */
 
 
 /*
@@ -61,9 +59,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20140812
-#define SOCKET_V_ABI  0x20140603
-#define SOCKET_V_API  0x20140603
+#define SOCKET_V_REL  0x20140917
+#define SOCKET_V_ABI  0x20140917
+#define SOCKET_V_API  0x20140917
 
 
 const char *socket_vendor(void);
@@ -160,11 +158,14 @@ struct so_options {
 	} fd_close;
 
 	_Bool tls_verify;
+	const char *tls_sendname;
 
 	_Bool st_time;
 }; /* struct so_options */
 
-#define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .fd_nonblock = 1, .fd_cloexec = 1, .fd_nosigpipe = 1, .st_time = 1, __VA_ARGS__ })
+#define SO_OPTS_TLS_HOSTNAME ((char *)1) /* place holder for peer host name */
+
+#define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .fd_nonblock = 1, .fd_cloexec = 1, .fd_nosigpipe = 1, .tls_sendname = SO_OPTS_TLS_HOSTNAME, .st_time = 1, __VA_ARGS__ })
 
 
 /*
@@ -189,6 +190,16 @@ struct so_options {
 
 #define SA_UNIX defined(AF_UNIX) && !_WIN32
 
+union sockaddr_any {
+	struct sockaddr sa;
+	struct sockaddr_storage ss;
+	struct sockaddr_in sin;
+	struct sockaddr_in6 sin6;
+#if SA_UNIX
+	struct sockaddr_un sun;
+#endif
+}; /* union sockaddr_any */
+
 /*
  * GCC 4.4's strong aliasing constraints complain about casting through
  * intermediate void pointers before taking a reference to an object member.
@@ -203,13 +214,26 @@ struct so_options {
 
 union sockaddr_arg {
 	struct sockaddr *sa;
+	const struct sockaddr *c_sa;
+
 	struct sockaddr_storage *ss;
+	struct sockaddr_storage *c_ss;
+
 	struct sockaddr_in *sin;
+	struct sockaddr_in *c_sin;
+
 	struct sockaddr_in6 *sin6;
+	struct sockaddr_in6 *c_sin6;
+
 #if SA_UNIX
 	struct sockaddr_un *sun;
+	struct sockaddr_un *c_sun;
 #endif
-	void *sp;
+	union sockaddr_any *any;
+	union sockaddr_any *c_any;
+
+	void *ptr;
+	void *c_ptr;
 } SO_TRANSPARENT;
 
 #if __GNUC__
@@ -252,15 +276,13 @@ static inline socklen_t sa_len(sockaddr_arg_t arg) {
 } /* sa_len() */
 
 
-static inline void *sa_addr(sockaddr_arg_t arg) {
-	static const union {
-		struct in_addr addr;
-		struct in6_addr addr6;
 #if SA_UNIX
-		char path[sizeof ((struct sockaddr_un *)0)->sun_path];
+#define SA_ADDR_NONE (&(union { struct in_addr addr; struct in6_addr addr6; char path[sizeof ((struct sockaddr_un *)0)->sun_path]; }))
+#else
+#define SA_ADDR_NONE (&(union { struct in_addr addr; struct in6_addr addr6; }))
 #endif
-	} none;
 
+static inline void *sa_addr(sockaddr_arg_t arg, const void *def, int *error) {
 	switch (*sa_family(arg)) {
 	case AF_INET:
 		return &sockaddr_ref(arg).sin->sin_addr;
@@ -271,13 +293,15 @@ static inline void *sa_addr(sockaddr_arg_t arg) {
 		return &sockaddr_ref(arg).sun->sun_path;
 #endif
 	default:
-		/* XXX: Pray this constant is write-protected by the VM. */
-		return (void *)&none;
+		if (error)
+			*error = EAFNOSUPPORT;
+
+		return (void *)def;
 	}
 } /* sa_addr() */
 
 
-static inline socklen_t sa_addrlen(sockaddr_arg_t arg) {
+static inline socklen_t sa_addrlen(sockaddr_arg_t arg, int *error) {
 	switch (*sa_family(arg)) {
 	case AF_INET:
 		return sizeof ((struct sockaddr_in *)0)->sin_addr;
@@ -288,22 +312,27 @@ static inline socklen_t sa_addrlen(sockaddr_arg_t arg) {
 		return sizeof ((struct sockaddr_un *)0)->sun_path;
 #endif
 	default:
+		if (error)
+			*error = EAFNOSUPPORT;
+
 		return 0;
 	}
 } /* sa_addrlen() */
 
 
-static inline in_port_t *sa_port(sockaddr_arg_t arg) {
-	static const in_port_t none;
+#define SA_PORT_NONE (&(in_port_t){ 0 })
 
+static inline in_port_t *sa_port(sockaddr_arg_t arg, const in_port_t *def, int *error) {
 	switch (*sa_family(arg)) {
 	case AF_INET:
 		return &sockaddr_ref(arg).sin->sin_port;
 	case AF_INET6:
 		return &sockaddr_ref(arg).sin6->sin6_port;
 	default:
-		/* XXX: Pray this constant is write-protected by the VM. */
-		return (in_port_t *)&none;
+		if (error)
+			*error = EAFNOSUPPORT;
+
+		return (in_port_t *)def;
 	}
 } /* sa_port() */
 
@@ -314,13 +343,21 @@ static inline in_port_t *sa_port(sockaddr_arg_t arg) {
 #define SA_ADDRSTRLEN INET6_ADDRSTRLEN
 #endif
 
-char *sa_ntop(void *, size_t, const void *);
+char *sa_ntop(char *, size_t, const void *, const char *, so_error_t *);
 
-void *sa_pton(void *, size_t, const char *);
+void *sa_pton(void *, size_t, const char *, const void *, so_error_t *);
 
-#define sa_ntoa(sa)  sa_ntop((char [SA_ADDRSTRLEN]){ 0 }, SA_ADDRSTRLEN, (sa))
+static inline char *sa_ntoa_(char *dst, size_t lim, const void *src) {
+	return sa_ntop(dst, lim, src, NULL, &(int){ 0 }), dst;
+} /* sa_ntoa_() */
 
-#define sa_aton(str) sa_pton(&(struct sockaddr_storage){ 0 }, sizeof (struct sockaddr_storage), (str))
+static inline void *sa_aton_(void *dst, size_t lim, const char *src) {
+	return sa_pton(dst, lim, src, NULL, &(int){ 0 }), dst;
+} /* sa_aton_() */
+
+#define sa_ntoa(sa)  sa_ntoa_((char [SA_ADDRSTRLEN]){ 0 }, SA_ADDRSTRLEN, (sa))
+
+#define sa_aton(str) sa_aton_(&(struct sockaddr_storage){ 0 }, sizeof (struct sockaddr_storage), (str))
 
 
 /*

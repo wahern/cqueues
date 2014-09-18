@@ -29,7 +29,7 @@
 
 #include <stdlib.h>	/* malloc(3) free(3) */
 
-#include <string.h>	/* strlen(3) memset(3) strncpy(3) memcpy(3) strerror(3) */
+#include <string.h>	/* strdup(3) strlen(3) memset(3) strncpy(3) memcpy(3) strerror(3) */
 
 #include <errno.h>	/* EINVAL EAGAIN EWOULDBLOCK EINPROGRESS EALREADY ENAMETOOLONG EOPNOTSUPP ENOTSOCK ENOPROTOOPT */
 
@@ -210,21 +210,22 @@ static void so_trace(enum so_trace event, int fd, const struct addrinfo *host, .
 	const void *data;
 	size_t count;
 	const char *fmt;
+	int error;
 
 	if (!socket_debug)
 		return;
 
 	if (host) {
-		sa_ntop(addr, sizeof addr, host->ai_addr);
-		port = *sa_port(host->ai_addr);
+		sa_ntop(addr, sizeof addr, host->ai_addr, NULL, &error);
+		port = *sa_port(host->ai_addr, SA_PORT_NONE, NULL);
 
 		if (host->ai_canonname)
 			snprintf(who, sizeof who, "%.96s/[%s]:%hu", host->ai_canonname, addr, ntohs(port));
 		else
 			snprintf(who, sizeof who, "[%s]:%hu", addr, ntohs(port));
 	} else if (fd != -1 && 0 == getpeername(fd, (struct sockaddr *)&saddr, &(socklen_t){ sizeof saddr })) {
-		sa_ntop(addr, sizeof addr, &saddr);
-		port = *sa_port(&saddr);
+		sa_ntop(addr, sizeof addr, &saddr, NULL, &error);
+		port = *sa_port(&saddr, SA_PORT_NONE, NULL);
 
 		snprintf(who, sizeof who, "[%s]:%hu", addr, ntohs(port));
 	} else
@@ -321,12 +322,12 @@ static void so_initdebug(void) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#ifndef lengthof
-#define lengthof(a) (sizeof (a) / sizeof *(a))
+#ifndef countof
+#define countof(a) (sizeof (a) / sizeof *(a))
 #endif
 
 #ifndef endof
-#define endof(a) (&(a)[lengthof(a)])
+#define endof(a) (&(a)[countof(a)])
 #endif
 
 
@@ -394,7 +395,7 @@ const char *so_strerror(int error) {
 	} else {
 		int index = error - SO_ERRNO0;
 
-		if (index >= 0 && index < (int)lengthof(errlist) && errlist[index])
+		if (index >= 0 && index < (int)countof(errlist) && errlist[index])
 			return errlist[index];
 		else
 			return "Unknown socket error";
@@ -451,74 +452,98 @@ static int ssl_error(SSL *ctx, int rval, short *events) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-char *sa_ntop(void *dst, size_t lim, const void *arg) {
-	union {
-		struct sockaddr sa;
-		struct sockaddr_in sin;
-		struct sockaddr_in6 sin6;
-#if SA_UNIX
-		struct sockaddr_un sun;
-#endif
-	} *any = (void *)arg;
-	char sbuf[SA_ADDRSTRLEN];
+char *sa_ntop(char *dst, size_t lim, const void *src, const char *def, int *_error) {
+	union sockaddr_any *any = (void *)src;
+	const char *unspec = "0.0.0.0";
+	char text[SA_ADDRSTRLEN];
+	int error;
 
 	switch (*sa_family(&any->sa)) {
 	case AF_INET:
-		if (!inet_ntop(AF_INET, &any->sin.sin_addr, sbuf, sizeof sbuf))
-			goto error;
+		unspec = "0.0.0.0";
+
+		if (!inet_ntop(AF_INET, &any->sin.sin_addr, text, sizeof text))
+			goto syerr;
 
 		break;
 	case AF_INET6:
-		if (!inet_ntop(AF_INET6, &any->sin6.sin6_addr, sbuf, sizeof sbuf))
-			goto error;
+		unspec = "::";
+
+		if (!inet_ntop(AF_INET6, &any->sin6.sin6_addr, text, sizeof text))
+			goto syerr;
 
 		break;
 #if SA_UNIX
 	case AF_UNIX:
-		memset(sbuf, 0, sizeof sbuf);
-		memcpy(sbuf, any->sun.sun_path, SO_MIN(sizeof sbuf - 1, sizeof any->sun.sun_path));
+		unspec = "/nonexistent";
+
+		memset(text, 0, sizeof text);
+		memcpy(text, any->sun.sun_path, SO_MIN(sizeof text - 1, sizeof any->sun.sun_path));
 
 		break;
 #endif
 	default:
+		error = EAFNOSUPPORT;
+
 		goto error;
 	} /* switch() */
 
-	dns_strlcpy(dst, sbuf, lim);
+	if (dns_strlcpy(dst, text, lim) >= lim) {
+		error = ENOSPC;
+
+		goto error;
+	}
 
 	return dst;
+syerr:
+	error = so_syerr();
 error:
-	dns_strlcpy(dst, "0.0.0.0", lim);
+	if (_error)
+		*_error = error;
 
-	return dst;
+	/*
+	 * NOTE: Always write something in case caller ignores errors, such
+	 * as when caller is using the sa_ntoa() macro.
+	 */
+	dns_strlcpy(dst, (def)? def : unspec, lim);
+
+	return (char *)def;
 } /* sa_ntop() */
 
 
-void *sa_pton(void *any, size_t lim, const char *addr) {
-	union {
-		struct sockaddr sa;
-		struct sockaddr_in sin;
-		struct sockaddr_in6 sin6;
-	} saddr[2] = { { { .sa_family = AF_INET } }, { { .sa_family = AF_INET6 } } };
-	unsigned i;
-	int ret;
+void *sa_pton(void *dst, size_t lim, const char *src, const void *def, int *_error) {
+	union sockaddr_any family[] = { { { .sa_family = AF_INET } }, { { .sa_family = AF_INET6 } } }, *fp;
+	int error;
 
-	memset(any, 0, lim);
+	memset(dst, 0, lim);
 
-	for (i = 0; i < sizeof saddr / sizeof saddr[0]; i++) {
-		ret = inet_pton(*sa_family(&saddr[i]), addr, sa_addr(&saddr[i]));
+	for (fp = family; fp < endof(family); fp++) {
+		switch (inet_pton(*sa_family(fp), src, sa_addr(fp, NULL, NULL))) {
+		case -1:
+			goto syerr;
+		case 1:
+			if (lim < sa_len(fp)) {
+				error = ENOSPC;
 
-		assert(-1 != ret);
+				goto error;
+			}
 
-		if (ret == 1) {
-			if (lim >= sa_len(&saddr[i]))
-				memcpy(any, &saddr[i], sa_len(&saddr[i]));
+			memcpy(dst, fp, sa_len(fp));
 
-			break;
+			return dst;
 		}
 	}
 
-	return any;
+	error = EAFNOSUPPORT;
+
+	goto error;
+syerr:
+	error = so_syerr();
+error:
+	if (_error)
+		*_error = error;
+
+	return (void *)def;
 } /* sa_pton() */
 
 
@@ -527,7 +552,7 @@ void *sa_pton(void *any, size_t lim, const char *addr) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *error_) {
+void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *_error) {
 	static struct { sa_family_t pf; int fd;} udp4 = { PF_INET, -1 }, udp6 = { PF_INET6, -1 }, *udp;
 	struct sockaddr_storage ss;
 	int error;
@@ -561,8 +586,8 @@ void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *error_) {
 	assert(sizeof ss >= sa_len(rmt));
 	memcpy(&ss, sockaddr_ref(rmt).sa, sa_len(rmt));
 
-	if (!*sa_port(&ss))
-		*sa_port(&ss) = htons(6970);
+	if (!*sa_port(&ss, SA_PORT_NONE, NULL))
+		*sa_port(&ss, SA_PORT_NONE, NULL) = htons(6970);
 
 	if (0 != connect(udp->fd, (struct sockaddr *)&ss, sa_len(&ss)))
 		goto syerr;
@@ -582,8 +607,8 @@ void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *error_) {
 syerr:
 	error = so_syerr();
 error:
-	if (error_)
-		*error_ = error;
+	if (_error)
+		*_error = error;
 
 	return memset(lcl, 0, lim);
 } /* sa_egress() */
@@ -1029,6 +1054,7 @@ struct socket {
 		int state;
 		_Bool accept;
 		_Bool vrfd;
+		char *host;
 	} ssl;
 
 	struct {
@@ -1512,11 +1538,24 @@ static struct socket *so_make(const struct so_options *opts, int *error) {
 		memcpy((void *)so->opts.sa_bind, opts->sa_bind, len);
 	}
 
+	if (opts->tls_sendname && opts->tls_sendname != SO_OPTS_TLS_HOSTNAME) {
+		if (!(so->opts.tls_sendname = strdup(opts->tls_sendname)))
+			goto syerr;
+	}
+
 	return so;
 syerr:
 	*error = so_syerr();
 
-	free(so);
+	if (so) {
+		if (so->opts.tls_sendname != opts->tls_sendname)
+			free((void *)so->opts.tls_sendname);
+
+		if (so->opts.sa_bind != opts->sa_bind)
+			free((void *)so->opts.sa_bind);
+
+		free(so);
+	}
 
 	return NULL;
 } /* so_make() */
@@ -1526,17 +1565,22 @@ static int so_destroy(struct socket *so) {
 	ssl_discard(&so->ssl.ctx);
 
 	dns_ai_close(so->res);
-	so->res = 0;
+	so->res = NULL;
 
 	free(so->host);
-	so->host = 0;
+	so->host = NULL;
 
 	so_closesocket(&so->fd, &so->opts);
 
 	so->events = 0;
 
+	if (so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
+		free((void *)so->opts.tls_sendname);
+		so->opts.tls_sendname = NULL;
+	}
+
 	free((void *)so->opts.sa_bind);
-	so->opts.sa_bind = 0;
+	so->opts.sa_bind = NULL;
 
 	return 0;
 } /* so_destroy() */
@@ -1550,6 +1594,11 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 
 	if (!(so = so_make(opts, &error)))
 		goto error;
+
+	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
+		if (!(so->opts.tls_sendname = strdup(host)))
+			goto syerr;
+	}
 
 	nsopts = dns_opts();
 	nsopts->closefd.arg = so->opts.fd_close.arg;
@@ -1565,6 +1614,8 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	so->todo = SO_S_GETADDR | SO_S_SOCKET | SO_S_BIND;
 
 	return so;
+syerr:
+	error = so_syerr();
 error:
 	so_close(so);
 
@@ -1574,12 +1625,43 @@ error:
 } /* so_open() */
 
 
+static int so_setnamebyaddr(struct socket *so, union sockaddr_arg addr) {
+	int error;
+
+	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
+		char name[INET6_ADDRSTRLEN];
+
+		switch (*sa_family(addr)) {
+		case AF_INET:
+			/* FALL THROUGH */
+		case AF_INET6:
+			if (!sa_ntop(name, sizeof name, sockaddr_ref(addr).sa, NULL, &error))
+				return error;
+
+			if (!(so->opts.tls_sendname = strdup(name)))
+				return so_syerr();
+
+			break;
+		default:
+			so->opts.tls_sendname = NULL;
+
+			break;
+		}
+	}
+
+	return 0;
+} /* so_setnamebyaddr() */
+
+
 struct socket *so_dial(const struct sockaddr *sa, int type, const struct so_options *opts, int *error_) {
 	struct { struct addrinfo ai; struct sockaddr_storage ss; } *host;
 	struct socket *so;
 	int error;
 
 	if (!(so = so_make(opts, &error)))
+		goto error;
+
+	if ((error = so_setnamebyaddr(so, sa)))
 		goto error;
 
 	if (!(host = malloc(sizeof *host)))
@@ -1625,6 +1707,9 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 
 		if (0 != getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
 			goto syerr;
+
+		if ((error = so_setnamebyaddr(so, &ss)))
+			goto error;
 
 		family = ss.ss_family;
 
@@ -1801,6 +1886,11 @@ int so_starttls(struct socket *so, SSL_CTX *ctx) {
 
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
+
+	if (so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
+		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))
+			goto error;
+	}
 
 	/*
 	 * NOTE: SSLv3_server_method()->ssl_connect should be a reference to
@@ -2495,10 +2585,10 @@ void parseurl(const char *url) {
 	if ((error = regcomp(&re, expr, REG_EXTENDED)))
 		goto error;
 
-	if ((error = regexec(&re, url, lengthof(match), match, 0)))
+	if ((error = regexec(&re, url, countof(match), match, 0)))
 		goto error;
 
-	for (i = 0; i < lengthof(match); i++) {
+	for (i = 0; i < countof(match); i++) {
 		if (match[i].rm_so == -1)
 			continue;
 
@@ -2774,9 +2864,9 @@ usage:		default:
 		}
 
 		if (argc > 2) {
-			*sa_port(saddr) = htons(atoi(argv[2]));
+			*sa_port(saddr, SA_PORT_NONE, NULL) = htons(atoi(argv[2]));
 
-			printf("[%s]:%hu => %s\n", sa_ntoa(saddr), ntohs(*sa_port(saddr)), sa_ntoa(sa_egress(&egress, sizeof egress, saddr, 0)));
+			printf("[%s]:%hu => %s\n", sa_ntoa(saddr), ntohs(*sa_port(saddr, SA_PORT_NONE, NULL)), sa_ntoa(sa_egress(&egress, sizeof egress, saddr, 0)));
 		} else
 			printf("%s => %s\n", sa_ntoa(saddr), sa_ntoa(sa_egress(&egress, sizeof egress, saddr, 0)));
 	} else if (!strcmp(*argv, "print") && argv[1]) {
@@ -2786,11 +2876,11 @@ usage:		default:
 			goto usage;
 
 		if (argc > 2) {
-			*sa_port(saddr) = htons(atoi(argv[2]));
+			*sa_port(saddr, SA_PORT_NONE, NULL) = htons(atoi(argv[2]));
 
-			printf("[%s]:%hu\n", sa_ntoa(saddr), ntohs(*sa_port(saddr)));
+			printf("[%s]:%hu\n", sa_ntoa(saddr), ntohs(*sa_port(saddr, SA_PORT_NONE, NULL)));
 		} else {
-			*sa_port(saddr) = htons(6970);
+			*sa_port(saddr, SA_PORT_NONE, NULL) = htons(6970);
 
 			printf("%s\n", sa_ntoa(saddr));
 		}

@@ -519,6 +519,16 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 	if (lso_altfield(L, index, "verify", "tls_verify"))
 		opts.tls_verify = lso_popbool(L);
 
+	if (lso_altfield(L, index, "sendname", "tls_sendname")) {
+		if (lua_isboolean(L, -1)) {
+			opts.tls_sendname = (lua_toboolean(L, -1))? SO_OPTS_TLS_HOSTNAME : NULL;
+		} else {
+			opts.tls_sendname = luaL_checkstring(L, -1);
+		}
+
+		lua_pop(L, 1);
+	}
+
 	if (lso_altfield(L, index, "time", "st_time"))
 		opts.st_time = lso_popbool(L);
 
@@ -2399,7 +2409,7 @@ static lso_nargs_t lso_pushname(lua_State *L, struct sockaddr_storage *ss) {
 	case AF_INET6:
 		lua_pushinteger(L, ss->ss_family);
 		lua_pushstring(L, sa_ntoa(ss));
-		lua_pushinteger(L, ntohs(*sa_port(ss)));
+		lua_pushinteger(L, ntohs(*sa_port(ss, SA_PORT_NONE, NULL)));
 
 		return 3;
 	case AF_UNIX:
