@@ -370,7 +370,9 @@ static int ls_ignore(lua_State *L) {
 			return luaL_error(L, "signal.ignore: %s", strerror(errno));
 	}
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* ls_ignore() */
 
 
@@ -387,7 +389,9 @@ static int ls_default(lua_State *L) {
 			return luaL_error(L, "signal.default: %s", strerror(errno));
 	}
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* ls_default() */
 
 
@@ -408,7 +412,9 @@ static int ls_discard(lua_State *L) {
 			return luaL_error(L, "signal.discard: %s", strerror(errno));
 	}
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* ls_discard() */
 
 
@@ -425,7 +431,9 @@ static int ls_block(lua_State *L) {
 	if ((error = cqs_sigmask(SIG_BLOCK, &set, 0)))
 		return luaL_error(L, "signal.block: %s", strerror(error));
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* ls_block() */
 
 
@@ -442,7 +450,9 @@ static int ls_unblock(lua_State *L) {
 	if ((error = cqs_sigmask(SIG_UNBLOCK, &set, 0)))
 		return luaL_error(L, "signal.unblock: %s", strerror(error));
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* ls_unblock() */
 
 
@@ -453,7 +463,9 @@ static int ls_raise(lua_State *L) {
 		raise(luaL_checkint(L, index));
 	}
 
-	return 0;
+	lua_pushboolean(L, 1);
+
+	return 1;
 } /* ls_raise() */
 
 
