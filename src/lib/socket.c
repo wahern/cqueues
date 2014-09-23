@@ -1586,6 +1586,13 @@ static int so_destroy(struct socket *so) {
 } /* so_destroy() */
 
 
+static _Bool sa_ishostname(const char *host) {
+	union sockaddr_any ip;
+
+	return !sa_pton(&ip, sizeof ip, host, NULL, NULL);
+} /* sa_ishostname() */
+
+
 struct socket *(so_open)(const char *host, const char *port, int qtype, int domain, int type, const struct so_options *opts, int *error_) {
 	struct dns_options *nsopts;
 	struct addrinfo hints;
@@ -1595,13 +1602,22 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	if (!(so = so_make(opts, &error)))
 		goto error;
 
-	/*
-	 * TODO: Distinguish and exclude IP address literals by default. See
-	 * note at so_setnamebyaddr.
-	 */
+	/* copy host name as TLS server host name */
 	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
-		if (!(so->opts.tls_sendname = strdup(host)))
-			goto syerr;
+		/*
+		 * NOTE: All the TLS RFCs (from RFC 3546 to RFC 6066)
+		 * declare
+		 *
+		 *      Literal IPv4 and IPv6 addresses are not permitted in
+		 *      "HostName".
+		 *
+		 * If the caller wants to send the IP address as the TLS
+		 * server host name, they can set .tls_hostname explicitly.
+		 */
+		if (sa_ishostname(host)) {
+			if (!(so->opts.tls_sendname = strdup(host)))
+				goto syerr;
+		}
 	}
 
 	nsopts = dns_opts();
@@ -1629,55 +1645,12 @@ error:
 } /* so_open() */
 
 
-static int so_setnamebyaddr(struct socket *so, union sockaddr_arg addr) {
-	int error;
-
-	/*
-	 * TODO: Don't send IP addresses by default.
-	 *
-	 * All the TLS RFCs (from RFC 3546 to RFC 6066) declare
-	 *
-	 * 	Literal IPv4 and IPv6 addresses are not permitted in
-	 * 	"HostName".
-	 *
-	 * Safari 7.0.6 WILL send IP addresses.
-	 * Chrome 37.0.2062.120 WILL NOT send IP addresses.
-	 * Firefox 32.0.2 WILL NOT send IP addresses.
-	 */
-	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
-		char name[INET6_ADDRSTRLEN];
-
-		switch (*sa_family(addr)) {
-		case AF_INET:
-			/* FALL THROUGH */
-		case AF_INET6:
-			if (!sa_ntop(name, sizeof name, sockaddr_ref(addr).sa, NULL, &error))
-				return error;
-
-			if (!(so->opts.tls_sendname = strdup(name)))
-				return so_syerr();
-
-			break;
-		default:
-			so->opts.tls_sendname = NULL;
-
-			break;
-		}
-	}
-
-	return 0;
-} /* so_setnamebyaddr() */
-
-
 struct socket *so_dial(const struct sockaddr *sa, int type, const struct so_options *opts, int *error_) {
 	struct { struct addrinfo ai; struct sockaddr_storage ss; } *host;
 	struct socket *so;
 	int error;
 
 	if (!(so = so_make(opts, &error)))
-		goto error;
-
-	if ((error = so_setnamebyaddr(so, sa)))
 		goto error;
 
 	if (!(host = malloc(sizeof *host)))
@@ -1723,9 +1696,6 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 
 		if (0 != getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
 			goto syerr;
-
-		if ((error = so_setnamebyaddr(so, &ss)))
-			goto error;
 
 		family = ss.ss_family;
 
