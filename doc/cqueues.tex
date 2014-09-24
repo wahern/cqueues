@@ -302,6 +302,12 @@ In Unix \errno{EPIPE} is only encountered when attempting to write to a closed p
 
 This error commonly occurs in asynchronous applications, which are especially prone to bugs related to their complex state management. With Lua code using the \cqueues APIs, \errno{EBADF} should never be encountered. When it does occur, it's a sure sign of a bug somewhere in the parent application or an extension module and---hopefully---not \cqueues.
 
+\subsubsection{The Future}
+
+The idiomatic protocol for returning errors in Lua is a string representation followed by the integer errno number. This is how Lua's \fn{io} and \fn{file} modules behave. The original concern was that this would be too wasteful for a networking library, where ``errors'' like EAGAIN, ETIMEDOUT, and EPIPE are common and not very exceptional. Copying even small strings into the Lua VM is somewhat costly. However, in the future the API may be configurable to use the Lua-idiomatic protocol by default, using upvalue memoization to minimize the cost of returning string representations.
+
+In the meantime, the auxiliary routines \fn{auxlib.assert} and \fn{auxlib.fileresult} can be used to explicitly achieve the idiomatic behavior.
+
 \section{Modules}
 
 \begin{Module}{\cqueues}
@@ -342,11 +348,11 @@ Returns two values: the immediate controller currently executing, if any, or nil
 
 \subsubsection[\routine{cqueues.resume}]{\routine{cqueues.resume(co)}}
 
-Resumes the coroutine $co$. This wrapper for \routine{coroutine.resume} cooperates with \routine{cqueues.poll} to chain yield calls until a controller is reached, and then in-turn chains resume calls to return execution to where the polling occurred.
+See \fn{auxlib.resume}.
 
 \subsubsection[\routine{cqueues.wrap}]{\routine{cqueues.wrap(f)}}
 
-Behaves like \routine{coroutine.wrap} by returning a function which executes $f$ in a coroutine, except uses \routine{cqueues.resume} to permit multilevel yielding and resumption when $f$ triggers I/O polling. Unlike \routine{cqueues:wrap}, this does not attach the newly created coroutine to any controller.
+See \fn{auxlib.wrap}.
 
 \subsubsection[\routine{cqueues.new}]{\routine{cqueues.new()}}
 Create a new cqueues object.
@@ -1310,6 +1316,58 @@ Wait for resolution of the promise object or until $timeout$ expires. Returns pr
 \subsubsection[\fn{promise:pollfd}]{\fn{promise:pollfd()}}
 
 Returns a condition variable suitable for polling which is used to signal resolution of the promise to any waiting threads.\footnote{To improve performance of the scheduler the pollfd member is itself the condition variable, but it can be called as a function because condition variables support the \_\_call metamethod.}
+
+\end{Module}
+
+
+\begin{Module}{cqueues.auxlib}
+
+The auxiliary module exposes some convenience interfaces, including some interfaces to help with application integration or for dealing with quirky behavior that hasn't yet been changed because of API stability concerns.
+
+\subsubsection[\fn{auxlib.assert}]{\fn{auxlib.assert($v$ [$\ldots$])}}
+
+Similar to Lua's built-in \fn{assert}, except that when $v$ is false searches the argument list for the first non-nil, non-false value to use as the message. If the message is an integer, applies \fn{errno.strerror} to derive a human readable string.
+
+This routine can be explicitly monkey patched to be the global \fn{assert}.
+
+Most \cqueues interfaces return a single integer error rather than the Lua-idiomatic string followed by an integer error. The original concern was that most ``errors'' would be EAGAIN, ETIMEDOUT, or EPIPE, which occur very often and would be costly to continually copy onto the stack as strings, especially given that they'd normally be discarded. In the future the plan is to revert to the idiomatic return protocol used by Lua's \fn{file} API, but memoize the more common errno string representations using upvalues so they can be efficiently returned.
+
+
+\subsubsection[\fn{auxlib.fileresult}]{\fn{auxlib.fileresult($v$ [$\ldots$])}}
+
+Serves a similar purpose as \fn{auxlib.assert}, except on error returns $v$ (\nil or \false) followed by the string message and any integer error. For example, in
+
+\begin{example}{lua}
+	local v, why, syserr = fileresult(false, nil, EPERM)
+\end{example}
+
+$v$ is \false, $why$ is ``Operation not permitted'', and $syserr$ is EPERM. Whereas with
+
+\begin{example}{lua}
+	local v, why, syserr = fileresult(nil, ``No such file or directory'')
+\end{example}
+
+$v$ is \nil, $why$ is ``No such file or directory'', and $syserr$ is \nil.
+
+\subsubsection[\fn{auxlib.resume}]{\fn{auxlib.resume($co$ [$\ldots$])}}
+
+Similar to Lua's built-in \fn{coroutine.resume}, except that when coroutines yield using \fn{cqueues.poll} recursively yields up the stack until the controller is reached, and then silently restart the coroutine when the poll operation completes. This permits creating iterators which can transparently yield. The application must be careful to ensure that this wrapper is used at every point in a yield/resume chain to get the automatic behavior.
+
+This routine can be explicitly monkey patched to be \fn{coroutine.resume}.
+
+\subsubsection[\fn{auxlib.tostring}]{\fn{auxlib.tostring($v$)}}
+
+Similar to Lua's built-in \fn{tostring}, except supports yielding of \_\_tostring metamethods.
+
+This routine can be explicitly monkey patched to be the global \fn{tostring}.
+
+\subsubsection[\fn{auxlib.wrap}]{\fn{auxlib.wrap($f$)}}
+
+Similar to Lua's built-in \fn{coroutine.wrap}, except uses \fn{auxlib.resume} when resuming coroutines.
+
+This routine can be explicitly monkey patched to be \fn{coroutine.wrap}.
+
+Note that unlike \fn{cqueues:wrap}, the created coroutine is not attached to a controller.
 
 \end{Module}
 
