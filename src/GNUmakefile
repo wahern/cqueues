@@ -56,8 +56,10 @@ LDFLAGS_$(d) += -lm
 #
 OBJS_$(d) = cqueues.o socket.o errno.o signal.o thread.o notify.o dns.o
 
+# NOTE: M4 might fail so delay creating $@
 $(d)/errno.c: $(d)/errno.c.m4
-	cd $(@D) && $(M4) $< > $@
+	cd $(@D) && $(M4) $< >| $@.tmp
+	mv $@.tmp $@
 
 define BUILD_$(d)
 
@@ -196,7 +198,7 @@ endif
 .PHONY: $(d)/clean $(d)/clean~ clean clean~
 
 $(d)/clean:
-	rm -rf $(@D)/errno.c $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3
+	rm -rf $(@D)/errno.c $(@D)/errno.c.tmp $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3
 
 $(d)/clean~: $(d)/clean
 	rm -f $(@D)/*~
