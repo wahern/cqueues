@@ -1,3 +1,16 @@
+liblua-cqueues (20140930-0) unstable; urgency=low
+
+  * Fix build dependency where M4 fails but the command line still creates
+    the target. On subsequent invocations make thinks the target is
+    satisfied.
+  * Handle numeric hosts differently so that socket.listen doesn't try
+    to build a resolver. On OS X when the network is not connected
+    /etc/resolv.conf doesn't exist, so building a resolver results in an
+    ENOENT error. This prevented listening on the loopback, 0.0.0.0, or ::1
+    when the network was disconnected.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 30 Sep 2014 17:56:31 -0700
+
 liblua-cqueues (20140923-0) unstable; urgency=low
 
   * Add TLS Socket Name Indiciation (SNI) support.
