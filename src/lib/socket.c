@@ -1586,15 +1586,16 @@ static int so_destroy(struct socket *so) {
 } /* so_destroy() */
 
 
-static _Bool sa_ishostname(const char *host) {
+static _Bool sa_isnumeric(const char *host) {
 	union sockaddr_any ip;
 
-	return !sa_pton(&ip, sizeof ip, host, NULL, NULL);
-} /* sa_ishostname() */
+	return !!sa_pton(&ip, sizeof ip, host, NULL, NULL);
+} /* sa_isnumeric() */
 
 
 struct socket *(so_open)(const char *host, const char *port, int qtype, int domain, int type, const struct so_options *opts, int *error_) {
-	struct dns_options *nsopts;
+	_Bool isnumeric = sa_isnumeric(host);
+	struct dns_resolver *res = NULL;
 	struct addrinfo hints;
 	struct socket *so;
 	int error;
@@ -1602,41 +1603,54 @@ struct socket *(so_open)(const char *host, const char *port, int qtype, int doma
 	if (!(so = so_make(opts, &error)))
 		goto error;
 
-	/* copy host name as TLS server host name */
-	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME) {
-		/*
-		 * NOTE: All the TLS RFCs (from RFC 3546 to RFC 6066)
-		 * declare
-		 *
-		 *      Literal IPv4 and IPv6 addresses are not permitted in
-		 *      "HostName".
-		 *
-		 * If the caller wants to send the IP address as the TLS
-		 * server host name, they can set .tls_hostname explicitly.
-		 */
-		if (sa_ishostname(host)) {
-			if (!(so->opts.tls_sendname = strdup(host)))
-				goto syerr;
-		}
+	/*
+	 * Copy host name as TLS server host name.
+	 *
+	 * NOTE: All the TLS RFCs (from RFC 3546 to RFC 6066)
+	 * declare
+	 *
+	 *      Literal IPv4 and IPv6 addresses are not permitted in
+	 *      "HostName".
+	 *
+	 * If the caller wants to send the IP address as the TLS
+	 * server host name, they can set .tls_hostname explicitly.
+	 */
+	if (so->opts.tls_sendname == SO_OPTS_TLS_HOSTNAME && !isnumeric) {
+		if (!(so->opts.tls_sendname = strdup(host)))
+			goto syerr;
 	}
 
-	nsopts = dns_opts();
-	nsopts->closefd.arg = so->opts.fd_close.arg;
-	nsopts->closefd.cb = so->opts.fd_close.cb;
+	memset(&hints, 0, sizeof hints);
 
 	hints.ai_flags    = AI_CANONNAME;
 	hints.ai_family   = domain;
 	hints.ai_socktype = type;
 
-	if (!(so->res = dns_ai_open(host, port, qtype, &hints, dns_res_mortal(dns_res_stub(nsopts, &error)), &error)))
+	if (isnumeric) {
+		hints.ai_flags |= AI_NUMERICHOST;
+	} else {
+		struct dns_options *opts = dns_opts();
+
+		opts->closefd.arg = so->opts.fd_close.arg;
+		opts->closefd.cb = so->opts.fd_close.cb;
+
+		if (!(res = dns_res_stub(opts, &error)))
+			goto error;
+	}
+
+	if (!(so->res = dns_ai_open(host, port, qtype, &hints, res, &error)))
 		goto error;
 
 	so->todo = SO_S_GETADDR | SO_S_SOCKET | SO_S_BIND;
+
+	dns_res_close(res);
 
 	return so;
 syerr:
 	error = so_syerr();
 error:
+	dns_res_close(res);
+
 	so_close(so);
 
 	*error_ = error;
