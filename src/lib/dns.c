@@ -275,6 +275,8 @@ const char *dns_strerror(int error) {
 		return "Bad execution state (missing answer packet)";
 	case DNS_EFETCHED:
 		return "Answer already fetched";
+	case DNS_ESERVICE:
+		return "Unknown service name";
 	default:
 		return strerror(error);
 	} /* switch() */
@@ -7118,7 +7120,36 @@ struct dns_addrinfo {
 	char cname[DNS_D_MAXNAME + 1];
 
 	int state;
+
+	struct dns_stat st;
 }; /* struct dns_addrinfo */
+
+
+static dns_error_t dns_ai_parseport(unsigned short *port, const char *serv, const struct addrinfo *hints) {
+	const char *cp = serv;
+	unsigned long n = 0;
+
+	while (*cp >= '0' && *cp <= '9' && n < 65536) {
+		n *= 10;
+		n += *cp++ - '0';
+	}
+
+	if (*cp == '\0') {
+		if (cp == serv || n >= 65536)
+			return DNS_ESERVICE;
+
+		*port = n;
+
+		return 0;
+	}
+
+	if (hints->ai_flags & AI_NUMERICSERV)
+		return DNS_ESERVICE;
+
+	/* TODO: try getaddrinfo(NULL, serv, { .ai_flags = AI_NUMERICSERV }) */
+
+	return DNS_ESERVICE;
+} /* dns_ai_parseport() */
 
 
 struct dns_addrinfo *dns_ai_open(const char *host, const char *serv, enum dns_type qtype, const struct addrinfo *hints, struct dns_resolver *res, int *error_) {
@@ -7126,45 +7157,47 @@ struct dns_addrinfo *dns_ai_open(const char *host, const char *serv, enum dns_ty
 	struct dns_addrinfo *ai;
 	int error;
 
-	if (!res)
-		return 0;
-
-	dns_res_acquire(res);
+	if (res) {
+		dns_res_acquire(res);
+	} else if (!(hints->ai_flags & AI_NUMERICHOST)) {
+		/*
+		 * NOTE: it's assumed that *_error is set from a previous
+		 * API function call, such as dns_res_stub(). Should change
+		 * this semantic, but it's applied elsewhere, too.
+		 */
+		return NULL;
+	}
 
 	if (!(ai = malloc(sizeof *ai)))
 		goto syerr;
 
-	*ai		= ai_initializer;
-	ai->hints	= *hints;
+	*ai = ai_initializer;
+	ai->hints = *hints;
 
-	ai->res		= res;
-	res		= 0;
+	ai->res = res;
+	res = NULL;
 
 	if (sizeof ai->qname <= dns_strlcpy(ai->qname, host, sizeof ai->qname))
 		{ error = ENAMETOOLONG; goto error; }
 
-	ai->qtype	= qtype;
-	ai->qport	= 0;
+	ai->qtype = qtype;
+	ai->qport = 0;
 
-	if (serv) {
-		while (isdigit((unsigned char)*serv)) {
-			ai->qport	*= 10;
-			ai->qport	+= *serv++ - '0';
-		}
-	}
+	if (serv && (error = dns_ai_parseport(&ai->qport, serv, hints)))
+		goto error;
 
-	ai->port	= ai->qport;
+	ai->port = ai->qport;
 
 	return ai;
 syerr:
-	error	= dns_syerr();
+	error = dns_syerr();
 error:
-	*error_	= error;
+	*error_ = error;
 
 	dns_ai_close(ai);
 	dns_res_close(res);
 
-	return 0;
+	return NULL;
 } /* dns_ai_open() */
 
 
@@ -7288,6 +7321,8 @@ exec:
 
 		ai->state++;
 	case DNS_AI_S_SUBMIT:
+		assert(ai->res);
+
 		if ((error = dns_res_submit(ai->res, ai->qname, ai->qtype, DNS_C_IN)))
 			return error;
 
@@ -7425,32 +7460,33 @@ exec:
 
 
 time_t dns_ai_elapsed(struct dns_addrinfo *ai) {
-	return dns_res_elapsed(ai->res);
+	return (ai->res)? dns_res_elapsed(ai->res) : 0;
 } /* dns_ai_elapsed() */
 
 
 void dns_ai_clear(struct dns_addrinfo *ai) {
-	dns_res_clear(ai->res);
+	if (ai->res)
+		dns_res_clear(ai->res);
 } /* dns_ai_clear() */
 
 
 int dns_ai_events(struct dns_addrinfo *ai) {
-	return dns_res_events(ai->res);
+	return (ai->res)? dns_res_events(ai->res) : 0;
 } /* dns_ai_events() */
 
 
 int dns_ai_pollfd(struct dns_addrinfo *ai) {
-	return dns_res_pollfd(ai->res);
+	return (ai->res)? dns_res_pollfd(ai->res) : -1;
 } /* dns_ai_pollfd() */
 
 
 time_t dns_ai_timeout(struct dns_addrinfo *ai) {
-	return dns_res_timeout(ai->res);
+	return (ai->res)? dns_res_timeout(ai->res) : 0;
 } /* dns_ai_timeout() */
 
 
 int dns_ai_poll(struct dns_addrinfo *ai, int timeout) {
-	return dns_res_poll(ai->res, timeout);
+	return (ai->res)? dns_res_poll(ai->res, timeout) : 0;
 } /* dns_ai_poll() */
 
 
@@ -7517,7 +7553,7 @@ size_t dns_ai_print(void *dst, size_t lim, struct addrinfo *ent, struct dns_addr
 
 
 const struct dns_stat *dns_ai_stat(struct dns_addrinfo *ai) {
-	return dns_res_stat(ai->res);
+	return (ai->res)? dns_res_stat(ai->res) : &ai->st;
 } /* dns_ai_stat() */
 
 
