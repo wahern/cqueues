@@ -49,11 +49,12 @@ local loader = function(loader, ...)
 				tuple = { core.poll(...) }
 			end, ...)
 
+			-- NOTE: must step twice, once to call poll and
+			-- again to wake up
+			auxlib.assert3(poller:step())
 			auxlib.assert3(poller:step())
 
-			if tuple then
-				return table.unpack(tuple)
-			end
+			return table.unpack(tuple or {})
 		end
 	end -- core.poll
 
