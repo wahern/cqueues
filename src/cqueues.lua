@@ -41,8 +41,9 @@ local loader = function(loader, ...)
 				return yield(_POLL, ...)
 			end
 		else
-			local poller = poller or auxlib.assert3(core.new())
 			local tuple
+
+			poller = poller or auxlib.assert3(core.new())
 
 			poller:wrap(function (...)
 				tuple = { core.poll(...) }
