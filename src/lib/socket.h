@@ -59,9 +59,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20140930
+#define SOCKET_V_REL  0x20141020
 #define SOCKET_V_ABI  0x20140917
-#define SOCKET_V_API  0x20140917
+#define SOCKET_V_API  0x20141020
 
 
 const char *socket_vendor(void);
@@ -114,6 +114,7 @@ enum so_errno {
 	SO_EX509INT,	/* See SSL_ERROR_WANT_X509_LOOKUP in SSL_get_error(3). */
 	SO_ENOTVRFD,
 	SO_ECLOSURE,
+	SO_ENOHOST,
 	SO_ELAST,
 }; /* enum so_errno */
 

@@ -371,8 +371,9 @@ const char *so_strerror(int error) {
 	static const char *errlist[] = {
 		[SO_EOPENSSL - SO_ERRNO0] = "TLS/SSL error",
 		[SO_EX509INT - SO_ERRNO0] = "X.509 certificate lookup interrupt",
-		[SO_ENOTVRFD - SO_ERRNO0] = "absent or unverified peer certificate",
-		[SO_ECLOSURE - SO_ERRNO0] = "peers elected to shutdown secure transport",
+		[SO_ENOTVRFD - SO_ERRNO0] = "Absent or unverified peer certificate",
+		[SO_ECLOSURE - SO_ERRNO0] = "Peers elected to shutdown secure transport",
+		[SO_ENOHOST - SO_ERRNO0]  = "No host address available to complete operation",
 	};
 
 	if (error >= 0)
@@ -1143,7 +1144,7 @@ static int so_getaddr_(struct socket *so) {
 	int error;
 
 	if (!so->res)
-		return EINVAL;
+		return SO_ENOHOST;
 
 	so->events = 0;
 
@@ -1175,7 +1176,7 @@ static int so_socket_(struct socket *so) {
 	int error;
 
 	if (!so->host)
-		return EINVAL;
+		return SO_ENOHOST;
 
 	so_closesocket(&so->fd, &so->opts);
 
@@ -1197,11 +1198,15 @@ static int so_bind_(struct socket *so) {
 	struct sockaddr *saddr;
 
 	if (so->todo & SO_S_LISTEN) {
+		if (!so->host)
+			return SO_ENOHOST;
+
 		saddr = so->host->ai_addr;
 	} else if (so->opts.sa_bind) {
 		saddr = (struct sockaddr *)so->opts.sa_bind;
-	} else
+	} else {
 		return 0;
+	}
 
 	return so_bind(so->fd, saddr, &so->opts);
 } /* so_bind_() */
@@ -1219,15 +1224,22 @@ static int so_connect_(struct socket *so) {
 	so->events &= ~POLLOUT;
 
 retry:
-	if (0 != connect(so->fd, so->host->ai_addr, so->host->ai_addrlen))
-		goto soerr;
+	if (!so->host) {
+		error = SO_ENOHOST;
+		goto error;
+	}
+
+	if (0 != connect(so->fd, so->host->ai_addr, so->host->ai_addrlen)) {
+		error = so_soerr();
+		goto error;
+	}
 
 ready:
 	so_trace(SO_T_CONNECT, so->fd, so->host, "ready");
 
 	return 0;
-soerr:
-	switch ((error = so_soerr())) {
+error:
+	switch (error) {
 	case SO_EISCONN:
 		goto ready;
 	case SO_EINTR:
