@@ -1412,7 +1412,6 @@ static int object_getcv(lua_State *L, struct cqueue *Q, int index, struct event 
 
 static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int index, struct event *event) {
 	int status;
-	const char *mode;
 
 	/* optimize simple timeout */
 	if (lua_isnumber(T->L, index)) {
@@ -1451,18 +1450,23 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 
 		lua_pop(L, 1); /* pop fd or condvar */
 
-		if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TSTRING, LUA_TNIL)))
+		if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TNUMBER, LUA_TSTRING, LUA_TNIL)))
 			goto oops;
 
-		mode = luaL_optstring(L, -1, "");
-		event->events = 0;
+		if (lua_isnumber(L, -1)) {
+			event->events = (POLLIN|POLLOUT) & lua_tointeger(L, -1);
+		} else {
+			const char *mode = luaL_optstring(L, -1, "");
 
-		while (*mode) {
-			if (*mode == 'r')
-				event->events |= POLLIN;
-			else if (*mode == 'w')
-				event->events |= POLLOUT;
-			mode++;
+			event->events = 0;
+
+			while (*mode) {
+				if (*mode == 'r')
+					event->events |= POLLIN;
+				else if (*mode == 'w')
+					event->events |= POLLOUT;
+				mode++;
+			}
 		}
 
 		lua_pop(L, 1); /* pop event mode */
