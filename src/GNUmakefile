@@ -66,14 +66,20 @@ define BUILD_$(d)
 $$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnonlua.a
 	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
 
-$$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h
+$$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/compat52.h
 	test "$$(notdir $$(@D))" = "$$(call LUAPATH_$$(<D), $$(notdir $$(@D)), version)"
 	$$(MKDIR) -p $$(@D)
 	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(call LUAPATH_$$(<D), $$(notdir $$(@D)), cppflags) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
 
-$$(d)/$(1)/socket.o: $$(d)/lib/socket.h
+$$(d)/$(1)/cqueues.o: $$(d)/lib/llrb.h
+
+$$(d)/$(1)/socket.o: $$(d)/lib/socket.h $$(d)/lib/dns.h $$(d)/lib/fifo.h
+
+$$(d)/$(1)/errno.o: $$(d)/lib/socket.h $$(d)/lib/dns.h
 
 $$(d)/$(1)/dns.o: $$(d)/lib/dns.h
+
+$$(d)/$(1)/thread.o: $$(d)/lib/llrb.h
 
 $$(d)/$(1)/notify.o: $$(d)/lib/notify.h
 
