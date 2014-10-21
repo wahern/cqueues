@@ -63,8 +63,10 @@
 
 #if __GNUC__
 #define NOTUSED __attribute__((unused))
+#define EXTENSION __extension__
 #else
 #define NOTUSED
+#define EXTENSION
 #endif
 
 #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 5) || __GNUC__ > 4 || __clang__

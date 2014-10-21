@@ -100,7 +100,7 @@
 #endif
 
 #if __GNUC__
-#define luaL_error(...) ({ int tmp = luaL_error(__VA_ARGS__); NOTREACHED; tmp; })
+#define luaL_error(...) __extension__ ({ int tmp = luaL_error(__VA_ARGS__); NOTREACHED; tmp; })
 #endif
 
 

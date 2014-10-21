@@ -1600,7 +1600,7 @@ struct lso_rcvop {
 
 	int mode;
 
-	union {
+	EXTENSION union {
 		size_t size;
 
 		struct {

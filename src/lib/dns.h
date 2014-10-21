@@ -157,6 +157,12 @@ extern int dns_debug;
 #define dns_quietinit(...) __VA_ARGS__
 #endif
 
+#if defined __GNUC__
+#define DNS_PRAGMA_EXTENSION __extension__
+#else
+#define DNS_PRAGMA_EXTENSION
+#endif
+
 
 /*
  * E V E N T S  I N T E R F A C E S
@@ -376,7 +382,7 @@ struct dns_packet {
 
 	int:16; /* tcp padding */
 
-	union {
+	DNS_PRAGMA_EXTENSION union {
 		struct dns_header header;
 		unsigned char data[1];
 	};
