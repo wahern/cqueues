@@ -123,7 +123,7 @@ static int ct_addfunc(struct cthread *ct, lua_CFunction f) {
 	struct cthread_lib key, *ent;
 	void *ref = NULL;
 
-	if (!dladdr((void *)f, &key.info))
+	if (!dladdr(EXTENSION (void *)f, &key.info))
 		goto dlerr;
 
 	if ((ent = LLRB_FIND(libs, &ct->libs, &key)))
@@ -245,7 +245,7 @@ static void *ct_enter(void *arg) {
 	cqs_openlibs(L);
 
 	if (ct->tmp.arg[0].iscfunction) {
-		lua_pushcfunction(L, (lua_CFunction)ct->tmp.arg[0].v.pointer);
+		lua_pushcfunction(L, EXTENSION (lua_CFunction)ct->tmp.arg[0].v.pointer);
 	} else {
 		luaL_loadbuffer(L, ct->tmp.arg[0].v.string.iov_base, ct->tmp.arg[0].v.string.iov_len, "[thread enter]");
 	}
@@ -283,7 +283,7 @@ static void *ct_enter(void *arg) {
 			break;
 		case LUA_TFUNCTION:
 			if (arg->iscfunction) {
-				lua_pushcfunction(L, (lua_CFunction)arg->v.pointer);
+				lua_pushcfunction(L, EXTENSION (lua_CFunction)arg->v.pointer);
 			} else {
 				luaL_loadbuffer(L, arg->v.string.iov_base, arg->v.string.iov_len, NULL);
 			}
@@ -363,7 +363,7 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 			return error;
 		}
 
-		arg->v.pointer = (void *)f;
+		arg->v.pointer = EXTENSION (void *)f;
 		arg->iscfunction = 1;
 	} else {
 		lua_State *T;
@@ -762,7 +762,7 @@ static int ct_protectssl(void) {
 	if (bound && !openssl.dlref) {
 		Dl_info info;
 
-		if (!dladdr((void *)&luaopen__cqueues_thread, &info)) {
+		if (!dladdr(EXTENSION (void *)&luaopen__cqueues_thread, &info)) {
 			error = -1;
 			goto leave;
 		}

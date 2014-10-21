@@ -149,7 +149,7 @@ extern int dns_debug;
 
 /* GCC parses the _Pragma operator less elegantly than clang. */
 #define dns_quietinit(...) \
-	({ DNS_PRAGMA_PUSH DNS_PRAGMA_QUIET __VA_ARGS__; DNS_PRAGMA_POP })
+	__extension__ ({ DNS_PRAGMA_PUSH DNS_PRAGMA_QUIET __VA_ARGS__; DNS_PRAGMA_POP })
 #else
 #define DNS_PRAGMA_PUSH
 #define DNS_PRAGMA_QUIET

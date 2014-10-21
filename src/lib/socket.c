@@ -645,7 +645,9 @@ error:
 } /* so_socket() */
 
 
-int so_bind(int fd, sockaddr_arg_t arg, const struct so_options *opts) {
+#define so_bind(...) SO_EXTENSION so_bind(__VA_ARGS__)
+
+int (so_bind)(int fd, sockaddr_arg_t arg, const struct so_options *opts) {
 #if SA_UNIX
 	if (*sa_family(arg) == AF_UNIX) {
 		char *path = strncpy((char [sizeof sockaddr_ref(arg).sun->sun_path + 1]){ 0 }, sockaddr_ref(arg).sun->sun_path, sizeof sockaddr_ref(arg).sun->sun_path);

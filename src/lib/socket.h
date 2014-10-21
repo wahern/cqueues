@@ -209,8 +209,10 @@ union sockaddr_any {
  */
 #if __GNUC__
 #define SO_TRANSPARENT __attribute__((__transparent_union__))
+#define SO_EXTENSION __extension__
 #else
 #define SO_TRANSPARENT
+#define SO_EXTENSION
 #endif
 
 union sockaddr_arg {
@@ -267,12 +269,16 @@ static inline socklen_t af_len(sa_family_t af) {
 } /* af_len() */
 
 
-static inline sa_family_t *sa_family(sockaddr_arg_t arg) {
+#define sa_family(...) SO_EXTENSION sa_family(__VA_ARGS__)
+
+static inline sa_family_t *(sa_family)(sockaddr_arg_t arg) {
 	return &sockaddr_ref(arg).sa->sa_family;
 } /* sa_family() */
 
 
-static inline socklen_t sa_len(sockaddr_arg_t arg) {
+#define sa_len(...) SO_EXTENSION sa_len(__VA_ARGS__)
+
+static inline socklen_t (sa_len)(sockaddr_arg_t arg) {
 	return af_len(*sa_family(arg));
 } /* sa_len() */
 
@@ -283,7 +289,9 @@ static inline socklen_t sa_len(sockaddr_arg_t arg) {
 #define SA_ADDR_NONE (&(union { struct in_addr addr; struct in6_addr addr6; }))
 #endif
 
-static inline void *sa_addr(sockaddr_arg_t arg, const void *def, int *error) {
+#define sa_addr(...) SO_EXTENSION sa_addr(__VA_ARGS__)
+
+static inline void *(sa_addr)(sockaddr_arg_t arg, const void *def, int *error) {
 	switch (*sa_family(arg)) {
 	case AF_INET:
 		return &sockaddr_ref(arg).sin->sin_addr;
@@ -302,7 +310,9 @@ static inline void *sa_addr(sockaddr_arg_t arg, const void *def, int *error) {
 } /* sa_addr() */
 
 
-static inline socklen_t sa_addrlen(sockaddr_arg_t arg, int *error) {
+#define sa_addrlen(...) SO_EXTENSION sa_addrlen(__VA_ARGS__)
+
+static inline socklen_t (sa_addrlen)(sockaddr_arg_t arg, int *error) {
 	switch (*sa_family(arg)) {
 	case AF_INET:
 		return sizeof ((struct sockaddr_in *)0)->sin_addr;
@@ -323,7 +333,9 @@ static inline socklen_t sa_addrlen(sockaddr_arg_t arg, int *error) {
 
 #define SA_PORT_NONE (&(in_port_t){ 0 })
 
-static inline in_port_t *sa_port(sockaddr_arg_t arg, const in_port_t *def, int *error) {
+#define sa_port(...) SO_EXTENSION sa_port(__VA_ARGS__)
+
+static inline in_port_t *(sa_port)(sockaddr_arg_t arg, const in_port_t *def, int *error) {
 	switch (*sa_family(arg)) {
 	case AF_INET:
 		return &sockaddr_ref(arg).sin->sin_port;
