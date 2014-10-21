@@ -59,9 +59,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20141020
-#define SOCKET_V_ABI  0x20140917
-#define SOCKET_V_API  0x20141020
+#define SOCKET_V_REL  0x20141021
+#define SOCKET_V_ABI  0x20141021
+#define SOCKET_V_API  0x20141021
 
 
 const char *socket_vendor(void);
@@ -144,6 +144,12 @@ struct so_options {
 	_Bool sin_nodelay;
 	_Bool sin_nopush;
 
+	enum {
+		SO_V6ONLY_DEFAULT = 0, /* system default */
+		SO_V6ONLY_ENABLE  = 1,
+		SO_V6ONLY_DISABLE = 2,
+	} sin_v6only;
+
 	_Bool fd_nonblock;
 	_Bool fd_cloexec;
 	_Bool fd_nosigpipe;
@@ -166,7 +172,7 @@ struct so_options {
 
 #define SO_OPTS_TLS_HOSTNAME ((char *)1) /* place holder for peer host name */
 
-#define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .fd_nonblock = 1, .fd_cloexec = 1, .fd_nosigpipe = 1, .tls_sendname = SO_OPTS_TLS_HOSTNAME, .st_time = 1, __VA_ARGS__ })
+#define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .sin_v6only = SO_V6ONLY_DEFAULT, .fd_nonblock = 1, .fd_cloexec = 1, .fd_nosigpipe = 1, .tls_sendname = SO_OPTS_TLS_HOSTNAME, .st_time = 1, __VA_ARGS__ })
 
 
 /*
@@ -449,6 +455,8 @@ int so_nopush(int, _Bool);
 
 int so_nosigpipe(int, _Bool);
 
+int so_v6only(int, _Bool);
+
 
 #define SO_F_CLOEXEC   0x01
 #define SO_F_NONBLOCK  0x02
@@ -457,6 +465,7 @@ int so_nosigpipe(int, _Bool);
 #define SO_F_NODELAY   0x10
 #define SO_F_NOPUSH    0x20
 #define SO_F_NOSIGPIPE 0x40
+#define SO_F_V6ONLY    0x80
 
 int so_getfl(int fd, int which); /* no failure mode */
 

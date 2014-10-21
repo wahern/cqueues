@@ -23,54 +23,37 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
-#include <stddef.h>	/* offsetof size_t */
+#include <stddef.h> /* offsetof size_t */
+#include <limits.h> /* INT_MAX LONG_MAX */
+#include <stdlib.h> /* malloc(3) free(3) */
+#include <string.h> /* strdup(3) strlen(3) memset(3) strncpy(3) memcpy(3) strerror(3) */
+#include <errno.h>  /* EINVAL EAGAIN EWOULDBLOCK EINPROGRESS EALREADY ENAMETOOLONG EOPNOTSUPP ENOTSOCK ENOPROTOOPT */
+#include <signal.h> /* SIGPIPE SIG_BLOCK SIG_SETMASK sigset_t sigprocmask(2) pthread_sigmask(3) sigtimedwait(2) sigpending(2) sigemptyset(3) sigismember(3) sigaddset(3) */
+#include <assert.h> /* assert(3) */
+#include <time.h>   /* time(2) */
 
-#include <limits.h>	/* INT_MAX LONG_MAX */
-
-#include <stdlib.h>	/* malloc(3) free(3) */
-
-#include <string.h>	/* strdup(3) strlen(3) memset(3) strncpy(3) memcpy(3) strerror(3) */
-
-#include <errno.h>	/* EINVAL EAGAIN EWOULDBLOCK EINPROGRESS EALREADY ENAMETOOLONG EOPNOTSUPP ENOTSOCK ENOPROTOOPT */
-
-#include <signal.h>	/* SIGPIPE SIG_BLOCK SIG_SETMASK sigset_t sigprocmask(2) pthread_sigmask(3) sigtimedwait(2) sigpending(2) sigemptyset(3) sigismember(3) sigaddset(3) */
-
-#include <assert.h>	/* assert(3) */
-
-#include <time.h>	/* time(2) */
-
-#include <sys/types.h>	/* socklen_t mode_t in_port_t */
-#include <sys/stat.h>	/* fchmod(2) fstat(2) */
-#include <sys/select.h>	/* FD_ZERO FD_SET fd_set select(2) */
-#include <sys/socket.h>	/* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
-
+#include <sys/types.h>   /* socklen_t mode_t in_port_t */
+#include <sys/stat.h>    /* fchmod(2) fstat(2) */
+#include <sys/select.h>  /* FD_ZERO FD_SET fd_set select(2) */
+#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 #if defined(AF_UNIX)
-#include <sys/un.h>	/* struct sockaddr_un struct unpcbid */
+#include <sys/un.h>      /* struct sockaddr_un struct unpcbid */
 #endif
-
-#include <netinet/in.h>	/* struct sockaddr_in struct sockaddr_in6 */
-
-#include <netinet/tcp.h> /* IPPROTO_TCP TCP_NODELAY TCP_NOPUSH TCP_CORK */
-
-#include <arpa/inet.h>	/* inet_ntop(3) inet_pton(3) ntohs(3) htons(3) */
-
-#include <netdb.h>	/* struct addrinfo */
-
-#include <unistd.h>	/* _POSIX_REALTIME_SIGNALS _POSIX_THREADS close(2) unlink(2) getpeereid(2) */
-
-#include <fcntl.h>	/* F_SETFD F_GETFD F_GETFL F_SETFL FD_CLOEXEC O_NONBLOCK O_NOSIGPIPE F_SETNOSIGPIPE F_GETNOSIGPIPE */
-
-#include <poll.h>	/* POLLIN POLLOUT */
-
+#include <netinet/in.h>  /* IPPROTO_IPV6 IPPROTO_TCP IPV6_V6ONLY struct sockaddr_in struct sockaddr_in6 */
+#include <netinet/tcp.h> /* TCP_NODELAY TCP_NOPUSH TCP_CORK */
+#include <arpa/inet.h>   /* inet_ntop(3) inet_pton(3) ntohs(3) htons(3) */
+#include <netdb.h>       /* struct addrinfo */
+#include <unistd.h>      /* _POSIX_REALTIME_SIGNALS _POSIX_THREADS close(2) unlink(2) getpeereid(2) */
+#include <fcntl.h>       /* F_SETFD F_GETFD F_GETFL F_SETFL FD_CLOEXEC O_NONBLOCK O_NOSIGPIPE F_SETNOSIGPIPE F_GETNOSIGPIPE */
+#include <poll.h>        /* POLLIN POLLOUT */
 #if defined __sun
-#include <ucred.h>	/* ucred_t getpeerucred(2) ucred_free(3) */
+#include <ucred.h>       /* ucred_t getpeerucred(2) ucred_free(3) */
 #endif
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 #include "dns.h"
-
 #include "socket.h"
 
 
@@ -615,8 +598,8 @@ error:
 } /* sa_egress() */
 
 
-static int so_opts2flags(const struct so_options *);
-static int so_type2mask(int, int);
+static int so_opts2flags(const struct so_options *, int *);
+static int so_type2mask(int, int, int);
 
 int so_socket(int domain, int type, const struct so_options *opts, int *_error) {
 	int error, fd, flags, mask, need;
@@ -624,9 +607,9 @@ int so_socket(int domain, int type, const struct so_options *opts, int *_error) 
 	if (-1 == (fd = socket(domain, type, 0)))
 		goto syerr;
 
-	flags = so_opts2flags(opts);
-	mask  = so_type2mask(domain, type);
-	need  = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
+	flags = so_opts2flags(opts, &mask);
+	mask &= so_type2mask(domain, type, 0);
+	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
 
 	if ((error = so_setfl(fd, flags, mask, need)))
 		goto error;
@@ -816,6 +799,17 @@ int so_nosigpipe(int fd, _Bool nosigpipe) {
 } /* so_nosigpipe() */
 
 
+int so_v6only(int fd, _Bool v6only) {
+	/*
+	 * NOTE: OS X will return EINVAL if socket already connected.
+	 * Haven't checked other systems. Should we should suppress this
+	 * error?
+	 */
+	return so_setboolopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, v6only);
+} /* so_v6only() */
+
+
+#define NO_OFFSET ((size_t)-1)
 #define optoffset(m) offsetof(struct so_options, m)
 
 static const struct flops {
@@ -830,28 +824,58 @@ static const struct flops {
 	{ SO_F_NODELAY,   &so_nodelay,   optoffset(sin_nodelay),   },
 	{ SO_F_NOPUSH,    &so_nopush,    optoffset(sin_nopush),    },
 	{ SO_F_NOSIGPIPE, &so_nosigpipe, optoffset(fd_nosigpipe),  },
+	{ SO_F_V6ONLY,    &so_v6only,    NO_OFFSET,                },
 };
 
 
-static int so_opts2flags(const struct so_options *opts) {
+static int so_opts2flags(const struct so_options *opts, int *mask) {
 	const struct flops *f;
 	int flags = 0;
 
+	*mask = 0;
+
 	for (f = fltable; f < endof(fltable); f++) {
+		if (f->offset == NO_OFFSET)
+			continue;
+
 		flags |= (*(_Bool *)((char *)opts + f->offset))? f->flag : 0;
+		*mask |= f->flag;
+	}
+
+	switch (opts->sin_v6only) {
+	case SO_V6ONLY_DEFAULT:
+		break;
+	case SO_V6ONLY_ENABLE:
+		flags |= SO_F_V6ONLY;
+		*mask |= SO_F_V6ONLY;
+		break;
+	case SO_V6ONLY_DISABLE:
+		*mask |= SO_F_V6ONLY;
+		break;
 	}
 
 	return flags;
 } /* so_opts2flags() */
 
 
-static int so_type2mask(int family, int type) {
-	if (family == AF_INET || family == AF_INET6) {
-		if (type == SOCK_STREAM)
-			return ~0;
+static int so_type2mask(int family, int type, int protocol) {
+	int mask = ~0;
+
+	if (!protocol) {
+		if (family == AF_INET || family == AF_INET6) {
+			protocol = (type == SOCK_STREAM)? IPPROTO_TCP : IPPROTO_UDP;
+		}
 	}
 
-	return ~(SO_F_NODELAY|SO_F_NOPUSH);
+	if (family != AF_INET6) {
+		mask &= ~SO_F_V6ONLY;
+	}
+
+	if (protocol != IPPROTO_TCP) {
+		mask &= ~(SO_F_NODELAY|SO_F_NOPUSH);
+	}
+
+	return mask;
 } /* so_type2mask() */
 
 
@@ -907,6 +931,9 @@ int so_getfl(int fd, int which) {
 #endif
 	}
 #endif
+
+	if ((which & SO_F_V6ONLY) && so_getboolopt(fd, IPPROTO_IPV6, IPV6_V6ONLY))
+		flags |= SO_F_V6ONLY;
 
 	return flags;
 } /* so_getfl() */
@@ -1690,7 +1717,7 @@ struct socket *so_dial(const struct sockaddr *sa, int type, const struct so_opti
 	so->host = &host->ai;
 	so->host->ai_family = sa->sa_family;
 	so->host->ai_socktype = type;
-	so->host->ai_protocol = PF_UNSPEC;
+	so->host->ai_protocol = 0;
 	so->host->ai_addrlen = af_len(sa->sa_family);
 	so->host->ai_addr = (struct sockaddr *)&host->ss;
 
@@ -1711,7 +1738,7 @@ error:
 struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct socket *so;
 	struct stat st;
-	int family = AF_UNSPEC, type = 0, flags, mask, need, error;
+	int family = AF_UNSPEC, type = 0, protocol = 0, flags, mask, need, error;
 
 	if (!(so = so_make(opts, &error)))
 		goto error;
@@ -1729,11 +1756,16 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 
 		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
 			goto syerr;
+
+		/*
+		 * FIXME: Use SO_PROTOCOL when available.
+		 * See http://austingroupbugs.net/view.php?id=840
+		 */
 	}
 
-	flags = so_opts2flags(opts);
-	mask  = so_type2mask(family, type);
-	need  = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
+	flags = so_opts2flags(opts, &mask);
+	mask &= so_type2mask(family, type, protocol);
+	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
 
 	if ((error = so_rstfl(fd, &so->flags, flags, mask, need)))
 		goto error;
