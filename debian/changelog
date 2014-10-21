@@ -1,3 +1,12 @@
+liblua-cqueues (20141030-0) unstable; urgency=low
+
+  * Allow :events methods to return event set as integer bitset.
+  * Fix NULL-dereference when calling :connect method on a socket created
+    using socket.pair or socket.fdopen.
+  * Fix cqueues.poll when polling outside of a managed coroutine.
+
+ -- William Ahern <william@25thandClement.com>  Mon, 20 Oct 2014 17:17:59 -0700
+
 liblua-cqueues (20140930-0) unstable; urgency=low
 
   * Fix build dependency where M4 fails but the command line still creates
