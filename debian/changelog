@@ -1,4 +1,4 @@
-liblua-cqueues (20141030-0) unstable; urgency=low
+liblua-cqueues (20141020-0) unstable; urgency=low
 
   * Allow :events methods to return event set as integer bitset.
   * Fix NULL-dereference when calling :connect method on a socket created
