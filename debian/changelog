@@ -1,3 +1,9 @@
+liblua-cqueues (20141021-0) unstable; urgency=low
+
+  * Add IPV6_V6ONLY support.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 21 Oct 2014 15:45:51 -0700
+
 liblua-cqueues (20141020-0) unstable; urgency=low
 
   * Allow :events methods to return event set as integer bitset.
