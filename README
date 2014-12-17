@@ -80,11 +80,17 @@ liblua5.1-cqueues
 liblua5.2-cqueues
 	Build Lua 5.2 cqueues modules
 
+liblua5.3-cqueues
+	Build Lua 5.3 cqueues modules
+
 liblua5.1-cqueues-install
 	Install Lua 5.1 cqueues modules
 
 liblua5.2-cqueues-install
 	Install Lua 5.2 cqueues modules
+
+liblua5.3-cqueues-install
+	Install Lua 5.3 cqueues modules
 
 liblua5.1-cqueues-uninstall
 	Uninstall Lua 5.1 cqueues modules
@@ -92,10 +98,16 @@ liblua5.1-cqueues-uninstall
 liblua5.2-cqueues-uninstall
 	Uninstall Lua 5.2 cqueues modules
 
+liblua5.3-cqueues-uninstall
+	Uninstall Lua 5.3 cqueues modules
+
 cqueues5.1
 	Synonym for liblua5.1-cqueues
 
 cqueues5.2
+	Synonym for liblua5.2-cqueues
+
+cqueues5.3
 	Synonym for liblua5.2-cqueues
 
 cqueues
@@ -107,11 +119,17 @@ install5.1
 install5.2
 	Invokes liblua5.2-cqueues-install
 
+install5.3
+	Invokes liblua5.3-cqueues-install
+
 uninstall5.1
 	Invokes liblua5.1-cqueues-uninstall
 
 uninstall5.2
 	Invokes liblua5.2-cqueues-uninstall
+
+uninstall5.3
+	Invokes liblua5.3-cqueues-uninstall
 
 install
 	Invokes install5.1 and install5.2
@@ -124,6 +142,9 @@ all5.1:
 
 all5.2:
 	Build all Lua 5.2 binary targets
+
+all5.3:
+	Build all Lua 5.3 binary targets
 
 all
 	Build all binary targets (the default)
