@@ -100,7 +100,7 @@ static void luaL_requiref(lua_State *L, const char *modname, lua_CFunction openf
 	lua_pushvalue(L, -2);
 	lua_setfield(L, -2, modname);
 	lua_pop(L, 1);
-	
+
 	if (glb) {
 		lua_pushvalue(L, -1);
 		lua_setglobal(L, modname);

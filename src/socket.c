@@ -459,7 +459,7 @@ static mode_t lso_checkperm(lua_State *L, int index) {
 		int i = 9, flag, ch;
 
 		while ((ch = *mode++) && i > 0) {
-			if (ch == 'r' || ch == 'R') 
+			if (ch == 'r' || ch == 'R')
 				flag = 04;
 			else if (ch == 'w' || ch == 'W')
 				flag = 02;
@@ -1653,7 +1653,7 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 			op.type = LSO_LIMIT;
 			op.size = -size;
 		} else {
-			op.type   = LSO_BLOCK;
+			op.type = LSO_BLOCK;
 			op.size = size;
 		}
 	}
@@ -1927,7 +1927,7 @@ static lso_error_t lso_doflush(struct luasocket *S, int mode) {
 		amount -= n;
 		S->obuf.eol -= MIN(S->obuf.eol, n);
 	}
-	
+
 	return 0;
 error:
 	switch (error) {
@@ -2577,10 +2577,10 @@ static int lso_type(lua_State *L) {
 static int lso_interpose(lua_State *L) {
 	luaL_getmetatable(L, LSO_CLASS);
 	lua_getfield(L, -1, "__index");
-	
+
 	lua_pushvalue(L, -4); /* push method name */
 	lua_gettable(L, -2);  /* push old method */
-			
+
 	lua_pushvalue(L, -5); /* push method name */
 	lua_pushvalue(L, -5); /* push new method */
 	lua_settable(L, -4);  /* replace old method */

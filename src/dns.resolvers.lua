@@ -151,7 +151,7 @@ local loader = function(loader, ...)
 	end -- pool:signal
 
 
-	function pool:query(name, type, class, timeout) 
+	function pool:query(name, type, class, timeout)
 		local deadline = todeadline(timeout or self.timeout)
 		local res, why = getby(self, deadline)
 

@@ -472,7 +472,7 @@ static int ct_start(lua_State *L) {
 				goto error;
 			break;
 		default:
-			/* FALL THROUGH (maybe has __tostring metamethod) */ 
+			/* FALL THROUGH (maybe has __tostring metamethod) */
 		case LUA_TSTRING:
 			arg->v.string.iov_base = (char *)luaL_checklstring(L, index, &arg->v.string.iov_len);
 			arg->type = LUA_TSTRING;
@@ -735,7 +735,7 @@ static int ct_protectssl(void) {
 			int i;
 
 			openssl.count = CRYPTO_num_locks();
-		
+
 			if (!(openssl.lock = malloc(openssl.count * sizeof *openssl.lock))) {
 				error = errno;
 				goto leave;

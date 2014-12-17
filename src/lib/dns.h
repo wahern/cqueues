@@ -432,7 +432,7 @@ int dns_p_study(struct dns_packet *);
 
 #define DNS_D_ANCHOR	1	/* anchor domain w/ root "." */
 #define DNS_D_CLEAVE	2	/* cleave sub-domain */
-#define DNS_D_TRIM	4	/* remove superfluous dots */ 
+#define DNS_D_TRIM	4	/* remove superfluous dots */
 
 #define dns_d_new3(a, b, f)	dns_d_init(&(char[DNS_D_MAXNAME + 1]){ 0 }, DNS_D_MAXNAME + 1, (a), (b), (f))
 #define dns_d_new2(a, f)	dns_d_new3((a), strlen((a)), (f))

@@ -3,7 +3,7 @@
 # List all EXXXX macros
 #
 
-set -e 
+set -e
 
 : ${CC:=cc}
 : ${xflag:=}
@@ -16,7 +16,7 @@ usage() {
 	  -l  print or compute ELAST value
 	  -x  expand macros
 	  -h  print this usage message
-	
+
 	Report bugs to <william@25thandClement.com>
 	EOF
 }

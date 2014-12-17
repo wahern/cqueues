@@ -62,7 +62,7 @@ local loader = function(loader, ...)
 	--
 	-- core.sleep
 	--
-	-- Sleep primitive. 
+	-- Sleep primitive.
 	--
 	function core.sleep(timeout)
 		core.poll(timeout)
@@ -123,12 +123,12 @@ local loader = function(loader, ...)
 
 				if curtime < deadline then
 					local ok, why = self:loop(deadline - curtime)
-					
+
 					if not ok then
 						return why
 					end
 				end
-	
+
 				return --> nothing, to end for loop
 			end
 		else

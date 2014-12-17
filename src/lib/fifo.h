@@ -584,7 +584,7 @@ FIFO_NOTUSED static void fifo_dump(struct fifo *fifo, FILE *fp, int flags) {
 
 		fputc(' ', fp);
 		fputc('|', fp);
-	
+
 		for (n = 0; n < 16 && EOF != (ch = fifo_peek(fifo, p)); n++, p++) {
 			fputc((isgraph(ch)? ch : '.'), fp);
 		}

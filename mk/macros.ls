@@ -3,7 +3,7 @@
 # List specified macros
 #
 
-set -e 
+set -e
 
 : ${CC:=cc}
 : ${CPPFLAGS:=}
@@ -27,7 +27,7 @@ usage() {
 	  -v VENDOR   compiler vendor name (e.g. gcc, clang, sunpro)
 	  -x          expand macros
 	  -h          print this usage message
-	
+
 	Report bugs to <william@25thandClement.com>
 	EOF
 }

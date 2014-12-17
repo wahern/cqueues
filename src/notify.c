@@ -104,7 +104,7 @@ static int ln_events(lua_State *L) {
 static int ln_timeout(lua_State *L) {
 	struct luanotify *N = luaL_checkudata(L, 1, CQS_NOTIFY);
 	int timeout;
-	
+
 	if ((timeout = notify_timeout(N->notify)) >= 0) {
 		lua_pushnumber(L, (lua_Number)timeout / 1000);
 
