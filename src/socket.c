@@ -23,21 +23,20 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
-#include <stddef.h>	/* NULL offsetof size_t */
+#include <stddef.h>	/* NULL size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
-#include <stdlib.h>	/* abs(3) strtol(3) */
-#include <limits.h>	/* INT_MAX */
+#include <stdlib.h>	/* strtol(3) */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) */
 
 #include <math.h>	/* NAN */
 
-#include <errno.h>	/* EAGAIN EPIPE EINTR */
+#include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
 #include <sys/socket.h>	/* AF_UNIX SOCK_STREAM SOCK_DGRAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 
-#include <unistd.h>	/* dup(2) close(2) */
+#include <unistd.h>	/* dup(2) */
 
 #include <arpa/inet.h>	/* ntohs(3) */
 
