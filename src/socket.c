@@ -23,21 +23,20 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
-#include <stddef.h>	/* NULL offsetof size_t */
+#include <stddef.h>	/* NULL size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
-#include <stdlib.h>	/* abs(3) strtol(3) */
-#include <limits.h>	/* INT_MAX */
+#include <stdlib.h>	/* strtol(3) */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) */
 
 #include <math.h>	/* NAN */
 
-#include <errno.h>	/* EAGAIN EPIPE EINTR */
+#include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
 #include <sys/socket.h>	/* AF_UNIX SOCK_STREAM SOCK_DGRAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 
-#include <unistd.h>	/* dup(2) close(2) */
+#include <unistd.h>	/* dup(2) */
 
 #include <arpa/inet.h>	/* ntohs(3) */
 
@@ -459,7 +458,7 @@ static mode_t lso_checkperm(lua_State *L, int index) {
 		int i = 9, flag, ch;
 
 		while ((ch = *mode++) && i > 0) {
-			if (ch == 'r' || ch == 'R') 
+			if (ch == 'r' || ch == 'R')
 				flag = 04;
 			else if (ch == 'w' || ch == 'W')
 				flag = 02;
@@ -1653,7 +1652,7 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 			op.type = LSO_LIMIT;
 			op.size = -size;
 		} else {
-			op.type   = LSO_BLOCK;
+			op.type = LSO_BLOCK;
 			op.size = size;
 		}
 	}
@@ -1927,7 +1926,7 @@ static lso_error_t lso_doflush(struct luasocket *S, int mode) {
 		amount -= n;
 		S->obuf.eol -= MIN(S->obuf.eol, n);
 	}
-	
+
 	return 0;
 error:
 	switch (error) {
@@ -2577,10 +2576,10 @@ static int lso_type(lua_State *L) {
 static int lso_interpose(lua_State *L) {
 	luaL_getmetatable(L, LSO_CLASS);
 	lua_getfield(L, -1, "__index");
-	
+
 	lua_pushvalue(L, -4); /* push method name */
 	lua_gettable(L, -2);  /* push old method */
-			
+
 	lua_pushvalue(L, -5); /* push method name */
 	lua_pushvalue(L, -5); /* push new method */
 	lua_settable(L, -4);  /* replace old method */

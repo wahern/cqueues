@@ -1,11 +1,10 @@
-== API DOCUMENTATION ==
+## API Documentation
 
 Please refer to the PDF available at
+<http://25thandclement.com/~william/projects/cqueues.pdf>
 
-	http://25thandclement.com/~william/projects/cqueues.pdf
 
-
-== BUILD DEPENDENCIES ==
+## Build Dependancies
 
 The Makefile requires GNU Make. The source code should build with recent
 GCC, clang, or Solaris SunPro compilers.
@@ -26,8 +25,7 @@ random across systems, the build system relies on mk/lua.path to locate the
 correct headers, including selecting the correct headers at compile-time
 when conflicting headers are encountered. mk/lua.path uses various POSIX
 utilities. For more information, see
-
-	http://25thandclement.com/~william/projects/luapath.html
+<http://25thandclement.com/~william/projects/luapath.html>
 
 cqueues should work (plus or minus a few tweaks) on recent versions of
 Linux, OS X, Solaris, NetBSD, FreeBSD, OpenBSD, and derivatives. The only
@@ -35,25 +33,25 @@ other possible candidate is AIX, if and when support for AIX's pollset
 interface is added to the embedded "kpoll" library.
 
 
-== BUILD OVERVIEW ==
+## Build Overview
 
 There is no separate ./configure step. System introspection occurs during
 compile-time. However, the `configure' Make target can be used to cache the
 build environment.
 
 
-== BUILD ENVIRONMENT ==
+## Build Environment
 
 All the common GNU-style installation path variables are supported,
 including prefix, bindir, libdir, datadir, includedir, and DESTDIR. These
 additional path variables are also allowed:
 
-lua51path  - install path for Lua 5.1 modules, e.g. $(prefix)/share/lua/5.1
-lua51cpath - install path for Lua 5.1 C modules, e.g. $(prefix)/lib/lua/5.1
-lua52path  - install path for Lua 5.2 modules, e.g. $(prefix)/share/lua/5.2
-lua52cpath - install path for Lua 5.2 C modules, e.g. $(prefix)/lib/lua/5.2
-lua53path  - install path for Lua 5.3 modules, e.g. $(prefix)/share/lua/5.3
-lua53cpath - install path for Lua 5.3 C modules, e.g. $(prefix)/lib/lua/5.3
+  - lua51path  - install path for Lua 5.1 modules, e.g. $(prefix)/share/lua/5.1
+  - lua51cpath - install path for Lua 5.1 C modules, e.g. $(prefix)/lib/lua/5.1
+  - lua52path  - install path for Lua 5.2 modules, e.g. $(prefix)/share/lua/5.2
+  - lua52cpath - install path for Lua 5.2 C modules, e.g. $(prefix)/lib/lua/5.2
+  - lua53path  - install path for Lua 5.3 modules, e.g. $(prefix)/share/lua/5.3
+  - lua53cpath - install path for Lua 5.3 C modules, e.g. $(prefix)/lib/lua/5.3
 
 All the common GNU-style compiler variables are supported, including CC,
 CPPFLAGS, CFLAGS, LDFLAGS, and SOFLAGS. Note that you can specify the path
@@ -66,7 +64,7 @@ the variable values on subsequent invocations. Variables can be modified on
 an individual basis after this.
 
 
-== BUILD TARGETS ==
+## Build Targets
 
 cqueues targets both the Lua 5.2 and Lua 5.1 (LuaJIT) API. For various
 reasons the build system is capable of building both 5.1 and 5.2 modules
@@ -74,69 +72,145 @@ simultaneously in a single Make invocation. Therefore, there are many
 seemingly superfluous target names, either out of necessity or for
 convenience.
 
-liblua5.1-cqueues
-	Build Lua 5.1 cqueues modules 
 
-liblua5.2-cqueues
-	Build Lua 5.2 cqueues modules
+### liblua5.1-cqueues
 
-liblua5.1-cqueues-install
-	Install Lua 5.1 cqueues modules
+Build Lua 5.1 cqueues modules
 
-liblua5.2-cqueues-install
-	Install Lua 5.2 cqueues modules
 
-liblua5.1-cqueues-uninstall
-	Uninstall Lua 5.1 cqueues modules
+### liblua5.2-cqueues
 
-liblua5.2-cqueues-uninstall
-	Uninstall Lua 5.2 cqueues modules
+Build Lua 5.2 cqueues modules
 
-cqueues5.1
-	Synonym for liblua5.1-cqueues
 
-cqueues5.2
-	Synonym for liblua5.2-cqueues
+### liblua5.3-cqueues
 
-cqueues
-	Invokes cqueues5.1 and cqueues5.2
+Build Lua 5.3 cqueues modules
 
-install5.1
-	Invokes liblua5.1-cqueues-install
 
-install5.2
-	Invokes liblua5.2-cqueues-install
+### liblua5.1-cqueues-install
 
-uninstall5.1
-	Invokes liblua5.1-cqueues-uninstall
+Install Lua 5.1 cqueues modules
 
-uninstall5.2
-	Invokes liblua5.2-cqueues-uninstall
 
-install
-	Invokes install5.1 and install5.2
+### liblua5.2-cqueues-install
 
-uninstall
-	Invokes uninstall5.1 and uninstall5.2
+Install Lua 5.2 cqueues modules
 
-all5.1:
-	Build all Lua 5.1 binary targets
 
-all5.2:
-	Build all Lua 5.2 binary targets
+### liblua5.3-cqueues-install
 
-all
-	Build all binary targets (the default)
+Install Lua 5.3 cqueues modules
 
-clean
-	rm binary targets, object files, debugging symbols, etc
 
-clean~
-	clean + rm *~
+### liblua5.1-cqueues-uninstall
 
-debian
-	Build debian packages liblua5.1-cqueues and liblua5.2-cqueues using
-	the dpkg-buildpackage utility. The Make variables DPKG_BUILDPACKAGE
-	and DPKG_BUILDPACKAGE_OPTIONS can be used to manipulate this
-	process.
+Uninstall Lua 5.1 cqueues modules
 
+
+### liblua5.2-cqueues-uninstall
+
+Uninstall Lua 5.2 cqueues modules
+
+
+### liblua5.3-cqueues-uninstall
+
+Uninstall Lua 5.3 cqueues modules
+
+
+### cqueues5.1
+
+Synonym for liblua5.1-cqueues
+
+
+### cqueues5.2
+
+Synonym for liblua5.2-cqueues
+
+
+### cqueues5.3
+
+Synonym for liblua5.2-cqueues
+
+
+### cqueues
+
+Invokes cqueues5.1 and cqueues5.2
+
+
+### install5.1
+
+Invokes liblua5.1-cqueues-install
+
+
+### install5.2
+
+Invokes liblua5.2-cqueues-install
+
+
+### install5.3
+
+Invokes liblua5.3-cqueues-install
+
+
+### uninstall5.1
+
+Invokes liblua5.1-cqueues-uninstall
+
+
+### uninstall5.2
+
+Invokes liblua5.2-cqueues-uninstall
+
+
+### uninstall5.3
+
+Invokes liblua5.3-cqueues-uninstall
+
+
+### install
+
+Invokes install5.1 and install5.2
+
+
+### uninstall
+
+Invokes uninstall5.1 and uninstall5.2
+
+
+### all5.1
+
+Build all Lua 5.1 binary targets
+
+
+### all5.2
+
+Build all Lua 5.2 binary targets
+
+
+### all5.3
+
+Build all Lua 5.3 binary targets
+
+
+### all
+
+Build all binary targets (the default)
+
+
+### clean
+
+rm binary targets, object files, debugging symbols, etc
+
+
+### clean~
+
+clean + rm *~
+
+
+### debian
+
+Build debian packages liblua5.1-cqueues and liblua5.2-cqueues using
+the dpkg-buildpackage utility. The Make variables `DPKG_BUILDPACKAGE`
+and `DPKG_BUILDPACKAGE_OPTIONS` can be used to manipulate this
+process.

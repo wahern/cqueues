@@ -447,7 +447,7 @@ field & type:default & description\\\hline
 
 .nopush & boolean:false & TCP\_NOPUSH, TCP\_CORK, or equivalent IP option \\
 
-.v6only & boolean:nil & enables or disables IPV6\_V6ONLY IPv6 option, otherwise the system default is left as-is \\ 
+.v6only & boolean:nil & enables or disables IPV6\_V6ONLY IPv6 option, otherwise the system default is left as-is \\
 
 .nonblock & boolean:true & O\_NONBLOCK descriptor flag \\
 
@@ -532,7 +532,7 @@ flag & description \\\hline
 t & text mode; input or output undergoes LF/CRLF translation \\
 b & binary mode; no LF/CRLF translation \\
 n & no output buffering \\
-l & line buffered output \\ 
+l & line buffered output \\
 f & fully buffered output \\
 \end{ctabular}
 
@@ -627,7 +627,7 @@ local function isboundary(marker, ln)
 		if find(ln, "^\r?\n?$", pe + 1) then
 			return "begin"
 		elseif find(ln, "^--\r?\n?$", pe + 1) then
-			return "end" 
+			return "end"
 		end
 	end
 
@@ -824,7 +824,7 @@ A table mapping bitwise flags to names, and vice-versa.
 name & description \\\hline
 CREATE & file creation event \\
 ATTRIB & metadata change event \\
-MODIFY & modification to file contents or directory entries \\ 
+MODIFY & modification to file contents or directory entries \\
 REVOKE & permission revoked \\
 DELETE & file deletion event \\
 ALL    & bitwise-or of CREATE, DELETE, ATTRIB, MODIFY, and REVOKE
@@ -1222,7 +1222,7 @@ Return the string ``dns resolver pool'' if $obj$ is a resolver pool object, or $
 
 \subsubsection[\fn{resolvers.new}]{\fn{resolvers.new([resconf][,hosts][,hints])}}
 
-Behaves similar to \fn{resolver:new}. Returns a new resolver pool object. 
+Behaves similar to \fn{resolver:new}. Returns a new resolver pool object.
 
 \subsubsection[\fn{resolvers.stub}]{\fn{resolvers.stub\{ $\ldots$ \}}}
 

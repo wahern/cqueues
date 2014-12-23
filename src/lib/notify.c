@@ -225,7 +225,7 @@ static int (nfy_openfd)(int *_fd, const struct nfy_open *opts) {
 	int fd = -1, wd = -1, flags = 0;
 	int error;
 
-	if (opts->rdwr)	
+	if (opts->rdwr)
 		flags |= O_RDWR;
 	else if (opts->wronly)
 		flags |= O_WRONLY;

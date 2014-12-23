@@ -721,7 +721,7 @@ static int rr_type(lua_State *L) {
 		for (i = 0; i < countof(rrinfo); i++) {
 			if (!rrinfo[i].tname)
 				continue;
-			if (!luaL_testudata(L, 2, rrinfo[i].tname) 
+			if (!luaL_testudata(L, 2, rrinfo[i].tname)
 			&&  !luaL_testudata(L, 2, RR_ANY_CLASS))
 				continue;
 

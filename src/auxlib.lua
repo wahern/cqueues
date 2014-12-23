@@ -51,7 +51,7 @@ local loader = function(loader, ...)
 		local co = coroutine.create(f)
 
 		return function(...)
-			return c_wrap(co, c_resume(co, l_resume(co, ...))) 
+			return c_wrap(co, c_resume(co, l_resume(co, ...)))
 		end
 	end -- auxlib.wrap
 

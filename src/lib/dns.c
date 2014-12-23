@@ -323,7 +323,7 @@ DNS_NOTUSED static unsigned dns_atomic_store(dns_atomic_t *i, unsigned n) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 /*
- * P R N G 
+ * P R N G
  */
 
 #ifndef DNS_RANDOM
@@ -2268,7 +2268,7 @@ static size_t dns__print10(void *dst, size_t lim, size_t off, unsigned n, unsign
 	unsigned ch;
 
 	pad	= MAX(1, pad);
-	
+
 	while (d) {
 		if ((ch = n / d) || cp > 0) {
 			n	-= ch * d;
@@ -2750,7 +2750,7 @@ error:
 
 int dns_soa_cmp(const struct dns_soa *a, const struct dns_soa *b) {
 	int cmp;
-	
+
 	if ((cmp = strcasecmp(a->mname, b->mname)))
 		return cmp;
 
@@ -2898,7 +2898,7 @@ error:
 
 int dns_srv_cmp(const struct dns_srv *a, const struct dns_srv *b) {
 	int cmp;
-	
+
 	if ((cmp = a->priority - b->priority))
 		return cmp;
 
@@ -3487,7 +3487,7 @@ struct dns_hosts *dns_hosts_local(int *error_) {
 
 	if (!(hosts = dns_hosts_open(&error)))
 		goto error;
-		
+
 	if ((error = dns_hosts_loadpath(hosts, "/etc/hosts")))
 		goto error;
 
@@ -3850,7 +3850,7 @@ enum dns_resconf_keyword {
 	DNS_RESCONF_ENABLE,
 	DNS_RESCONF_ONLY,
 	DNS_RESCONF_DISABLE,
-}; /* enum dns_resconf_keyword */ 
+}; /* enum dns_resconf_keyword */
 
 static enum dns_resconf_keyword dns_resconf_keyword(const char *word) {
 	static const char *words[]	= {
@@ -4284,7 +4284,7 @@ static size_t dns_anyconf_scan(struct dns_anyconf *cf, const char *pat, FILE *fp
 	} else {
 		*error = 0;
 
-		return 0; 
+		return 0;
 	}
 } /* dns_anyconf_scan() */
 
@@ -4446,7 +4446,7 @@ int dns_nssconf_loadfile(struct dns_resolv_conf *resconf, FILE *fp) {
 				dns_anyconf_skip("] \t", fp);
 			}
 
-			if (endof(lookup) - lp < cf.count + 1) /* +1 for '\0' */ 
+			if (endof(lookup) - lp < cf.count + 1) /* +1 for '\0' */
 				goto nextsrc;
 
 			source = dns_nssconf_keyword(cf.token[0]);
@@ -4486,7 +4486,7 @@ int dns_nssconf_loadfile(struct dns_resolv_conf *resconf, FILE *fp) {
 					       : DNS_NSSCONF_CONTINUE;
 					break;
 				}
-				
+
 				*lp++ = dns_nssconf_k2c(action);
 			}
 nextsrc:
@@ -4808,7 +4808,7 @@ int dns_resconf_dump(struct dns_resolv_conf *resconf, FILE *fp) {
 
 struct dns_hints_soa {
 	unsigned char zone[DNS_D_MAXNAME + 1];
-	
+
 	struct {
 		struct sockaddr_storage ss;
 		unsigned priority;
@@ -5387,7 +5387,7 @@ static int dns_socket(struct sockaddr *local, int type, int *error_) {
 				return fd;
 		}
 	}
-	
+
 	if (0 == bind(fd, local, dns_sa_len(local)))
 		return fd;
 
@@ -5545,7 +5545,7 @@ static struct dns_socket *dns_so_init(struct dns_socket *so, const struct sockad
 error:
 	dns_so_destroy(so);
 
-	return 0;	
+	return 0;
 } /* dns_so_init() */
 
 
@@ -5564,7 +5564,7 @@ syerr:
 error:
 	dns_so_close(so);
 
-	return 0;	
+	return 0;
 } /* dns_so_open() */
 
 
@@ -6092,7 +6092,7 @@ struct dns_resolver *dns_res_open(struct dns_resolv_conf *resconf, struct dns_ho
 	 * Grab ref count early because the caller may have passed us a mortal
 	 * reference, and we want to do the right thing if we return early
 	 * from an error.
-	 */ 
+	 */
 	if (resconf)
 		dns_resconf_acquire(resconf);
 	if (hosts)
@@ -6500,7 +6500,7 @@ exec:
  * OpenBSD 4.4, overwites the stack guard. If the bug is in this file, it
  * appears to be localized somewhere around here. It can also be mitigated
  * in dns_hosts_query(). In any event, the bug manifests only when using
- * compound literals. alloca(), malloc(), calloc(), etc, all work fine. 
+ * compound literals. alloca(), malloc(), calloc(), etc, all work fine.
  * Valgrind (tested on Linux) cannot detect any issues, but stack issues are
  * not Valgrind's forte. Neither can I spot anything in the assembly, but
  * that's not my forte.
@@ -7971,7 +7971,7 @@ static struct dns_hosts *hosts(void) {
 			error	= dns_hosts_loadfile(hosts, stdin);
 		else
 			error	= dns_hosts_loadpath(hosts, path);
-		
+
 		if (error)
 			panic("%s: %s", path, dns_strerror(error));
 	}
@@ -8349,7 +8349,7 @@ static int send_query(int argc, char *argv[]) {
 
 	if (argc > 1) {
 		ss.ss_family	= (strchr(argv[1], ':'))? AF_INET6 : AF_INET;
-		
+
 		if ((error = dns_pton(ss.ss_family, argv[1], dns_sa_addr(ss.ss_family, &ss, NULL))))
 			panic("%s: %s", argv[1], dns_strerror(error));
 
@@ -8464,7 +8464,7 @@ static int resolve_query(int argc, char *argv[]) {
 
 	if (!MAIN.qname)
 		MAIN.qname	= "www.google.com";
-	if (!MAIN.qtype)	
+	if (!MAIN.qtype)
 		MAIN.qtype	= DNS_T_A;
 
 	resconf()->options.recurse	= (0 != strstr(argv[0], "recurse"));
@@ -8513,7 +8513,7 @@ static int resolve_addrinfo(int argc, char *argv[]) {
 
 	if (!MAIN.qname)
 		MAIN.qname	= "www.google.com";
-	if (!MAIN.qtype)	
+	if (!MAIN.qtype)
 		MAIN.qtype	= DNS_T_A;
 
 	resconf()->options.recurse	= (0 != strstr(argv[0], "recurse"));
@@ -8561,7 +8561,7 @@ static int echo_port(int argc, char *argv[]) {
 		struct sockaddr_in sin;
 	} port;
 	int fd;
-	
+
 	memset(&port, 0, sizeof port);
 	port.sin.sin_family = AF_INET;
 	port.sin.sin_port = htons(5354);
@@ -8728,7 +8728,7 @@ static const struct { const char *cmd; int (*run)(); const char *help; } cmds[] 
 
 
 static void print_usage(const char *progname, FILE *fp) {
-	static const char *usage	= 
+	static const char *usage	=
 		" [OPTIONS] COMMAND [ARGS]\n"
 		"  -c PATH   Path to resolv.conf\n"
 		"  -n PATH   Path to nsswitch.conf\n"

@@ -1,0 +1,11 @@
+doc/*.aux
+doc/*.idx
+doc/*.log
+doc/*.out
+doc/*.toc
+src/5.1/
+src/5.2/
+src/5.3/
+src/errno.c
+src/lib/*.o
+src/lib/*.a

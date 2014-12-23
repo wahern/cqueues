@@ -41,7 +41,7 @@ ifneq ($(patsubst %BSD,BSD,$(OS_$(d))), BSD)
 LDFLAGS_$(d) += -ldl
 endif
 
-# This only seems to be necessary on Linux. Darwin and OpenBSD lack a librt. 
+# This only seems to be necessary on Linux. Darwin and OpenBSD lack a librt.
 # On OpenBSD clock_gettime is part of libc. Others have librt, but linking
 # it in is unnecessary.
 ifeq ($(OS_$(d)), Linux)
@@ -134,7 +134,7 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/cqueues/dns/hints.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/record.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/packet.lua \
-	$$(DESTDIR)$(3)/cqueues/dns/resolvers.lua 
+	$$(DESTDIR)$(3)/cqueues/dns/resolvers.lua
 
 .SECONDARY: liblua$(1)-cqueues-install cqueues$(1)-install
 
@@ -223,22 +223,22 @@ $(d)/help:
 	@echo
 	@echo "src/ targets:"
 	@echo ""
-	@echo "    all      - build all binary targets"
-	@echo "cqueues      - invokes cqueues5.1 and cqueues5.2"
-	@echo "cqueues5.1   - build 5.1/cqueues.so"
-	@echo "cqueues5.2   - build 5.2/cqueues.so"
-	@echo "cqueues5.3   - build 5.3/cqueues.so"
-	@echo "install      - invokes install5.1 and install5.2"
-	@echo "install5.1   - install cqueues Lua 5.1 modules"
-	@echo "install5.2   - install cqueues Lua 5.2 modules"
-	@echo "install5.3   - install cqueues Lua 5.3 modules"
-	@echo "uninstall    - invokes uninstall5.1 and uninstall5.2"
+	@echo "         all - build all binary targets"
+	@echo "     cqueues - invokes cqueues5.1 and cqueues5.2"
+	@echo "  cqueues5.1 - build 5.1/cqueues.so"
+	@echo "  cqueues5.2 - build 5.2/cqueues.so"
+	@echo "  cqueues5.3 - build 5.3/cqueues.so"
+	@echo "     install - invokes install5.1 and install5.2"
+	@echo "  install5.1 - install cqueues Lua 5.1 modules"
+	@echo "  install5.2 - install cqueues Lua 5.2 modules"
+	@echo "  install5.3 - install cqueues Lua 5.3 modules"
+	@echo "   uninstall - invokes uninstall5.1 and uninstall5.2"
 	@echo "uninstall5.1 - uninstall cqueues Lua 5.1 modules"
 	@echo "uninstall5.2 - uninstall cqueues Lua 5.2 modules"
 	@echo "uninstall5.3 - uninstall cqueues Lua 5.3 modules"
-	@echo "  clean      - rm binary targets, object files, debugging symbols, etc"
-	@echo " clean~      - clean + rm *~"
-	@echo "   help      - echo this help message"
+	@echo "       clean - rm binary targets, object files, debugging symbols, etc"
+	@echo "      clean~ - clean + rm *~"
+	@echo "        help - echo this help message"
 	@echo ""
 	@echo "Some important Make variables:"
 	@echo ""

@@ -35,7 +35,7 @@ local function huh(...)
 			io.stderr:write(tostring(x), " ")
 
 			return (...), _huh(select(2, ...))
-		end 
+		end
 	end
 
 	io.stderr:write"[ "

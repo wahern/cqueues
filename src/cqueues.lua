@@ -4,6 +4,7 @@ local loader = function(loader, ...)
 	local monotime = core.monotime
 	local running = core.running
 	local strerror = errno.strerror
+	local unpack = assert(table.unpack or unpack) -- 5.1 compat
 
 	-- lazily load auxlib to prevent circular or unused dependencies
 	local auxlib = setmetatable({}, { __index = function (t, k)
@@ -54,14 +55,14 @@ local loader = function(loader, ...)
 			auxlib.assert3(poller:step())
 			auxlib.assert3(poller:step())
 
-			return table.unpack(tuple or {})
+			return unpack(tuple or {})
 		end
 	end -- core.poll
 
 	--
 	-- core.sleep
 	--
-	-- Sleep primitive. 
+	-- Sleep primitive.
 	--
 	function core.sleep(timeout)
 		core.poll(timeout)
@@ -122,12 +123,12 @@ local loader = function(loader, ...)
 
 				if curtime < deadline then
 					local ok, why = self:loop(deadline - curtime)
-					
+
 					if not ok then
 						return why
 					end
 				end
-	
+
 				return --> nothing, to end for loop
 			end
 		else

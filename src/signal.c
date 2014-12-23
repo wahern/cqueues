@@ -183,7 +183,7 @@ syerr:
 	return errno;
 #elif HAVE_PORTS
 	int signo;
-	
+
 	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))
 		sigaddset(&S->pending, signo);
 
@@ -324,10 +324,10 @@ static int lsl_type(lua_State *L) {
 static int lsl_interpose(lua_State *L) {
 	luaL_getmetatable(L, LSL_CLASS);
 	lua_getfield(L, -1, "__index");
-	
+
 	lua_pushvalue(L, -4); /* push method name */
 	lua_gettable(L, -2);  /* push old method */
-			
+
 	lua_pushvalue(L, -5); /* push method name */
 	lua_pushvalue(L, -5); /* push new method */
 	lua_settable(L, -4);  /* replace old method */
@@ -360,7 +360,7 @@ static const luaL_Reg lsl_metatable[] = {
 static int ls_ignore(lua_State *L) {
 	struct sigaction sa;
 	int index;
-	
+
 	for (index = 1; index <= lua_gettop(L); index++) {
 		sa.sa_handler = SIG_IGN;
 		sigemptyset(&sa.sa_mask);
@@ -379,7 +379,7 @@ static int ls_ignore(lua_State *L) {
 static int ls_default(lua_State *L) {
 	struct sigaction sa;
 	int index;
-	
+
 	for (index = 1; index <= lua_gettop(L); index++) {
 		sa.sa_handler = SIG_DFL;
 		sigemptyset(&sa.sa_mask);

@@ -35,7 +35,7 @@
  * 	  A couple of missing NULL checks were added to Sedgewick's deletion
  * 	  example, and insert was optimized to short-circuit rotations when
  * 	  walking up the tree.
- * 
+ *
  * 	o Code implemented in the fashion of Niels Provos' excellent *BSD
  * 	  sys/tree.h pre-processor library.
  *
