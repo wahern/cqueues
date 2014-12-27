@@ -430,12 +430,6 @@ static int alert_init(struct kpoll *kp NOTUSED) {
 	return 0;
 #else
 static int alert_init(struct kpoll *kp) {
-	int error;
-
-	if ((error = cqs_pipe(kp->alert.fd, O_CLOEXEC|O_NONBLOCK)))
-		return error;
-
-	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
 #endif
 } /* alert_init() */
 
@@ -639,10 +633,13 @@ static int kpoll_alert(struct kpoll *kp) {
 		return error;
 #else
 	int error;
-
-	if (kp->alert.pending)
+	if (-1 == kp->alert.fd[0]) {
+		/* lazily create pipe */
+		if ((error = cqs_pipe(kp->alert.fd, O_CLOEXEC|O_NONBLOCK)))
+			return error;
+	} else if (kp->alert.pending) {
 		return 0;
-
+	}
 	while (-1 == write(kp->alert.fd[1], "!", 1)) {
 		switch (errno) {
 		case EINTR:
