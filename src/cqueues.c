@@ -425,12 +425,11 @@ static void kpoll_preinit(struct kpoll *kp) {
 
 static int kpoll_ctl(struct kpoll *, int, short *, short, void *);
 
-static int alert_init(struct kpoll *kp) {
-#if HAVE_PORTS
-	return 0;
-#elif HAVE_EVENTFD
+#if HAVE_PORTS || HAVE_EVENTFD
+static int alert_init(struct kpoll *kp NOTUSED) {
 	return 0;
 #else
+static int alert_init(struct kpoll *kp) {
 	int error;
 
 	if ((error = cqs_pipe(kp->alert.fd, O_CLOEXEC|O_NONBLOCK)))
