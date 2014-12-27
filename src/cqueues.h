@@ -73,6 +73,8 @@
 #define HAVE_PORTS  (__sun)
 #define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
 
+#define HAVE_EVENTFD (__linux)
+
 #if __GNUC__
 #define NOTUSED __attribute__((unused))
 #define EXTENSION __extension__

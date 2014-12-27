@@ -393,6 +393,10 @@ typedef port_event_t kpoll_event_t;
 typedef struct kevent kpoll_event_t;
 #endif
 
+#if HAVE_EVENTFD
+#include <sys/eventfd.h> /* eventfd */
+#endif
+
 struct kpoll {
 	int fd;
 
@@ -424,6 +428,11 @@ static int kpoll_ctl(struct kpoll *, int, short *, short, void *);
 static int alert_init(struct kpoll *kp) {
 #if HAVE_PORTS
 	return 0;
+#elif HAVE_EVENTFD
+	if (-1 == (kp->alert.fd[0] = eventfd(0, O_CLOEXEC|O_NONBLOCK)))
+		return errno;
+
+	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
 #else
 	int error;
 
@@ -438,6 +447,8 @@ static int alert_init(struct kpoll *kp) {
 static void alert_destroy(struct kpoll *kp) {
 #if HAVE_PORTS
 	(void)0;
+#elif HAVE_EVENTFD
+	cqs_closefd(&kp->alert.fd[0]);
 #else
 	cqs_closefd(&kp->alert.fd[0]);
 	cqs_closefd(&kp->alert.fd[1]);
@@ -605,6 +616,20 @@ static int kpoll_alert(struct kpoll *kp) {
 		if (errno != EBUSY)
 			return errno;
 	}
+#elif HAVE_EVENTFD
+	static const uint64_t one = 1;
+	while (-1 == write(kp->alert.fd[0], (const char*)&one, 8)) {
+		switch(errno) {
+		case EINTR:
+			continue;
+		case EAGAIN:
+			/* the eventfd is about to overflow a 64 uint.
+			   we don't need to bother */
+			return 0;
+		default:
+			return errno;
+		}
+	}
 #else
 	int error;
 
@@ -636,6 +661,23 @@ static int kpoll_calm(struct kpoll *kp) {
 #if HAVE_PORTS
 	if (0 != port_alert(kp->fd, PORT_ALERT_SET, 0, &kp->alert))
 		return errno;
+#elif HAVE_EVENTFD
+	uint64_t n;
+	int error;
+
+	while (8 != read(kp->alert.fd[0], &n, 8)) {
+		switch (errno) {
+		case EINTR:
+			continue;
+		case EAGAIN:
+			/* no events pending */
+			break;
+		default:
+			return errno;
+		}
+	}
+	if ((error = kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert)))
+		return error;
 #else
 	char buf[64];
 	int error;
