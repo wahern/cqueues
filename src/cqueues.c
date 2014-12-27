@@ -429,10 +429,7 @@ static int alert_init(struct kpoll *kp) {
 #if HAVE_PORTS
 	return 0;
 #elif HAVE_EVENTFD
-	if (-1 == (kp->alert.fd[0] = eventfd(0, O_CLOEXEC|O_NONBLOCK)))
-		return errno;
-
-	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
+	return 0;
 #else
 	int error;
 
@@ -618,18 +615,29 @@ static int kpoll_alert(struct kpoll *kp) {
 	}
 #elif HAVE_EVENTFD
 	static const uint64_t one = 1;
-	while (-1 == write(kp->alert.fd[0], (const char*)&one, 8)) {
+	int fd = kp->alert.fd[0];
+	int error;
+	if (-1 == fd) {
+		/* lazily create eventfd */
+		if (-1 == (fd = eventfd(0, O_CLOEXEC|O_NONBLOCK)))
+			return errno;
+		kp->alert.fd[0] = fd;
+	}
+	while (-1 == write(fd, (const char*)&one, 8)) {
 		switch(errno) {
 		case EINTR:
 			continue;
 		case EAGAIN:
 			/* the eventfd is about to overflow a 64 uint.
 			   we don't need to bother */
-			return 0;
+			break;
 		default:
 			return errno;
 		}
 	}
+
+	if ((error = kpoll_ctl(kp, fd, &kp->alert.state, POLLIN, &kp->alert)))
+		return error;
 #else
 	int error;
 
