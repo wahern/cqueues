@@ -35,17 +35,13 @@ local loader = function(loader, ...)
 		self.hookmt = { __gc = function (hook)
 			self.n = self.n - 1
 			self.condvar:signal()
-
-			if hook.debug ~= false then
-				io.stderr:write("reclaiming resolver\n")
-			end
 		end }
 
 		return self
 	end -- alive.new
 
 
-	function alive:add(x, debug)
+	function alive:add(x)
 		if not self.table[x] then
 			local hook = self.hooks[#self.hooks]
 
@@ -55,7 +51,6 @@ local loader = function(loader, ...)
 				hook = setmetatable({}, self.hookmt)
 			end
 
-			hook.debug = debug
 			self.table[x] = hook
 			self.n = self.n + 1
 		end
@@ -64,7 +59,6 @@ local loader = function(loader, ...)
 
 	function alive:delete(x)
 		if self.table[x] then
-			self.table[x].debug = false
 			self.hooks[#self.hooks + 1] = self.table[x]
 			self.table[x] = nil
 			self.n = self.n - 1
@@ -101,7 +95,7 @@ local loader = function(loader, ...)
 			end
 		end
 
-		self.alive:add(res, self.debug)
+		self.alive:add(res)
 
 		return res
 	end -- tryget
