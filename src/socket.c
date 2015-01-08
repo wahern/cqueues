@@ -2681,17 +2681,7 @@ static int lso_type(lua_State *L) {
 
 
 static int lso_interpose(lua_State *L) {
-	luaL_getmetatable(L, LSO_CLASS);
-	lua_getfield(L, -1, "__index");
-
-	lua_pushvalue(L, -4); /* push method name */
-	lua_gettable(L, -2);  /* push old method */
-
-	lua_pushvalue(L, -5); /* push method name */
-	lua_pushvalue(L, -5); /* push new method */
-	lua_settable(L, -4);  /* replace old method */
-
-	return 1; /* return old method */
+	return cqs_interpose(L, LSO_CLASS);
 } /* lso_interpose() */
 
 
