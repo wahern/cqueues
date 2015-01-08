@@ -406,9 +406,15 @@ struct kpoll {
 	} pending;
 
 	struct {
+#if HAVE_PORTS
+#elif HAVE_EVENTFD
+		int fd[1];
+		short state;
+#else
 		int fd[2];
 		short state;
-		int pending;
+#endif
+		_Bool pending;
 	} alert;
 }; /* struct kpoll */
 
@@ -416,9 +422,15 @@ struct kpoll {
 static void kpoll_preinit(struct kpoll *kp) {
 	kp->fd = -1;
 	kp->pending.count = 0;
+#if HAVE_PORTS
+#elif HAVE_EVENTFD
+	kp->alert.fd[0] = -1;
+	kp->alert.state = 0;
+#else
 	kp->alert.fd[0] = -1;
 	kp->alert.fd[1] = -1;
 	kp->alert.state = 0;
+#endif
 	kp->alert.pending = 0;
 } /* kpoll_preinit() */
 
