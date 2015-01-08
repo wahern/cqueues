@@ -89,9 +89,10 @@ local loader = function(loader, ...)
 	local function tryget(self)
 		local res, why
 
-		if #self.cache > 1 then
-			res = self.cache[#self.cache]
-			self.cache[#self.cache] = nil
+		local cache_len = #self.cache
+		if cache_len > 1 then
+			res = self.cache[cache_len]
+			self.cache[cache_len] = nil
 		elseif self.alive.n < self.hiwat then
 			res, why = resolver.new(self.resconf, self.hosts, self.hints)
 
@@ -100,9 +101,7 @@ local loader = function(loader, ...)
 			end
 		end
 
-		if res then
-			self.alive:add(res, self.debug)
-		end
+		self.alive:add(res, self.debug)
 
 		return res
 	end -- tryget
@@ -131,14 +130,15 @@ local loader = function(loader, ...)
 	function pool:put(res)
 		self.alive:delete(res)
 
-		if #self.cache < self.lowat and res:stat().queries < self.querymax then
-			self.cache[#self.cache + 1] = res
+		local cache_len = #self.cache
+		if cache_len < self.lowat and res:stat().queries < self.querymax then
+			if not self.lifo and cache_len > 0 then
+				local i = random(cache_len+1) + 1
 
-			if not self.lifo and #self.cache > 1 then
-				local i = random(#self.cache) + 1
-
-				self.cache[#self.cache] = self.cache[i]
+				self.cache[cache_len+1] = self.cache[i]
 				self.cache[i] = res
+			else
+				self.cache[cache_len+1] = res
 			end
 		else
 			res:close()
