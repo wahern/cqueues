@@ -453,8 +453,13 @@ char *sa_ntop(char *dst, size_t lim, const void *src, const char *def, int *_err
 	case AF_INET6:
 		unspec = "::";
 
-		if (!inet_ntop(AF_INET6, &any->sin6.sin6_addr, text, sizeof text))
-			goto syerr;
+		if (!IN6_IS_ADDR_V4MAPPED(&any->sin6.sin6_addr)) {
+			if (!inet_ntop(AF_INET6, &any->sin6.sin6_addr, text, sizeof text))
+				goto syerr;
+		} else {
+			if (!inet_ntop(AF_INET, (struct in_addr *)(&any->sin6.sin6_addr.s6_addr[12]), text, sizeof text))
+				goto syerr;
+		}
 
 		break;
 #if SA_UNIX
