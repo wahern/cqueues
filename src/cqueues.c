@@ -605,6 +605,9 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 
 static int kpoll_alert(struct kpoll *kp) {
 #if HAVE_PORTS
+	if (kp->alert.pending) {
+		return 0;
+	}
 	if (0 != port_alert(kp->fd, PORT_ALERT_UPDATE, POLLIN, &kp->alert)) {
 		if (errno != EBUSY)
 			return errno;
@@ -618,6 +621,8 @@ static int kpoll_alert(struct kpoll *kp) {
 		if (-1 == (fd = eventfd(0, O_CLOEXEC|O_NONBLOCK)))
 			return errno;
 		kp->alert.fd[0] = fd;
+	} else if (kp->alert.pending) {
+		return 0;
 	}
 	while (-1 == write(fd, (const char*)&one, 8)) {
 		switch(errno) {
