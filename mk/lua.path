@@ -857,7 +857,7 @@ done
 shift $(($OPTIND - 1))
 
 
-for U in ${CC:-cc} find grep od rm rmdir sed xargs; do
+for U in "${CC:-cc}" find grep od rm rmdir sed xargs; do
 	if ! command -v ${U} >>/dev/null 2>&1; then
 		printf -- "${0##*/}: ${U}: command not found\n" >&2
 	fi
