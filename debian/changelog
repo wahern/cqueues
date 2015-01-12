@@ -4,6 +4,7 @@ liblua-cqueues (20150112-0) unstable; urgency=low
     which takes ownership of the specified descriptor number.
   * Use F_DUPFD_CLOEXEC in socket.dup if available.
   * Use SOCK_CLOEXEC with socket(2) and socketpair(2) if available.
+  * Use MSG_CMSG_CLOEXEC with recvmsg(2) if available.
 
  -- William Ahern <william@25thandClement.com>  Mon, 12 Jan 2015 15:03:41 -0800
 

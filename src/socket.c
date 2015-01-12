@@ -31,7 +31,7 @@
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
-#include <sys/socket.h>	/* AF_UNIX SOCK_CLOEXEC SOCK_CLOEXEC SOCK_STREAM PF_UNSPEC socketpair(2) */
+#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_CLOEXEC SOCK_STREAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 #include <unistd.h>	/* dup(2) */
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
@@ -2172,8 +2172,13 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 
 	so_clear(S->socket);
 
+#if defined MSG_CMSG_CLOEXEC
+	if ((error = so_recvmsg(S->socket, msg, MSG_CMSG_CLOEXEC)))
+		goto error;
+#else
 	if ((error = so_recvmsg(S->socket, msg, 0)))
 		goto error;
+#endif
 
 	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
 		if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
