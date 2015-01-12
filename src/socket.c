@@ -1044,8 +1044,6 @@ static lso_nargs_t lso_fdopen(lua_State *L) {
 badfd:
 	error = EBADF;
 	goto error;
-syerr:
-	error = errno;
 error:
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
@@ -2685,6 +2683,7 @@ static luaL_Reg lso_metamethods[] = {
 static luaL_Reg lso_globals[] = {
 	{ "connect",    &lso_connect2 },
 	{ "listen",     &lso_listen2 },
+	{ "dup",        &lso_dup },
 	{ "fdopen",     &lso_fdopen },
 	{ "pair",       &lso_pair },
 	{ "type",       &lso_type },
