@@ -31,7 +31,7 @@
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
-#include <sys/socket.h>	/* AF_UNIX SOCK_STREAM SOCK_DGRAM PF_UNSPEC socketpair(2) */
+#include <sys/socket.h>	/* AF_UNIX SOCK_CLOEXEC SOCK_CLOEXEC SOCK_STREAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 #include <unistd.h>	/* dup(2) */
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
@@ -1063,8 +1063,13 @@ static lso_nargs_t lso_pair(lua_State *L) {
 	a = lso_newsocket(L, AF_UNIX, type);
 	b = lso_newsocket(L, AF_UNIX, type);
 
+#if defined SOCK_CLOEXEC
+	if (0 != socketpair(AF_UNIX, type|SOCK_CLOEXEC, PF_UNSPEC, fd))
+		goto syerr;
+#else
 	if (0 != socketpair(AF_UNIX, type, PF_UNSPEC, fd))
 		goto syerr;
+#endif
 
 	opts->fd_close.arg = a;
 	opts->fd_close.cb = &lso_closefd;
