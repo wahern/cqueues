@@ -1,3 +1,11 @@
+liblua-cqueues (20150112-0) unstable; urgency=low
+
+  * Rename undocumented socket.fdopen to socket.dup, and add socket.fdopen
+    which takes ownership of the specified descriptor number.
+  * Use F_DUPFD_CLOEXEC in socket.dup if available.
+
+ -- William Ahern <william@25thandClement.com>  Mon, 12 Jan 2015 15:03:41 -0800
+
 liblua-cqueues (20141021-0) unstable; urgency=low
 
   * Add IPV6_V6ONLY support.

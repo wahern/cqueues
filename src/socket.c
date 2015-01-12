@@ -27,17 +27,14 @@
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* strtol(3) */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) */
-
 #include <math.h>	/* NAN */
-
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
 #include <sys/socket.h>	/* AF_UNIX SOCK_STREAM SOCK_DGRAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
-
 #include <unistd.h>	/* dup(2) */
-
+#include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
 #include <arpa/inet.h>	/* ntohs(3) */
 
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
@@ -963,7 +960,7 @@ error:
 } /* cqs_socket_fdopen() */
 
 
-static lso_nargs_t lso_fdopen(lua_State *L) {
+static lso_nargs_t lso_dup(lua_State *L) {
 	struct so_options opts;
 	struct luasocket *S;
 	int ofd, fd = -1, error;
@@ -971,12 +968,10 @@ static lso_nargs_t lso_fdopen(lua_State *L) {
 	if (lua_istable(L, 1)) {
 		opts = lso_checkopts(L, 1);
 
-		if (lso_altfield(L, 1, "fd", "file", "socket")) {
-			ofd = lso_tofileno(L, -1);
-		} else {
+		if (!lso_altfield(L, 1, "fd", "file", "socket"))
 			lua_rawgeti(L, 1, 1);
-			ofd = luaL_checkint(L, -1);
-		}
+
+		ofd = lso_tofileno(L, -1);
 
 		lua_pop(L, 1);
 	} else {
@@ -987,8 +982,13 @@ static lso_nargs_t lso_fdopen(lua_State *L) {
 	if (ofd < 0)
 		goto badfd;
 
+#if defined F_DUPFD_CLOEXEC
+	if (-1 == (fd = fcntl(F_DUPFD_CLOEXEC, ofd)))
+		goto syerr;
+#else
 	if (-1 == (fd = dup(ofd)))
 		goto syerr;
+#endif
 
 	if ((error = cqs_socket_fdopen(L, fd, &opts)))
 		goto error;
@@ -1002,6 +1002,51 @@ syerr:
 error:
 	cqs_closefd(&fd);
 
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_dup() */
+
+
+/*
+ * NOTE: Only permit integer descriptors to mitigate the risk that we wrap a
+ * descriptor still owned by a GC-able object. Cf. socket.dup.
+ */
+static lso_nargs_t lso_fdopen(lua_State *L) {
+	struct so_options opts;
+	struct luasocket *S;
+	int fd, error;
+
+	if (lua_istable(L, 1)) {
+		opts = lso_checkopts(L, 1);
+
+		if (lso_altfield(L, 1, "fd")) {
+			fd = luaL_checkint(L, -1);
+		} else {
+			lua_rawgeti(L, 1, 1);
+			fd = luaL_checkint(L, -1);
+		}
+
+		lua_pop(L, 1);
+	} else {
+		opts = *so_opts();
+		fd = luaL_checkint(L, 1);
+	}
+
+	if (fd < 0)
+		goto badfd;
+
+	if ((error = cqs_socket_fdopen(L, fd, &opts)))
+		goto error;
+
+	return 1;
+badfd:
+	error = EBADF;
+	goto error;
+syerr:
+	error = errno;
+error:
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
 
