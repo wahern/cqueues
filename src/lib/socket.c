@@ -557,8 +557,13 @@ void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *_error) {
 	}
 
 	if (udp->fd == -1) {
+#if defined SOCK_CLOEXEC
+		if (-1 == (udp->fd = socket(udp->pf, SOCK_DGRAM|SOCK_CLOEXEC, 0)))
+			goto syerr;
+#else
 		if (-1 == (udp->fd = socket(udp->pf, SOCK_DGRAM, 0)))
 			goto syerr;
+#endif
 
 		if ((error = so_cloexec(udp->fd, 1))) {
 			so_closesocket(&udp->fd, NULL);
@@ -604,8 +609,13 @@ static int so_type2mask(int, int, int);
 int so_socket(int domain, int type, const struct so_options *opts, int *_error) {
 	int error, fd, flags, mask, need;
 
+#if defined SOCK_CLOEXEC
+	if (-1 == (fd = socket(domain, type|SOCK_CLOEXEC, 0)))
+		goto syerr;
+#else
 	if (-1 == (fd = socket(domain, type, 0)))
 		goto syerr;
+#endif
 
 	flags = so_opts2flags(opts, &mask);
 	mask &= so_type2mask(domain, type, 0);
