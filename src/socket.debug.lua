@@ -377,7 +377,35 @@ debug.units.new("sys.reuseport", iobox(function(loop)
 end))
 
 
+--
+-- opts.cloexec -- test that socket.connect obeys .cloexec
+--
+debug.units.new("opts.cloexec", iobox(function (loop)
+	local ok, unix = pcall(require, "unix")
+
+	if not ok or not unix then
+		return
+	end
+
+	local assert = require"cqueues.auxlib".assert
+	local socket = require"cqueues.socket"
+	local A = assert(assert(socket.listen{ host = "127.0.0.1", port = 0, sin_reuseport = true }):listen())
+	local _, _, port = assert(A:localname())
+
+	loop:wrap(function ()
+		for _, cloexec in ipairs{ true, false } do
+			local B = assert(assert(socket.connect{ host = "127.0.0.1", port = port, cloexec = cloexec }):connect())
+			local flags = assert(unix.fcntl(B:pollfd(), unix.F_GETFD))
+
+			--io.stderr:write(string.format("opts.cloexec(%s): 0x%.2x\n", (cloexec and "true" or "false"), flags))
+			assert((flags == unix.FD_CLOEXEC) == cloexec)
+		end
+	end)
+end))
+
+
 debug.units.run"^iov.*" --> these are always safe to run
+debug.units.run"^opts.*" --> ""
 --debug.units.run"^io%..*"
 
 return debug
