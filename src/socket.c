@@ -417,6 +417,19 @@ static _Bool lso_getfield(lua_State *L, int index, const char *k) {
 } /* lso_getfield() */
 
 
+static _Bool lso_rawgeti(lua_State *L, int index, int k) {
+	lua_rawgeti(L, index, k);
+
+	if (lua_isnil(L, -1)) {
+		lua_pop(L, 1);
+
+		return 0;
+	} else {
+		return 1;
+	}
+} /* lso_rawgeti() */
+
+
 static _Bool lso_altfield(lua_State *L, int index, ...) {
 	const char *k;
 	va_list ap;
@@ -443,6 +456,27 @@ static _Bool lso_popbool(lua_State *L) {
 	lua_pop(L, 1);
 	return val;
 } /* lso_popbool() */
+
+
+static void *lso_singleton(lua_State *L, const void *key, const void *init, size_t len) {
+	void *p;
+
+	lua_rawgetp(L, LUA_REGISTRYINDEX, key);
+	p = lua_touserdata(L, -1);
+	lua_pop(L, 1);
+
+	if (p)
+		return p;
+
+	p = lua_newuserdata(L, len);
+	if (init)
+		memcpy(p, init, len);
+	else
+		memset(p, 0, len);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, key);
+
+	return p;
+} /* lso_singleton() */
 
 
 static mode_t lso_checkperm(lua_State *L, int index) {
@@ -473,10 +507,44 @@ static mode_t lso_checkperm(lua_State *L, int index) {
 	return perm;
 } /* lso_checkperm() */
 
+
 static struct so_options lso_checkopts(lua_State *L, int index) {
 	struct so_options opts = *so_opts();
 
-	/* TODO: Parse .sa_bind */
+	/* TODO: Support explicit interface name via .if_name/.name */
+	if (lso_altfield(L, index, "bind", "sa_bind")) {
+		static const int regindex;
+		struct sockaddr_storage *ss = lso_singleton(L, &regindex, NULL, sizeof *ss);
+		const char *addr = NULL;
+		int port = -1, error;
+
+		if (lua_istable(L, -1)) {
+			if (lso_altfield(L, -1, "addr", "address", "sin_addr", "sin6_addr") || lso_rawgeti(L, -1, 1)) {
+				addr = luaL_checkstring(L, -1);
+				lua_pop(L, 1);
+			}
+
+			if (lso_altfield(L, -1, "port", "sin_port", "sin6_port") || lso_rawgeti(L, -1, 2)) {
+				port = luaL_checkint(L, -1);
+				lua_pop(L, 1);
+			}
+
+		} else {
+			addr = luaL_checkstring(L, -1);
+		}
+
+		luaL_argcheck(L, addr != NULL, index, "no bind address specified");
+
+		if (!sa_pton(ss, sizeof *ss, addr, NULL, &error))
+			luaL_argerror(L, index, lua_pushfstring(L, "%s: unable to parse bind address (%s)", addr, so_strerror(error)));
+
+		if (port >= 0)
+			*sa_port(ss, &(unsigned short){ 0 }, NULL) = htons((unsigned short)port);
+
+		opts.sa_bind = ss;
+
+		lua_pop(L, 1);
+	}
 
 	if (lso_altfield(L, index, "mode", "sun_mode")) {
 		opts.sun_mode = S_IFSOCK | lso_checkperm(L, -1);
@@ -631,22 +699,8 @@ static void lso_pushmode(lua_State *L, int mode, _Bool libc) {
 
 static struct luasocket *lso_prototype(lua_State *L) {
 	static const int regindex;
-	struct luasocket *P;
 
-	lua_rawgetp(L, LUA_REGISTRYINDEX, &regindex);
-
-	P = lua_touserdata(L, -1);
-
-	lua_pop(L, 1);
-
-	if (P)
-		return P;
-
-	P = lua_newuserdata(L, sizeof *P);
-	*P = lso_initializer;
-	lua_rawsetp(L, LUA_REGISTRYINDEX, &regindex);
-
-	return P;
+	return lso_singleton(L, &regindex, &lso_initializer, sizeof lso_initializer);
 } /* lso_prototype() */
 
 
