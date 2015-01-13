@@ -476,8 +476,6 @@ static mode_t lso_checkperm(lua_State *L, int index) {
 static struct so_options lso_checkopts(lua_State *L, int index) {
 	struct so_options opts = *so_opts();
 
-	/* TODO: Parse .sa_bind */
-
 	if (lso_altfield(L, index, "mode", "sun_mode")) {
 		opts.sun_mode = S_IFSOCK | lso_checkperm(L, -1);
 		lua_pop(L, 1);
@@ -702,10 +700,13 @@ static lso_error_t lso_prepsocket(struct luasocket *S) {
 static lso_nargs_t lso_connect2(lua_State *L) {
 	const char *host NOTUSED = NULL, *port NOTUSED = NULL;
 	const char *path = NULL;
+	const char *bind = NULL;
 	struct so_options opts;
 	struct luasocket *S;
+	union sockaddr_any ip;
 	size_t plen;
 	int family, type, error;
+
 
 	if (lua_istable(L, 1)) {
 		opts = lso_checkopts(L, 1);
@@ -726,6 +727,12 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 			host = luaL_checkstring(L, -1);
 			lua_getfield(L, 1, "port");
 			port = luaL_checkstring(L, -1);
+		}
+
+		if (lso_getfield(L, 1, "bind")) {
+			bind = luaL_checkstring(L, -1);
+			if (!(opts.sa_bind = sa_pton(&ip, sizeof(ip), bind, NULL, &error)))
+				goto error;
 		}
 	} else {
 		opts = *so_opts();
