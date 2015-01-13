@@ -31,7 +31,7 @@
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
-#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_CLOEXEC SOCK_STREAM PF_UNSPEC socketpair(2) */
+#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_DGRAM SOCK_STREAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 #include <unistd.h>	/* dup(2) */
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
