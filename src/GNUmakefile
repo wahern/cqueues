@@ -24,7 +24,7 @@ VENDOR_$(d) = $(or $(CQUEUES_VENDOR),$(shell $(<D)/../mk/changelog author))
 VERSION_$(d) = $(or $(CQUEUES_VERSION),$(shell $(<D)/../mk/changelog version))
 COMMIT_$(d) = $(shell $(<D)/../mk/changelog commit)
 
-CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..)) -DLUA_COMPAT_APIUNSIGNED
+CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..)) -DLUA_COMPAT_APIINTCASTS
 CFLAGS_$(d) = $(CFLAGS_$(abspath $(@D)/../..))
 LDFLAGS_$(d) = $(LDFLAGS_$(abspath $(@D)/../..))
 SOFLAGS_$(d) = $(SOFLAGS_$(abspath $(@D)/../..))

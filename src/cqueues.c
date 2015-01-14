@@ -695,7 +695,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 #if LUA_VERSION_NUM >= 502
 
 #if LUA_VERSION_NUM >= 503
-static int auxlib_tostringk(lua_State *L NOTUSED, int status NOTUSED, lua_Ctx ctx NOTUSED) {
+static int auxlib_tostringk(lua_State *L NOTUSED, int status NOTUSED, lua_KContext ctx NOTUSED) {
 #else
 static int auxlib_tostringk(lua_State *L NOTUSED) {
 #endif
