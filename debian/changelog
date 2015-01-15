@@ -1,3 +1,13 @@
+liblua-cqueues (20150113-0) unstable; urgency=low
+
+  * Optimize the way we put a controller in a ready state when signaling
+    a condition variable.
+  * Put a controller into a ready state when wrapping a function or
+    attaching a coroutine.
+  * Make compile with latest Lua 5.3 release candidate.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 13 Jan 2015 19:33:34 -0800
+
 liblua-cqueues (20150112-0) unstable; urgency=low
 
   * Rename undocumented socket.fdopen to socket.dup, and add socket.fdopen
