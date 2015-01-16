@@ -2491,7 +2491,6 @@ int luaopen__cqueues(lua_State *L) {
 	luaL_setfuncs(L, cqueues_globals, 3);
 
 	/* add magic value used to accomplish multilevel yielding */
-	static const int _POLL;
 	lua_pushlightuserdata(L, CQUEUE__POLL);
 	lua_setfield(L, -2, "_POLL");
 
