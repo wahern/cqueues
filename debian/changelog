@@ -1,3 +1,10 @@
+liblua-cqueues (20150119-0) unstable; urgency=low
+
+  * Return EAFNOSUPPORT for unknown .sa_bind address family (sa_len == 0)
+    when copying the address.
+
+ -- William Ahern <william@25thandClement.com>  Mon, 19 Jan 2015 15:33:43 -0800
+
 liblua-cqueues (20150113-0) unstable; urgency=low
 
   * Optimize the way we put a controller in a ready state when signaling
