@@ -78,6 +78,10 @@
 # 	by using a control character in IFS and using --exec printf "%s\1" {}
 # 	rather than -print with find(1).
 #
+# * 2015-01-19 - Add fix for LuaJIT's default package.cpath, which tends to
+# 	hardcode /usr/local/lib/lua/5.1, ordered before the LuaJIT
+# 	installation prefix.
+#
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
 # Copyright (C) 2012-2015 William Ahern
@@ -112,7 +116,7 @@ unset IFS # no field splitting surprises
 unset LUA_PATH || true # interferes search for module install directory
 unset LUA_CPATH || true
 
-MYVERSION=20150115
+MYVERSION=20150119
 MYVENDOR="william@25thandClement.com"
 
 
@@ -389,7 +393,7 @@ luapc() {
 
 
 #
-# findinstalldir  package.path|package.cpath ...
+# findinstalldir  package.path|package.cpath [preferred-path ...]
 #
 findinstalldir() {
 	V_DIR=$((${LUA_VER} / 100 % 100)).$((${LUA_VER} % 100))
@@ -406,12 +410,23 @@ findinstalldir() {
 
 		DIR="$(luapc --variable prefix)"
 		[ -n "${DIR}" ] && set -- "$@" "${DIR}/lib/lua/${V_DIR}"
+
+		# LuaJIT installations tend to include
+		# /usr/local/lib/lua/5.1 as one of the first paths, ordered
+		# before the LuaJIT installation prefix, and regardless of
+		# whether there exists a /usr/local/lib/lua/5.1.
+		set -- "$@" "${LUA_PATH}/../../lib/lua/${V_DIR}"
+		set -- "$@" "${LUA_PATH}/../../lib/*/lua/${V_DIR}" # e.g. lib/x86_64-linux-gnu
 	else
 		DIR="$(luapc --variable INSTALL_LMOD)"
 		[ -n "${DIR}" ] && set -- "$@" "${DIR}"
 
 		DIR="$(luapc --variable prefix)"
 		[ -n "${DIR}" ] && set -- "$@" "${DIR}/share/lua/${V_DIR}"
+
+		# See above LuaJIT note. Although the built-in package.path
+		# usually orders the LuaJIT installation prefix first.
+		set -- "$@" "${LUA_PATH}/../../share/lua/${V_DIR}"
 	fi
 
 	ARRAY="${1}"
@@ -441,6 +456,13 @@ findinstalldir() {
 			return table.concat(stack, "/")
 		end
 
+		local function topattern(path)
+			if string.match(path, "*") then
+				path = string.gsub(path, "%%", "%%")
+				return string.gsub(path, "*", "[^/]+")
+			end
+		end
+
 		local dirs = { }
 
 		for dir in ${ARRAY}:gmatch"([^;?]+)/" do
@@ -454,8 +476,13 @@ findinstalldir() {
 		for _, arg in ipairs{ ... } do
 			arg = fixpath(arg)
 
+			local pat = topattern(arg)
+
 			for _, dir in ipairs(dirs) do
 				if arg == dir then
+					print(dir)
+					os.exit(0)
+				elseif pat and string.match(dir, pat) then
 					print(dir)
 					os.exit(0)
 				end
