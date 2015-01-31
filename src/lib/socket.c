@@ -1,7 +1,7 @@
 /* ==========================================================================
  * socket.c - Simple Sockets
  * --------------------------------------------------------------------------
- * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014  William Ahern
+ * Copyright (c) 2009, 2010, 2011, 2012, 2013, 2014, 2015  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -27,7 +27,7 @@
 #include <limits.h> /* INT_MAX LONG_MAX */
 #include <stdlib.h> /* malloc(3) free(3) */
 #include <string.h> /* strdup(3) strlen(3) memset(3) strncpy(3) memcpy(3) strerror(3) */
-#include <errno.h>  /* EINVAL EAGAIN EWOULDBLOCK EINPROGRESS EALREADY ENAMETOOLONG EOPNOTSUPP ENOTSOCK ENOPROTOOPT */
+#include <errno.h>  /* EINVAL EAFNOSUPPORT EAGAIN EWOULDBLOCK EINPROGRESS EALREADY ENAMETOOLONG EOPNOTSUPP ENOTSOCK ENOPROTOOPT */
 #include <signal.h> /* SIGPIPE SIG_BLOCK SIG_SETMASK sigset_t sigprocmask(2) pthread_sigmask(3) sigtimedwait(2) sigpending(2) sigemptyset(3) sigismember(3) sigaddset(3) */
 #include <assert.h> /* assert(3) */
 #include <time.h>   /* time(2) */
@@ -1581,7 +1581,10 @@ static struct socket *so_make(const struct so_options *opts, int *error) {
 	so->opts = *opts;
 
 	if (opts->sa_bind) {
-		len = sa_len((void *)opts->sa_bind);
+		if (!(len = sa_len((void *)opts->sa_bind))) {
+			*error = EAFNOSUPPORT;
+			goto error;
+		}
 
 		if (!(so->opts.sa_bind = malloc(len)))
 			goto syerr;
@@ -1597,7 +1600,7 @@ static struct socket *so_make(const struct so_options *opts, int *error) {
 	return so;
 syerr:
 	*error = so_syerr();
-
+error:
 	if (so) {
 		if (so->opts.tls_sendname != opts->tls_sendname)
 			free((void *)so->opts.tls_sendname);

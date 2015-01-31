@@ -21,9 +21,9 @@ POSIX-compatible shell script. By default it processes GCC's -dM macro list
 method.
 
 Because the location of Lua 5.2 and LuaJIT include headers are completely
-random across systems, the build system relies on mk/lua.path to locate the
+random across systems, the build system relies on mk/luapath to locate the
 correct headers, including selecting the correct headers at compile-time
-when conflicting headers are encountered. mk/lua.path uses various POSIX
+when conflicting headers are encountered. mk/luapath uses various POSIX
 utilities. For more information, see
 <http://25thandclement.com/~william/projects/luapath.html>
 

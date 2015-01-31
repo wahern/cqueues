@@ -69,7 +69,7 @@
 #endif
 
 #ifndef CQUEUES_VERSION
-#define CQUEUES_VERSION 20150112L
+#define CQUEUES_VERSION 20150119L
 #endif
 
 
@@ -695,7 +695,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 #if LUA_VERSION_NUM >= 502
 
 #if LUA_VERSION_NUM >= 503
-static int auxlib_tostringk(lua_State *L NOTUSED, int status NOTUSED, lua_Ctx ctx NOTUSED) {
+static int auxlib_tostringk(lua_State *L NOTUSED, int status NOTUSED, lua_KContext ctx NOTUSED) {
 #else
 static int auxlib_tostringk(lua_State *L NOTUSED) {
 #endif
@@ -767,7 +767,7 @@ int luaopen__cqueues_auxlib(lua_State *L) {
 struct wakecb {
 	struct condition *cv;
 
-	int (*fn)(struct wakecb *);
+	cqs_error_t (*fn)(struct wakecb *);
 	void *arg[3];
 
 	TAILQ_ENTRY(wakecb) tqe;
@@ -853,6 +853,13 @@ static int cond__gc(lua_State *L) {
 
 	while ((cb = TAILQ_FIRST(&cv->waiting))) {
 		wakecb_del(cb);
+		/*
+		 * NOTE: We drop wakeup callback errors. Throwing from a
+		 * __gc metamethod seems less than useful. Applications can
+		 * and should check errors when explicitly signaling. That
+		 * we signal on GC is just a backstop for code that is
+		 * already probably buggy.
+		 */
 		cb->fn(cb);
 	}
 
@@ -1084,12 +1091,16 @@ LLRB_GENERATE_STATIC(timers, timer, rbe, timer_cmp)
 
 
 struct stackinfo {
-	lua_State *L; /* stack of cqueue object */
-	int self; /* index of cqueue object */
+	struct cqueue *Q; /* actual cqueue object */
+	lua_State *L; /* stack holding cqueue object reference (i.e. thread calling :step) */
+	int self; /* stack index in L of cqueue object */
 	lua_State *T; /* running thread */
+	struct stackinfo *running; /* next running cqueue object in call stack */
 }; /* struct stackinfo */
 
-static void cstack_resumed(struct cstack *, const struct stackinfo *info, struct stackinfo *oinfo);
+static void cstack_push(struct cstack *, struct stackinfo *);
+static void cstack_pop(struct cstack *);
+static _Bool cstack_isrunning(const struct cstack *, const struct cqueue *);
 
 
 struct callinfo {
@@ -1116,6 +1127,15 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 
 	return Q;
 } /* cqueue_enter() */
+
+
+static cqs_error_t cqueue_tryalert(struct cqueue *Q) {
+	if (!cstack_isrunning(Q->cstack, Q) || LIST_EMPTY(&Q->thread.pending)) {
+		return kpoll_alert(&Q->kp);
+	} else {
+		return 0;
+	}
+} /* cqueue_tryalert() */
 
 
 static int cqueue_ref(lua_State *L, struct callinfo *I, int index) {
@@ -1343,14 +1363,14 @@ static int fileno_del(struct cqueue *Q, struct fileno *fileno, _Bool update) {
 } /* fileno_del() */
 
 
-static int wakecb_wakeup(struct wakecb *cb) {
+static cqs_error_t wakecb_wakeup(struct wakecb *cb) {
 	struct cqueue *Q = cb->arg[0];
 	struct event *event = cb->arg[1];
 
 	event->pending = 1;
 	thread_move(event->thread, &Q->thread.pending);
 
-	return kpoll_alert(&Q->kp);
+	return cqueue_tryalert(Q);
 } /* wakecb_wakeup() */
 
 
@@ -1708,7 +1728,6 @@ static void luacq_slice(lua_State *L, int index, int count) {
 static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
 	int otop, ntmp, nargs, status, index;
 	struct event *event;
-	struct stackinfo info;
 
 	if (lua_status(T->L) == LUA_YIELD) {
 		/*
@@ -1741,12 +1760,11 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 	timer_del(Q, &T->timer);
 
-
-	cstack_resumed(Q->cstack, &(struct stackinfo){ L, I->self, T->L }, &info);
+	cstack_push(Q->cstack, &(struct stackinfo){ Q, L, I->self, T->L });
 
 	status = lua_resume(T->L, L, nargs);
 
-	cstack_resumed(Q->cstack, &info, NULL);
+	cstack_pop(Q->cstack);
 
 	switch (status) {
 	case LUA_YIELD:
@@ -1901,6 +1919,7 @@ static int cqueue_step(lua_State *L) {
 static int cqueue_attach(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
+	int error;
 
 	lua_settop(L, 2);
 
@@ -1909,9 +1928,18 @@ static int cqueue_attach(lua_State *L) {
 
 	thread_add(L, Q, &I, 2);
 
+	if ((error = cqueue_tryalert(Q)))
+		goto error;
+
 	lua_pushvalue(L, 1); /* return self */
 
 	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushstring(L, strerror(error));
+	lua_pushinteger(L, error);
+
+	return 3;
 } /* cqueue_attach() */
 
 
@@ -1919,7 +1947,7 @@ static int cqueue_wrap(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
 	struct lua_State *newL;
-	int top, i;
+	int top, i, error;
 
 	top = lua_gettop(L);
 
@@ -1934,9 +1962,18 @@ static int cqueue_wrap(lua_State *L) {
 
 	thread_add(L, Q, &I, -1);
 
+	if ((error = cqueue_tryalert(Q)))
+		goto error;
+
 	lua_pushvalue(L, 1); /* return self */
 
 	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushstring(L, strerror(error));
+	lua_pushinteger(L, error);
+
+	return 3;
 } /* cqueue_wrap() */
 
 
@@ -2256,7 +2293,7 @@ static int cqueue_monotime(lua_State *L) {
 struct cstack {
 	LIST_HEAD(, cqueue) cqueues;
 
-	struct stackinfo running;
+	struct stackinfo *running;
 }; /* struct cstack */
 
 
@@ -2343,26 +2380,40 @@ static int cstack_reset(lua_State *L) {
 } /* cstack_reset() */
 
 
-static void cstack_resumed(struct cstack *CS, const struct stackinfo *info, struct stackinfo *oinfo) {
-	if (CS) {
-		if (oinfo)
-			*oinfo = CS->running;
-		CS->running = *info;
+static void cstack_push(struct cstack *CS, struct stackinfo *info) {
+	info->running = CS->running;
+	CS->running = info;
+} /* cstack_push() */
+
+
+static void cstack_pop(struct cstack *CS) {
+	CS->running = CS->running->running;
+} /* cstack_push() */
+
+
+static _Bool cstack_isrunning(const struct cstack *CS, const struct cqueue *Q) {
+	struct stackinfo *info;
+
+	for (info = CS->running; info; info = info->running) {
+		if (info->Q == Q)
+			return 1;
 	}
-} /* cstack_resumed() */
+
+	return 0;
+} /* cstack_isrunning() */
 
 
 static int cstack_running(lua_State *L) {
 	struct cstack *CS = cstack_self(L);
 
-	if (CS->running.L) {
-		lua_pushvalue(CS->running.L, CS->running.self);
-		lua_xmove(CS->running.L, L, 1);
+	if (CS->running) {
+		lua_pushvalue(CS->running->L, CS->running->self);
+		lua_xmove(CS->running->L, L, 1);
+		lua_pushboolean(L, CS->running->T == L);
 	} else {
 		lua_pushnil(L);
+		lua_pushboolean(L, 0);
 	}
-
-	lua_pushboolean(L, CS->running.T == L);
 
 	return 2;
 } /* cstack_running() */
@@ -2430,7 +2481,6 @@ int luaopen__cqueues(lua_State *L) {
 	luaL_setfuncs(L, cqueues_globals, 3);
 
 	/* add magic value used to accomplish multilevel yielding */
-	static const int _POLL;
 	lua_pushlightuserdata(L, CQUEUE__POLL);
 	lua_setfield(L, -2, "_POLL");
 
