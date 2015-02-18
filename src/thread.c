@@ -53,7 +53,6 @@ struct cthread_arg {
 	} v;
 }; /* struct cthread_arg */
 
-
 struct cthread_lib {
 	Dl_info info;
 	void *ref;
@@ -61,6 +60,13 @@ struct cthread_lib {
 	LLRB_ENTRY(cthread_lib) rbe;
 }; /* struct cthread_lib */
 
+struct cthread_handle {
+	sig_atomic_t held;
+
+#if defined PTHREAD_MUTEX_ROBUST
+	pthread_mutex_t hold;
+#endif
+}; /* struct cthread_handle */
 
 struct cthread {
 	int refs, error, status;
@@ -72,6 +78,8 @@ struct cthread {
 	pthread_attr_t attr;
 
 	jmp_buf trap;
+
+	struct cthread_handle handle;
 
 	int pipe[2];
 
@@ -107,6 +115,80 @@ static int atpanic_trap(lua_State *L NOTUSED) {
 
 	return 0;
 } /* atpanic_trap() */
+
+
+static int hdl_init(struct cthread_handle *h) {
+#if defined PTHREAD_MUTEX_ROBUST
+	pthread_mutexattr_t attr;
+	int error;
+
+	h->held = 0;
+
+	if ((error = pthread_mutexattr_init(&attr)))
+		return error;
+
+	if ((error = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST)))
+		goto error;
+
+	if ((error = pthread_mutex_init(h->hold, &attr)))
+		goto error;
+
+	pthread_mutexattr_destroy(&attr);
+
+	return 0;
+error:
+	pthread_mutexattr_destroy(&attr);
+
+	return error;
+#else
+	h->held = 0;
+
+	return 0;
+#endif
+} /* hdl_init() */
+
+static void hdl_destroy(struct cthread_handle *h) {
+#if defined PTHREAD_MUTEX_ROBUST
+	pthread_mutex_destroy(&h->hold);
+#else
+	(void)h;
+
+	return;
+#endif
+} /* hdl_destroy() */
+
+static int hdl_hold(struct cthread_handle *h) {
+#if defined PTHREAD_MUTEX_ROBUST
+	int error;
+
+	if ((error = pthread_mutex_lock(&h->hold)))
+		return error;
+#endif
+	h->held = 1;
+
+	return 0;
+} /* hdl_hold() */
+
+static _Bool hdl_isheld(struct cthread_handle *h) {
+#if PTHREAD_MUTEX_ROBUST
+	int error;
+
+	switch ((error = pthread_mutex_trylock(&h->hold))) {
+	case EAGAIN:
+		return 1;
+	case EOWNERDEAD:
+		pthread_mutex_consistent(&h->hold);
+		/* FALL THROUGH */
+	case 0:
+		pthread_mutex_unlock(&h->hold);
+		/* FALL THROUGH */
+	default:
+		return 0;
+	}
+#else
+	return h->held;
+#endif
+} /* hdl_isheld() */
 
 
 static int lib_cmp(struct cthread_lib *a, struct cthread_lib *b) {
@@ -171,6 +253,8 @@ static void ct_release(struct cthread *ct) {
 	if (!destroy)
 		return;
 
+	hdl_destroy(&ct->handle);
+
 	pthread_attr_destroy(&ct->attr);
 	pthread_cond_destroy(&ct->cond);
 	pthread_mutex_destroy(&ct->mutex);
@@ -199,6 +283,12 @@ static void *ct_enter(void *arg) {
 	struct cthread *ct = arg, **ud;
 	lua_State *L = NULL;
 	int error;
+
+	/*
+	 * Hold down deadman switch so ct_join can detect (on some systems)
+	 * whether thread was killed or cancelled.
+	 */
+	hdl_hold(&ct->handle);
 
 	/*
 	 * Procedure for bootstrapping into a new Lua VM. Order is important
@@ -402,6 +492,87 @@ uperr:
 } /* ct_setfarg() */
 
 
+/* on success destroy object with ct_release(); on failure use free(3) */
+static int ct_init(struct cthread *ct) {
+	int progress = 0;
+	int error;
+
+	ct->refs = 1;
+
+	ct->pipe[0] = -1;
+	ct->pipe[1] = -1;
+
+	ct->tmp.fd[0] = -1;
+	ct->tmp.fd[1] = -1;
+
+	if ((error = pthread_mutex_init(&ct->mutex, NULL)))
+		goto error;
+
+	progress++;
+
+	if ((error = pthread_cond_init(&ct->cond, NULL)))
+		goto error;
+
+	progress++;
+
+	if ((error = pthread_attr_init(&ct->attr)))
+		goto error;
+
+	progress++;
+
+	if ((error = hdl_init(&ct->handle)))
+		goto error;
+
+	progress++;
+
+	return 0;
+error:
+	switch (progress) {
+	case 4:
+		hdl_destroy(&ct->handle);
+	case 3:
+		pthread_attr_destroy(&ct->attr);
+	case 2:
+		pthread_cond_destroy(&ct->cond);
+	case 1:
+		pthread_mutex_destroy(&ct->mutex);
+	case 0:
+		break;
+	}
+
+	return error;
+} /* ct_init() */
+
+static struct cthread *ct_create(int *_error) {
+	struct cthread *ct = NULL;
+	int error;
+
+	if (!(ct = calloc(1, sizeof *ct)))
+		goto syerr;
+
+	if ((error = ct_init(ct))) {
+		free(ct);
+		ct = NULL;
+		goto error;
+	}
+
+	if ((error = pthread_attr_setdetachstate(&ct->attr, PTHREAD_CREATE_DETACHED)))
+		goto error;
+
+	if ((error = cqs_pipe(ct->pipe, O_NONBLOCK|O_CLOEXEC)))
+		goto error;
+
+	return ct;
+syerr:
+	error = errno;
+error:
+	*_error = error;
+
+	ct_release(ct);
+
+	return NULL;
+} /* ct_create() */
+
 static int ct_start(lua_State *L) {
 	struct cthread **ud, *ct;
 	sigset_t mask, omask;
@@ -415,33 +586,8 @@ static int ct_start(lua_State *L) {
 	luaL_getmetatable(L, CQS_THREAD);
 	lua_setmetatable(L, -2);
 
-	if (!(ct = *ud = malloc(sizeof *ct)))
-		goto syerr;
-
-	memset(ct, 0, sizeof *ct);
-
-	ct->refs = 1;
-
-	ct->pipe[0] = -1;
-	ct->pipe[1] = -1;
-
-	ct->tmp.fd[0] = -1;
-	ct->tmp.fd[1] = -1;
-
-	pthread_mutex_init(&ct->mutex, NULL);
-	pthread_cond_init(&ct->cond, NULL);
-	pthread_attr_init(&ct->attr);
-
-	if ((error = pthread_attr_setdetachstate(&ct->attr, PTHREAD_CREATE_DETACHED)))
+	if (!(ct = *ud = ct_create(&error)))
 		goto error;
-
-	if ((error = cqs_pipe(ct->pipe, O_NONBLOCK|O_CLOEXEC)))
-		goto error;
-
-	for (int i = 0; i < 2; i++) {
-		if ((error = cqs_setfd(ct->pipe[i], O_NONBLOCK|O_CLOEXEC)))
-			goto error;
-	}
 
 	luaL_checktype(L, 1, LUA_TFUNCTION);
 
@@ -545,6 +691,10 @@ static int ct_join(lua_State *L) {
 		return 2;
 	} else {
 		error = errno;
+
+		if (error == EAGAIN && !hdl_isheld(&ct->handle))
+			error = EOWNERDEAD;
+
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
