@@ -172,6 +172,8 @@ static void cqs_openlibs(lua_State *L) {
 
 
 static inline int cqs_interpose(lua_State *L, const char *mt) {
+	lua_settop(L, 2);
+
 	luaL_getmetatable(L, mt);
 	lua_getfield(L, -1, "__index");
 
