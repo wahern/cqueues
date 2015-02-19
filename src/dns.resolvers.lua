@@ -45,19 +45,25 @@ local loader = function(loader, ...)
 	end -- alive.new
 
 
-	local new_hook
-	if _G._VERSION == "Lua 5.1" then
-		-- Lua 5.1 does not support __gc on tables, so we need to use newproxy
-		new_hook = function(mt)
-			local u = newproxy(false)
-			debug.setmetatable(u, mt)
-			return u
+	function alive:newhook()
+		if not self._newhook then
+			if _G._VERSION == "Lua 5.1" then
+				-- Lua 5.1 does not support __gc on tables, so we need to use newproxy
+				self._newhook = function(mt)
+					local u = newproxy(false)
+					debug.setmetatable(u, mt)
+					return u
+				end
+			else
+				self._newhook = function(mt)
+					return setmetatable({}, mt)
+				end
+			end
 		end
-	else
-		new_hook = function(mt)
-			return setmetatable({}, mt)
-		end
-	end
+
+		return self._newhook(self.hookmt)
+	end -- alive:newhook
+
 
 	function alive:add(x)
 		if not self.table[x] then
@@ -66,7 +72,7 @@ local loader = function(loader, ...)
 			if hook then
 				self.hooks[#self.hooks] = nil
 			else
-				hook = new_hook(self.hookmt)
+				hook = self:newhook()
 			end
 
 			self.table[x] = hook
