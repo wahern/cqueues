@@ -23,6 +23,28 @@ local loader = function(loader, ...)
 	-- garbage collected automatically decrement the count and signal
 	-- the condition variable.
 	--
+	local alive = {}
+
+	function alive.new(condvar)
+		local self = setmetatable({}, { __index = alive })
+
+		self.n = 0
+		self.table = setmetatable({}, { __mode = "k" })
+		self.condvar = condvar
+		self.hooks = {}
+		self.hookmt = { __gc = function (hook)
+			self.n = self.n - 1
+			self.condvar:signal()
+
+			if self.leakcb then
+				pcall(self.leakcb)
+			end
+		end }
+
+		return self
+	end -- alive.new
+
+
 	local new_hook
 	if _G._VERSION == "Lua 5.1" then
 		-- Lua 5.1 does not support __gc on tables, so we need to use newproxy
@@ -36,24 +58,6 @@ local loader = function(loader, ...)
 			return setmetatable({}, mt)
 		end
 	end
-
-	local alive = {}
-
-	function alive.new(condvar)
-		local self = setmetatable({}, { __index = alive })
-
-		self.n = 0
-		self.table = setmetatable({}, { __mode = "k" })
-		self.condvar = condvar
-		self.hooks = {}
-		self.hookmt = { __gc = function (hook)
-			self.n = self.n - 1
-			self.condvar:signal()
-		end }
-
-		return self
-	end -- alive.new
-
 
 	function alive:add(x)
 		if not self.table[x] then
@@ -90,6 +94,13 @@ local loader = function(loader, ...)
 
 		return assert(n == self.n, "resolver registry corrupt")
 	end -- alive:check
+
+
+	function alive:onleak(f)
+		local old = self.onleak
+		self.leakcb = f
+		return old
+	end -- alive:onleak
 
 
 	local pool = {}
@@ -167,14 +178,18 @@ local loader = function(loader, ...)
 			return nil, why
 		end
 
-		local pkt, why = res:query(name, type, class, totimeout(deadline))
-
-		if not self.debug then
-			self:put(res)
-		end
-
-		return pkt, why
+		return res:query(name, type, class, totimeout(deadline))
 	end -- pool:query
+
+
+	function pool:check()
+		return self.alive:check()
+	end -- pool:check
+
+
+	function pool:onleak(f)
+		return self.alive:onleak(f)
+	end -- pool:onleak
 
 
 	local resolvers = {}
@@ -182,7 +197,7 @@ local loader = function(loader, ...)
 	resolvers.lowat = 1
 	resolvers.hiwat = 32
 	resolvers.querymax = 2048
-	resolvers.debug = nil
+	resolvers.onleak = nil
 	resolvers.lifo = false
 
 	function resolvers.new(resconf, hosts, hints)
@@ -196,7 +211,7 @@ local loader = function(loader, ...)
 		self.hiwat = resolvers.hiwat
 		self.timeout = resolvers.timeout
 		self.querymax = resolvers.querymax
-		self.debug = resolvers.debug
+		self.onleak = resolvers.onleak
 		self.lifo = resolvers.lifo
 		self.cache = {}
 		self.alive = alive.new(self.condvar)
