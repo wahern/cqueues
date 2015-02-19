@@ -1,3 +1,10 @@
+liblua-cqueues (20150218-0) unstable; urgency=low
+
+  * Use newproxy to detect object leaks in Lua 5.1/LuaJIT because Lua 5.1
+    language doesn't support __gc metamethods on tables. (daurnimator)
+
+ -- William Ahern <william@25thandClement.com>  Wed, 18 Feb 2015 20:45:12 -0800
+
 liblua-cqueues (20150119-0) unstable; urgency=low
 
   * Return EAFNOSUPPORT for unknown .sa_bind address family (sa_len == 0)
