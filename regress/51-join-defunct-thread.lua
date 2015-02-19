@@ -1,29 +1,27 @@
 #!/bin/sh
 _=[[
-	exec runlua "$0" "$@"
+	. "${0%%/*}/regress.sh"
+	exec runlua -j- "$0" "$@"
 ]]
 
-local cqueues = require"cqueues"
-local thread = require"cqueues.thread"
-local auxlib = require"cqueues.auxlib"
+require"regress".export".*"
 
-local assert = auxlib.assert
-local fileresult = auxlib.fileresult
+check(jit, "LuaJIT required")
+check(errno.EOWNERDEAD, "EOWNERDEAD not defined")
 
-assert(cqueues.new():wrap(function ()
-	local thr = assert(thread.start(function ()
-		local signal = require"cqueues.signal"
-		local ffi  = require"ffi"
+local thr = assert(thread.start(function ()
+	local signal = require"cqueues.signal"
+	local ffi  = require"ffi"
 
-		ffi.cdef"void pthread_exit(void *);"
+	ffi.cdef"void pthread_exit(void *);"
 
-		io.stderr:write("calling pthread_exit\n")
-		ffi.C.pthread_exit(nil)
-		io.stderr:write("exited\n")
-	end))
+	ffi.C.pthread_exit(nil)
+end))
 
-	local ok, why = auxlib.fileresult(thr:join(5))
+local ok, why, code = auxlib.fileresult(thr:join(5))
 
-	print(ok, why)
-end):loop())
+check(not ok, "thread unexpectedly joined cleanly")
+check(code == errno.EOWNERDEAD or code == errno.ETIMEDOUT, "unexpected error: %s", why)
+check(code == errno.EOWNERDEAD, "robust mutex strategy not supported on this system")
 
+say"OK"
