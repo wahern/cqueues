@@ -506,7 +506,7 @@ while getopts "e:il:vEr:j:Js:tdpVh" OPTC; do
 			export LD_PRELOAD="libpthread.so"
 			;;
 		esac
-			
+
 		;;
 	d)
 		DEBUG="$((${DEBUG} + 1))"
