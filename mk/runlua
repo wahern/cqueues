@@ -123,7 +123,7 @@ export LC_ALL=C
 : ${PATH:=$(command -p getconf PATH)}
 : ${TMPDIR:=/tmp}
 
-MYVERSION=20150209
+MYVERSION=20150218
 MYVENDOR="william@25thandClement.com"
 
 LUA_MIN=10000
@@ -498,7 +498,15 @@ while getopts "e:il:vEr:j:Js:tdpVh" OPTC; do
 		SKIP="${OPTARG}"
 		;;
 	t)
-		export LD_PRELOAD="libpthread.so"
+		case "$(uname -s)" in
+		OpenBSD)
+			export LD_PRELOAD="libpthread.so"
+			;;
+		FreeBSD)
+			export LD_PRELOAD="libpthread.so"
+			;;
+		esac
+			
 		;;
 	d)
 		DEBUG="$((${DEBUG} + 1))"

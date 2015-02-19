@@ -1,7 +1,7 @@
 #!/bin/sh
 _=[[
 	. "${0%%/*}/regress.sh"
-	exec runlua -j- "$0" "$@"
+	exec runlua -t -j- "$0" "$@"
 ]]
 
 require"regress".export".*"
@@ -20,7 +20,7 @@ end))
 
 local ok, why, code = auxlib.fileresult(thr:join(5))
 
-check(not ok, "thread unexpectedly joined cleanly")
+check(not ok, "thread unexpectedly joined (%s)", why or "no error")
 check(code == errno.EOWNERDEAD or code == errno.ETIMEDOUT, "unexpected error: %s", why)
 check(code == errno.EOWNERDEAD, "robust mutex strategy not supported on this system")
 
