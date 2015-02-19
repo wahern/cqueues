@@ -23,6 +23,20 @@ local loader = function(loader, ...)
 	-- garbage collected automatically decrement the count and signal
 	-- the condition variable.
 	--
+	local new_hook
+	if _G._VERSION == "Lua 5.1" then
+		-- Lua 5.1 does not support __gc on tables, so we need to use newproxy
+		new_hook = function(mt)
+			local u = newproxy(false)
+			debug.setmetatable(u, mt)
+			return u
+		end
+	else
+		new_hook = function(mt)
+			return setmetatable({}, mt)
+		end
+	end
+
 	local alive = {}
 
 	function alive.new(condvar)
@@ -35,27 +49,22 @@ local loader = function(loader, ...)
 		self.hookmt = { __gc = function (hook)
 			self.n = self.n - 1
 			self.condvar:signal()
-
-			if hook.debug ~= false then
-				io.stderr:write("reclaiming resolver\n")
-			end
 		end }
 
 		return self
 	end -- alive.new
 
 
-	function alive:add(x, debug)
+	function alive:add(x)
 		if not self.table[x] then
 			local hook = self.hooks[#self.hooks]
 
 			if hook then
 				self.hooks[#self.hooks] = nil
 			else
-				hook = setmetatable({}, self.hookmt)
+				hook = new_hook(self.hookmt)
 			end
 
-			hook.debug = debug
 			self.table[x] = hook
 			self.n = self.n + 1
 		end
@@ -64,7 +73,6 @@ local loader = function(loader, ...)
 
 	function alive:delete(x)
 		if self.table[x] then
-			self.table[x].debug = false
 			self.hooks[#self.hooks + 1] = self.table[x]
 			self.table[x] = nil
 			self.n = self.n - 1
@@ -89,9 +97,10 @@ local loader = function(loader, ...)
 	local function tryget(self)
 		local res, why
 
-		if #self.cache > 1 then
-			res = self.cache[#self.cache]
-			self.cache[#self.cache] = nil
+		local cache_len = #self.cache
+		if cache_len > 1 then
+			res = self.cache[cache_len]
+			self.cache[cache_len] = nil
 		elseif self.alive.n < self.hiwat then
 			res, why = resolver.new(self.resconf, self.hosts, self.hints)
 
@@ -100,9 +109,7 @@ local loader = function(loader, ...)
 			end
 		end
 
-		if res then
-			self.alive:add(res, self.debug)
-		end
+		self.alive:add(res)
 
 		return res
 	end -- tryget
@@ -131,14 +138,15 @@ local loader = function(loader, ...)
 	function pool:put(res)
 		self.alive:delete(res)
 
-		if #self.cache < self.lowat and res:stat().queries < self.querymax then
-			self.cache[#self.cache + 1] = res
+		local cache_len = #self.cache
+		if cache_len < self.lowat and res:stat().queries < self.querymax then
+			if not self.lifo and cache_len > 0 then
+				local i = random(cache_len+1) + 1
 
-			if not self.lifo and #self.cache > 1 then
-				local i = random(#self.cache) + 1
-
-				self.cache[#self.cache] = self.cache[i]
+				self.cache[cache_len+1] = self.cache[i]
 				self.cache[i] = res
+			else
+				self.cache[cache_len+1] = res
 			end
 		else
 			res:close()
