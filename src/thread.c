@@ -1,7 +1,7 @@
 /* ==========================================================================
  * thread.c - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012, 2014  William Ahern
+ * Copyright (c) 2012, 2014, 2015  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -63,7 +63,7 @@ struct cthread_lib {
 struct cthread_handle {
 	sig_atomic_t held;
 
-#if defined PTHREAD_MUTEX_ROBUST
+#if HAVE_PTHREAD_MUTEX_ROBUST
 	pthread_mutex_t hold;
 #endif
 }; /* struct cthread_handle */
@@ -118,7 +118,7 @@ static int atpanic_trap(lua_State *L NOTUSED) {
 
 
 static int hdl_init(struct cthread_handle *h) {
-#if defined PTHREAD_MUTEX_ROBUST
+#if HAVE_PTHREAD_MUTEX_ROBUST
 	pthread_mutexattr_t attr;
 	int error;
 
@@ -130,7 +130,7 @@ static int hdl_init(struct cthread_handle *h) {
 	if ((error = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST)))
 		goto error;
 
-	if ((error = pthread_mutex_init(h->hold, &attr)))
+	if ((error = pthread_mutex_init(&h->hold, &attr)))
 		goto error;
 
 	pthread_mutexattr_destroy(&attr);
@@ -148,7 +148,7 @@ error:
 } /* hdl_init() */
 
 static void hdl_destroy(struct cthread_handle *h) {
-#if defined PTHREAD_MUTEX_ROBUST
+#if HAVE_PTHREAD_MUTEX_ROBUST
 	pthread_mutex_destroy(&h->hold);
 #else
 	(void)h;
@@ -158,7 +158,7 @@ static void hdl_destroy(struct cthread_handle *h) {
 } /* hdl_destroy() */
 
 static int hdl_hold(struct cthread_handle *h) {
-#if defined PTHREAD_MUTEX_ROBUST
+#if HAVE_PTHREAD_MUTEX_ROBUST
 	int error;
 
 	if ((error = pthread_mutex_lock(&h->hold)))
@@ -170,20 +170,21 @@ static int hdl_hold(struct cthread_handle *h) {
 } /* hdl_hold() */
 
 static _Bool hdl_isheld(struct cthread_handle *h) {
-#if PTHREAD_MUTEX_ROBUST
+#if HAVE_PTHREAD_MUTEX_ROBUST
 	int error;
 
 	switch ((error = pthread_mutex_trylock(&h->hold))) {
-	case EAGAIN:
+	case EBUSY:
 		return 1;
 	case EOWNERDEAD:
 		pthread_mutex_consistent(&h->hold);
 		/* FALL THROUGH */
 	case 0:
 		pthread_mutex_unlock(&h->hold);
-		/* FALL THROUGH */
-	default:
+
 		return 0;
+	default:
+		return 1;
 	}
 #else
 	return h->held;
