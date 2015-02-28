@@ -2153,8 +2153,10 @@ static int res_interpose(lua_State *L) {
 
 
 static int res_type(lua_State *L) {
-	if (luaL_testudata(L, 1, RESOLVER_CLASS)) {
-		lua_pushstring(L, "dns resolver");
+	struct resolver *R;
+
+	if ((R = luaL_testudata(L, 1, RESOLVER_CLASS))) {
+		lua_pushstring(L, (R->res)? "dns resolver" : "closed dns resolver");
 	} else {
 		lua_pushnil(L);
 	}

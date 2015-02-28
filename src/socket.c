@@ -2671,10 +2671,13 @@ static lso_nargs_t lso__gc(lua_State *L) {
 
 
 static int lso_type(lua_State *L) {
-	if (lso_testself(L, 1))
-		lua_pushstring(L, "socket");
-	else
+	struct luasocket *S;
+
+	if ((S = lso_testself(L, 1))) {
+		lua_pushstring(L, (S->socket)? "socket" : "closed socket");
+	} else {
 		lua_pushnil(L);
+	}
 
 	return 1;
 } /* lso_type() */
