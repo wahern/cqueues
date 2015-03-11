@@ -30,11 +30,11 @@
 #include <string.h>	/* memset(3) */
 #include <signal.h>	/* sigprocmask(2) pthread_sigmask(3) */
 #include <time.h>	/* struct timespec clock_gettime(3) */
-#include <math.h>	/* NAN fmax(3) isnormal(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
+#include <math.h>	/* FP_* NAN fmax(3) fpclassify(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
 #include <errno.h>	/* errno */
 #include <assert.h>	/* assert */
 
-#include <sys/queue.h>	/* LIST TAILQ */
+#include <sys/queue.h>	/* LIST_* TAILQ_* */
 #include <sys/time.h>	/* struct timeval */
 #include <sys/select.h>	/* pselect(3) */
 #include <unistd.h>	/* close(2) */
@@ -189,20 +189,31 @@ static int clock_gettime(int clockid, struct timespec *ts) {
 
 
 static inline int f2ms(const double f) {
-	if (isnormal(f) && !signbit(f)) {
-		if (f > INT_MAX / 1000)
+	switch (fpclassify(f)) {
+	case FP_NORMAL:
+		if (signbit(f)) {
+			return 0;
+		} else if (f > INT_MAX / 1000) {
 			return INT_MAX;
+		}
 
 		return ((int)f * 1000) + ((int)(f * 1000.0) % 1000);
-	} else if (f == 0.0) {
+	case FP_SUBNORMAL:
+	case FP_ZERO:
 		return 0;
-	} else
+	case FP_INFINITE:
+	case FP_NAN:
+	default:
 		return -1;
+	}
 } /* f2ms() */
 
 static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
-	if (isnormal(f) && !signbit(f)) {
-		if ((time_t)f > INT_MAX) {
+	switch (fpclassify(f)) {
+	case FP_NORMAL:
+		if (signbit(f)) {
+			return ts;
+		} else if (f > INT_MAX) {
 			ts->tv_sec = (time_t)INT_MAX;
 			ts->tv_nsec = 0;
 		} else {
@@ -212,10 +223,14 @@ static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
 		}
 
 		return ts;
-	} else if (f == 0.0) {
+	case FP_SUBNORMAL:
+	case FP_ZERO:
 		return ts;
-	} else
+	case FP_INFINITE:
+	case FP_NAN:
+	default:
 		return NULL;
+	}
 } /* f2ts_() */
 
 #define f2ts(f) f2ts_(&(struct timespec){ 0, 0 }, (f))
@@ -1190,7 +1205,8 @@ static void err_setthread(lua_State *L, struct callinfo *I, struct thread *T) {
 } /* err_setthread() */
 
 static void err_setobject(lua_State *L, struct callinfo *I, cqs_index_t index) {
-	I->error.object = lua_absindex(L, index);
+	if (index)
+		I->error.object = lua_absindex(L, index);
 } /* err_setobject() */
 
 static void err_setfd(lua_State *L NOTUSED, struct callinfo *I, int fd) {
@@ -1221,11 +1237,26 @@ static void err_setinfo(lua_State *L, struct callinfo *I, int code, struct threa
 		err_setcode(L, I, code);
 } /* err_setinfo() */
 
+static _Bool err_onstack(lua_State *L NOTUSED, struct callinfo *I) {
+	return I->error.string || I->error.thread || I->error.object;
+} /* err_onstack() */
+
+static void err_corrupt(lua_State *L, int index, const char *type) {
+	luaL_error(L, "corrupt error stack: expected %s, got %s at index %d", type, luaL_typename(L, index), index);
+} /* err_corrupt() */
+
+static void err_checktype(lua_State *L, int index, int type) {
+	if (lua_type(L, index) != type)
+		err_corrupt(L, index, lua_typename(L, type));
+} /* err_checktype() */
+
 static const char *err_pushstring(lua_State *L, struct callinfo *I) {
-	if (I->error.string)
+	if (I->error.string) {
+		err_checktype(L, I->error.string, LUA_TSTRING);
 		lua_pushvalue(L, I->error.string);
-	else
+	} else {
 		lua_pushstring(L, "no error message");
+	}
 
 	return lua_tostring(L, -1);
 } /* err_pushstring() */
@@ -1236,29 +1267,32 @@ static cqs_nargs_t err_pushinfo(lua_State *L, struct callinfo *I) {
 	luaL_checkstack(L, 5, NULL);
 
 	err_pushstring(L, I);
-	nargs++;
+	nargs = 1;
 
 	if (I->error.code) {
 		lua_pushinteger(L, I->error.code);
-		nargs++;
+		nargs = 2;
 	}
 
 	if (I->error.thread) {
 		lua_settop(L, lua_gettop(L) + (2 - nargs));
+		err_checktype(L, I->error.thread, LUA_TTHREAD);
 		lua_pushvalue(L, I->error.thread);
-		nargs++;
+		nargs = 3;
 	}
 
 	if (I->error.object) {
 		lua_settop(L, lua_gettop(L) + (3 - nargs));
+		if (lua_isnone(L, I->error.object))
+			err_corrupt(L, I->error.object, "any");
 		lua_pushvalue(L, I->error.object);
-		nargs++;
+		nargs = 4;
 	}
 
 	if (I->error.fd != -1) {
 		lua_settop(L, lua_gettop(L) + (4 - nargs));
 		lua_pushinteger(L, I->error.fd);
-		nargs++;
+		nargs = 5;
 	}
 
 	return nargs;
@@ -1852,18 +1886,8 @@ static _Bool auxL_xcopy(lua_State *from, lua_State *to, int count) {
 } /*  auxL_xcopy() */
 
 
-static void auxL_slice(lua_State *L, int index, int count) {
-	if (index + count == lua_gettop(L) + 1) {
-		lua_pop(L, count);
-	} else {
-		while (count--)
-			lua_remove(L, index);
-	}
-} /* auxL_slice() */
-
-
 static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int otop, ntmp, nargs, nstack, status, index;
+	int otop = lua_gettop(L), nargs, status, index;
 	struct event *event;
 
 	if (lua_status(T->L) == LUA_YIELD) {
@@ -1874,10 +1898,7 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 		 * new objects. Pausing the GC isn't a viable option because
 		 * we don't know if or when lua_resume() will return.
 		 */
-		otop  = lua_gettop(L);
-		ntmp = lua_gettop(T->L);
-
-		if (!auxL_xcopy(T->L, L, ntmp))
+		if (!auxL_xcopy(T->L, L, lua_gettop(T->L)))
 			goto nospace;
 
 		nargs = 0;
@@ -1894,8 +1915,6 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 			event_del(Q, event);
 		}
 	} else {
-		otop = 0;
-		ntmp = 0;
 		nargs = lua_gettop(T->L) - 1;
 		assert(nargs >= 0);
 	}
@@ -1922,12 +1941,12 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 				/* FALL THROUGH */
 			default:
 				if (LUA_OK != (status = event_add(L, Q, I, T, index)))
-					goto stopped;
+					goto defunct;
 			}
 		}
 
 		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
-			goto stopped;
+			goto defunct;
 
 		timer_add(Q, &T->timer, thread_timeout(T));
 
@@ -1937,33 +1956,34 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 		break;
 	case LUA_OK:
 		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
-			goto stopped;
+			goto defunct;
 
 		thread_del(L, Q, I, T);
 
 		break;
 	default:
 		if (LUA_OK != cqueue_update(L, Q, I, T))
-			goto stopped;
+			goto defunct;
 
 		lua_xmove(T->L, L, 1); /* move error message */
 		I->error.string = lua_gettop(L);
 		err_setthread(L, I, T);
-stopped:
+defunct:
 		thread_del(L, Q, I, T);
 
 		break;
 	} /* switch() */
 
 	/* discard objects preserved while resuming coroutine */
-	auxL_slice(L, otop + 1, ntmp);
+	if (!err_onstack(L, I))
+		lua_settop(L, otop);
 
 	return status;
 nospace:
 	err_setinfo(L, I, 0, T, 0, "stack overflow");
 	status = LUA_ERRMEM;
 
-	goto stopped;
+	goto defunct;
 } /* cqueue_resume() */
 
 
@@ -2064,7 +2084,7 @@ static int cqueue_step(lua_State *L) {
 
 	return 1;
 oops:
-	lua_pushnil(L);
+	lua_pushboolean(L, 0);
 	return 1 + err_pushinfo(L, &I);
 } /* cqueue_step() */
 

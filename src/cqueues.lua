@@ -90,23 +90,22 @@ local loader = function(loader, ...)
 	-- Step until an error is encountered.
 	--
 	core.interpose("loop", function (self, timeout)
-		local ok, why
+		local function checkstep(self, deadline, ok, ...)
+			local curtime = deadline and monotime()
 
-		if timeout then
-			local curtime = monotime()
-			local deadline = curtime + timeout
-
-			repeat
-				ok, why = self:step(deadline - curtime)
-				curtime = monotime()
-			until not ok or deadline <= curtime or self:empty()
-		else
-			repeat
-				ok, why = self:step()
-			until not ok or self:empty()
+			if not ok then
+				return false, ...
+			elseif self:empty() then
+				return true
+			elseif deadline and deadline <= curtime then
+				return true
+			else
+				local timeout = deadline and deadline - curtime
+				return checkstep(self, deadline, self:step(timeout or nil))
+			end
 		end
 
-		return ok, why
+		return checkstep(self, (timeout and monotime() + timeout), self:step(timeout or nil))
 	end) -- core:loop
 
 	--
@@ -119,27 +118,12 @@ local loader = function(loader, ...)
 			local deadline = monotime() + timeout
 
 			return function ()
-				local curtime = monotime()
-
-				if curtime < deadline then
-					local ok, why = self:loop(deadline - curtime)
-
-					if not ok then
-						return why
-					end
-				end
-
-				return --> nothing, to end for loop
+				-- negative timeout values are treated as 0
+				return select(2, self:loop(deadline - monotime()))
 			end
 		else
 			return function ()
-				local ok, why = self:loop()
-
-				if not ok then
-					return why
-				end
-
-				return --> nothing, to end for loop
+				return select(2, self:loop())
 			end
 		end
 	end) -- core:errors
