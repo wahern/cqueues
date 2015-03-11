@@ -89,23 +89,44 @@ local loader = function(loader, ...)
 	--
 	-- Step until an error is encountered.
 	--
+	local function todeadline(timeout)
+		-- special case 0 timeout to avoid monotime call in totimeout
+		return timeout and (timeout > 0 and monotime() + timeout or 0) or nil
+	end -- todeadline
+
+	local function totimeout(deadline)
+		if not deadline then
+			return nil, false
+		elseif deadline == 0 then
+			return 0, true
+		else
+			local curtime = monotime()
+
+			if curtime < deadline then
+				return deadline - curtime, false
+			else
+				return  0, true
+			end
+		end
+	end -- totimeout
+
 	core.interpose("loop", function (self, timeout)
 		local function checkstep(self, deadline, ok, ...)
-			local curtime = deadline and monotime()
+			local timeout, expired = totimeout(deadline)
 
 			if not ok then
 				return false, ...
 			elseif self:empty() then
 				return true
-			elseif deadline and deadline <= curtime then
+			elseif expired then
 				return true
 			else
-				local timeout = deadline and deadline - curtime
-				return checkstep(self, deadline, self:step(timeout or nil))
+				return checkstep(self, deadline, self:step(timeout))
 			end
 		end
 
-		return checkstep(self, (timeout and monotime() + timeout), self:step(timeout or nil))
+		local deadline = todeadline(timeout)
+		return checkstep(self, deadline, self:step(timeout))
 	end) -- core:loop
 
 	--
@@ -114,17 +135,11 @@ local loader = function(loader, ...)
 	-- Return iterator over core:loop.
 	--
 	core.interpose("errors", function (self, timeout)
-		if timeout then
-			local deadline = monotime() + timeout
+		local deadline = todeadline(timeout)
 
-			return function ()
-				-- negative timeout values are treated as 0
-				return select(2, self:loop(deadline - monotime()))
-			end
-		else
-			return function ()
-				return select(2, self:loop())
-			end
+		return function ()
+			local timeout = totimeout(deadline)
+			return select(2, self:loop(timeout))
 		end
 	end) -- core:errors
 
