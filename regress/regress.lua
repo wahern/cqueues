@@ -19,6 +19,10 @@ function regress.panic(...)
 	os.exit(false)
 end -- panic
 
+function regress.debug(...)
+	regress.say(...)
+end -- debug
+
 function regress.check(v, ...)
 	if v then
 		return v, ...
