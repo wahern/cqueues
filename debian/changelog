@@ -1,3 +1,9 @@
+liblua-cqueues (20150310-0) unstable; urgency=low
+
+  * :step, :loop, and :errors now return additional error information.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 10 Mar 2015 21:38:56 -0700
+
 liblua-cqueues (20150218-0) unstable; urgency=low
 
   * Use newproxy to detect object leaks in Lua 5.1/LuaJIT because Lua 5.1
