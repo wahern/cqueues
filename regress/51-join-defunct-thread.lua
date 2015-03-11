@@ -20,9 +20,10 @@ local thr = assert(thread.start(function ()
 	local PR_SET_SECCOMP = 22
 	local SECCOMP_MODE_STRICT = 1
 	ffi.cdef"int prctl(int, unsigned long, unsigned long, unsigned long, unsigned long)"
-	local ok, rv = pcall(ffi.C.prctl, PR_SET_SECCOMP, SECCOMP_MODE_STRICT, 0, 0, 0)
+	local ok, rv = pcall(function () return ffi.C.prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT, 0, 0, 0) end)
 
 	if not ok then
+		local rv = string.match(rv, "[^:]+:[^:]+$") or rv
 		debug("prctl call failed: %s", rv)
 	elseif rv ~= 0 then
 		debug("prctl call failed: %s", errno.strerror(ffi.errno()))
