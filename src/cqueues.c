@@ -1,7 +1,7 @@
 /* ==========================================================================
  * cqueues.c - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012-2014  William Ahern
+ * Copyright (c) 2012-2015  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -24,31 +24,22 @@
  * ==========================================================================
  */
 #include <limits.h>	/* INT_MAX LONG_MAX */
-
+#include <stdarg.h>     /* va_list va_start va_end */
 #include <stddef.h>	/* NULL offsetof() size_t */
 #include <stdlib.h>	/* malloc(3) free(3) */
-
-#include <string.h>	/* memset(3) strerror(3) */
-
+#include <string.h>	/* memset(3) */
 #include <signal.h>	/* sigprocmask(2) pthread_sigmask(3) */
-
 #include <time.h>	/* struct timespec clock_gettime(3) */
-
+#include <math.h>	/* NAN fmax(3) isnormal(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
 #include <errno.h>	/* errno */
-
 #include <assert.h>	/* assert */
 
 #include <sys/queue.h>	/* LIST TAILQ */
 #include <sys/time.h>	/* struct timeval */
 #include <sys/select.h>	/* pselect(3) */
-
 #include <unistd.h>	/* close(2) */
-
 #include <fcntl.h>	/* F_SETFD FD_CLOEXEC fcntl(2) */
-
 #include <poll.h>	/* POLLIN POLLOUT */
-
-#include <math.h>	/* NAN fmax(3) isnormal(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -69,7 +60,7 @@
 #endif
 
 #ifndef CQUEUES_VERSION
-#define CQUEUES_VERSION 20150218L
+#define CQUEUES_VERSION 20150309L
 #endif
 
 
@@ -97,6 +88,12 @@
 #define NOTREACHED __builtin_unreachable()
 #else
 #define NOTREACHED (void)0
+#endif
+
+#if __GNUC__
+#define NONNULL(...) __attribute__((nonnull (__VA_ARGS__)))
+#else
+#define NONNULL(...)
 #endif
 
 #if __GNUC__
@@ -911,7 +908,7 @@ static int cond_signal(lua_State *L) {
 	return 1;
 error:
 	lua_pushnil(L);
-	lua_pushstring(L, strerror(error));
+	lua_pushstring(L, cqs_strerror(error));
 	lua_pushinteger(L, error);
 
 	return 3;
@@ -986,7 +983,7 @@ int luaopen__cqueues_condition(lua_State *L) {
 #define CQUEUE__POLL ((void *)&cqueue__poll)
 static const char cqueue__poll[] = "poll magic"; // signals multilevel yield
 
-typedef int luaref_t;
+typedef int auxref_t;
 
 struct event;
 struct thread;
@@ -1001,7 +998,7 @@ struct event {
 
 	_Bool pending;
 
-	int index;
+	int index; /* on .thread->L stack */
 
 	struct thread *thread;
 	TAILQ_ENTRY(event) tqe;
@@ -1033,7 +1030,7 @@ struct timer {
 
 
 struct thread {
-	luaref_t ref;
+	auxref_t ref;
 	lua_State *L; /* only for coroutines */
 
 	TAILQ_HEAD(, event) events;
@@ -1053,7 +1050,7 @@ struct thread {
 struct cqueue {
 	struct kpoll kp;
 
-	luaref_t registry; /* ephemeron table global registry index */
+	auxref_t registry; /* ephemeron table global registry index */
 
 	struct {
 		LLRB_HEAD(table, fileno) table;
@@ -1072,6 +1069,7 @@ struct cqueue {
 	LLRB_HEAD(timers, timer) timers;
 
 	struct cstack *cstack;
+
 	LIST_ENTRY(cqueue) le;
 }; /* struct cqueue */
 
@@ -1102,10 +1100,19 @@ static void cstack_push(struct cstack *, struct stackinfo *);
 static void cstack_pop(struct cstack *);
 static _Bool cstack_isrunning(const struct cstack *, const struct cqueue *);
 
+#define CALLINFO_INITIALIZER { 0 }
 
 struct callinfo {
-	int self; /* stack index of cqueue object */
-	int registry; /* stack index of ephemeron registry table */
+	cqs_index_t self; /* stack index of cqueue object */
+	cqs_index_t registry; /* stack index of ephemeron registry table */
+
+	struct {
+		cqs_index_t string;
+		int code;
+		cqs_index_t thread;
+		cqs_index_t object;
+		int fd;
+	} error;
 }; /* struct callinfo */
 
 
@@ -1124,6 +1131,12 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 	lua_gettable(L, -2);
 	lua_replace(L, -2);
 	I->registry = lua_absindex(L, -1);
+
+	I->error.string = 0;
+	I->error.code = 0;
+	I->error.thread = 0;
+	I->error.object = 0;
+	I->error.fd = -1;
 
 	return Q;
 } /* cqueue_enter() */
@@ -1144,10 +1157,117 @@ static int cqueue_ref(lua_State *L, struct callinfo *I, int index) {
 } /* cqueue_ref() */
 
 
-static void cqueue_unref(lua_State *L, struct callinfo *I, luaref_t *ref) {
+static void cqueue_unref(lua_State *L, struct callinfo *I, auxref_t *ref) {
 	luaL_unref(L, I->registry, *ref);
 	*ref = LUA_NOREF;
 } /* cqueue_unref() */
+
+
+static void err_setvfstring(lua_State *L, struct callinfo *I, const char *fmt, va_list ap) {
+	lua_pushvfstring(L, fmt, ap);
+	I->error.string = lua_gettop(L);
+} /* err_setvfstring() */
+
+static void err_setfstring(lua_State *L, struct callinfo *I, const char *fmt, ...) {
+	va_list ap;
+
+	va_start(ap, fmt);
+	err_setvfstring(L, I, fmt, ap);
+	va_end(ap);
+} /* err_setfstring() */
+
+static void err_setcode(lua_State *L, struct callinfo *I, int code) {
+	I->error.code = code;
+
+	if (!I->error.string)
+		err_setfstring(L, I, "%s", cqs_strerror(code));
+} /* err_setcode() */
+
+static void err_setthread(lua_State *L, struct callinfo *I, struct thread *T) {
+	lua_pushthread(T->L);
+	lua_xmove(T->L, L, 1);
+	I->error.thread = lua_gettop(L);
+} /* err_setthread() */
+
+static void err_setobject(lua_State *L, struct callinfo *I, cqs_index_t index) {
+	I->error.object = lua_absindex(L, index);
+} /* err_setobject() */
+
+static void err_setfd(lua_State *L NOTUSED, struct callinfo *I, int fd) {
+	I->error.fd = fd;
+} /* err_setfd() */
+
+static void err_setinfo(lua_State *L, struct callinfo *I, int code, struct thread *T, int object, const char *fmt, ...) {
+	/* set object first in case it's a relative index */
+	if (object)
+		err_setobject(L, I, object);
+
+	if (T)
+		err_setthread(L, I, T);
+
+	if (fmt) {
+		va_list ap;
+
+		va_start(ap, fmt);
+		err_setvfstring(L, I, fmt, ap);
+		va_end(ap);
+	}
+
+	/*
+	 * set code after we set any string so we don't unnecessarily
+	 * instantiate a string description
+	 */
+	if (code)
+		err_setcode(L, I, code);
+} /* err_setinfo() */
+
+static const char *err_pushstring(lua_State *L, struct callinfo *I) {
+	if (I->error.string)
+		lua_pushvalue(L, I->error.string);
+	else
+		lua_pushstring(L, "no error message");
+
+	return lua_tostring(L, -1);
+} /* err_pushstring() */
+
+static cqs_nargs_t err_pushinfo(lua_State *L, struct callinfo *I) {
+	int nargs = 0;
+
+	luaL_checkstack(L, 5, NULL);
+
+	err_pushstring(L, I);
+	nargs++;
+
+	if (I->error.code) {
+		lua_pushinteger(L, I->error.code);
+		nargs++;
+	}
+
+	if (I->error.thread) {
+		lua_settop(L, lua_gettop(L) + (2 - nargs));
+		lua_pushvalue(L, I->error.thread);
+		nargs++;
+	}
+
+	if (I->error.object) {
+		lua_settop(L, lua_gettop(L) + (3 - nargs));
+		lua_pushvalue(L, I->error.object);
+		nargs++;
+	}
+
+	if (I->error.fd != -1) {
+		lua_settop(L, lua_gettop(L) + (4 - nargs));
+		lua_pushinteger(L, I->error.fd);
+		nargs++;
+	}
+
+	return nargs;
+} /* err_pushinfo() */
+
+static void err_error(lua_State *L, struct callinfo *I) {
+	err_pushstring(L, I);
+	lua_error(L);
+} /* err_error() */
 
 
 static void cqueue_preinit(struct cqueue *Q) {
@@ -1172,7 +1292,7 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	index = lua_absindex(L, index);
 
 	if ((error = kpoll_init(&Q->kp)))
-		luaL_error(L, "unable to initialize continuation queue: %s", strerror(error));
+		luaL_error(L, "unable to initialize continuation queue: %s", cqs_strerror(error));
 
 	/*
 	 * create ephemeron table
@@ -1316,7 +1436,7 @@ static int fileno_ctl(struct cqueue *Q, struct fileno *fileno, short events) {
 	int error;
 
 	if ((error = kpoll_ctl(&Q->kp, fileno->fd, &fileno->state, events, fileno)))
-		return error;
+		return error; /* XXX: Should we call fileno_signal? */
 
 	LIST_REMOVE(fileno, le);
 
@@ -1374,51 +1494,45 @@ static cqs_error_t wakecb_wakeup(struct wakecb *cb) {
 } /* wakecb_wakeup() */
 
 
-static inline _Bool object_oneof(lua_State *L, int index, int rtype[], int n) {
-	int type = lua_type(L, index);
-	int i;
+#define object_pcall(L, I, T, index, field, ...) object_pcall((L), (I), (T), (index), (field), ((int[]){ __VA_ARGS__ }), countof(((int[]){ __VA_ARGS__ })))
 
-	for (i = 0; i < n; i++) {
-		if (type == rtype[i])
-			return 1;
-	}
-
-	return 0;
-} /* object_oneof() */
-
-
-#define object_pcall(L, index, field, ...) object_pcall((L), (index), (field), ((int[]){ __VA_ARGS__ }), countof(((int[]){ __VA_ARGS__ })))
-
-static int (object_pcall)(lua_State *L, int index, const char *field, int rtype[], int n, ...) {
-	int status, i;
+NONNULL(1, 2, 5)
+static cqs_status_t (object_pcall)(lua_State *L, struct callinfo *I, struct thread *T, int index, const char *field, int rtype[], int n, ...) {
+	int type, i, status;
 
 	index = lua_absindex(L, index);
-
 	lua_getfield(L, index, field);
 
 	if (lua_isfunction(L, -1)) {
 		lua_pushvalue(L, index);
 
-		if (LUA_OK != (status = lua_pcall(L, 1, 1, 0)))
+		if (LUA_OK != (status = lua_pcall(L, 1, 1, 0))) {
+			err_setinfo(L, I, 0, T, index, "error calling method %s: %s", field, lua_tostring(L, -1));
+
 			return status;
+		}
 	}
 
-	if (!object_oneof(L, -1, rtype, n)) {
-		lua_pushfstring(L, "%s method: %s expected, got %s", field, lua_typename(L, rtype[0]), luaL_typename(L, -1));
+	type = lua_type(L, -1);
 
-		return LUA_ERRRUN;
+	for (i = 0; i < n; i++) {
+		if (type == rtype[i])
+			return LUA_OK;
 	}
 
-	return LUA_OK;
+	err_setinfo(L, I, 0, T, index, "error loading field %s: %s expected, got %s", field, lua_typename(L, rtype[0]), luaL_typename(L, -1));
+
+	return LUA_ERRRUN;
 } /* object_pcall() */
 
 
-static int object_getcv(lua_State *L, struct cqueue *Q, int index, struct event *event) {
+NONNULL(1, 2, 3, 6)
+static int object_getcv(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T, int index, struct event *event) {
 	struct condition *cv = lua_touserdata(L, index);
 	int error;
 
 	if (!(event->wakecb = pool_get(&Q->pool.wakecb, &error))) {
-		lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+		err_setinfo(L, I, error, T, index, "unable to wait on conditional variable: %s", cqs_strerror(error));
 
 		return LUA_ERRRUN;
 	}
@@ -1430,7 +1544,8 @@ static int object_getcv(lua_State *L, struct cqueue *Q, int index, struct event 
 } /* object_getcv() */
 
 
-static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int index, struct event *event) {
+NONNULL(1, 2, 3, 6)
+static cqs_status_t object_getinfo(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T, int index, struct event *event) {
 	int status;
 
 	/* optimize simple timeout */
@@ -1449,19 +1564,17 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 
 	if (cqs_testudata(L, -1, 2)) {
 		event->fd = cqs_socket_pollfd(L, -1);
-
 		event->events = cqs_socket_events(L, -1);
-
 		event->timeout = abstimeout(cqs_socket_timeout(L, -1));
 	} else if (cqs_testudata(L, -1, 3)) {
-		if ((LUA_OK != (status = object_getcv(L, Q, -1, event))))
+		if ((LUA_OK != (status = object_getcv(L, Q, I, T, -1, event))))
 			goto oops;
 	} else {
-		if (LUA_OK != (status = object_pcall(L, -1, "pollfd", LUA_TNUMBER, LUA_TUSERDATA, LUA_TNIL)))
+		if (LUA_OK != (status = object_pcall(L, I, T, -1, "pollfd", LUA_TNUMBER, LUA_TUSERDATA, LUA_TNIL)))
 			goto oops;
 
 		if (lua_isuserdata(L, -1) && cqs_testudata(L, -1, 3)) {
-			if ((LUA_OK != (status = object_getcv(L, Q, -1, event))))
+			if ((LUA_OK != (status = object_getcv(L, Q, I, T, -1, event))))
 				goto oops;
 		} else {
 			event->fd = luaL_optinteger(L, -1, -1);
@@ -1470,7 +1583,7 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 
 		lua_pop(L, 1); /* pop fd or condvar */
 
-		if (LUA_OK != (status = object_pcall(L, -1, "events", LUA_TNUMBER, LUA_TSTRING, LUA_TNIL)))
+		if (LUA_OK != (status = object_pcall(L, I, T, -1, "events", LUA_TNUMBER, LUA_TSTRING, LUA_TNIL)))
 			goto oops;
 
 		if (lua_isnumber(L, -1)) {
@@ -1491,7 +1604,7 @@ static int object_getinfo(lua_State *L, struct cqueue *Q, struct thread *T, int 
 
 		lua_pop(L, 1); /* pop event mode */
 
-		if (LUA_OK != (status = object_pcall(L, -1, "timeout", LUA_TNUMBER, LUA_TNIL)))
+		if (LUA_OK != (status = object_pcall(L, I, T, -1, "timeout", LUA_TNUMBER, LUA_TNIL)))
 			goto oops;
 
 		event->timeout = abstimeout(luaL_optnumber(L, -1, event->timeout));
@@ -1512,15 +1625,15 @@ static void event_init(struct event *event, struct thread *T, int index) {
 
 	event->fd = -1;
 	event->timeout = NAN;
-
 	event->index = index;
+	event->thread = T;
 
 	TAILQ_INSERT_TAIL(&T->events, event, tqe);
-	event->thread = T;
+	T->count++;
 } /* event_init() */
 
 
-static int event_add(lua_State *L, struct cqueue *Q, struct thread *T, int index) {
+static cqs_status_t event_add(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T, int index) {
 	struct event *event;
 	struct fileno *fileno;
 	int error, status;
@@ -1530,7 +1643,7 @@ static int event_add(lua_State *L, struct cqueue *Q, struct thread *T, int index
 
 	event_init(event, T, index);
 
-	if (LUA_OK != (status = object_getinfo(L, Q, T, index, event)))
+	if (LUA_OK != (status = object_getinfo(L, Q, I, T, index, event)))
 		return status;
 
 	if (event->fd >= 0 && event->events) {
@@ -1546,7 +1659,7 @@ static int event_add(lua_State *L, struct cqueue *Q, struct thread *T, int index
 
 	return LUA_OK;
 error:
-	lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+	err_setinfo(L, I, error, T, index, "unable to add event: %s", cqs_strerror(error));
 
 	return LUA_ERRRUN;
 } /* event_add() */
@@ -1566,6 +1679,9 @@ static void event_del(struct cqueue *Q, struct event *event) {
 	}
 
 	TAILQ_REMOVE(&event->thread->events, event, tqe);
+	assert(event->thread->count > 0);
+	event->thread->count--;
+
 	pool_put(&Q->pool.event, event);
 } /* event_del() */
 
@@ -1610,14 +1726,14 @@ static double thread_timeout(struct thread *T) {
 } /* thread_timeout() */
 
 
-static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
+static cqs_error_t thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
 	struct thread *T;
 	int error;
 
 	index = lua_absindex(L, index);
 
 	if (!(T = pool_get(&Q->pool.thread, &error)))
-		luaL_error(L, "internal error in continuation queue: %s", strerror(error));
+		return error;
 
 	memset(T, 0, sizeof *T);
 
@@ -1632,6 +1748,8 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
 	T->threads = &Q->thread.pending;
 	Q->thread.count++;
+
+	return 0;
 } /* thread_add() */
 
 
@@ -1654,8 +1772,9 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 } /* thread_del() */
 
 
-static int cqueue_update(lua_State *L, struct cqueue *Q) {
+static cqs_status_t cqueue_update(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
 	struct fileno *fileno, *next;
+	struct event *event;
 	int error;
 
 	for (fileno = LIST_FIRST(&Q->fileno.outstanding); fileno; fileno = next) {
@@ -1667,13 +1786,25 @@ static int cqueue_update(lua_State *L, struct cqueue *Q) {
 
 	return LUA_OK;
 error:
-	lua_pushfstring(L, "internal error in continuation queue: %s", strerror(error));
+	LIST_FOREACH(event, &fileno->events, fle) {
+		if (event->thread != T)
+			continue;
+
+		lua_pushvalue(T->L, event->index);
+		lua_xmove(T->L, L, 1);
+		err_setobject(L, I, lua_gettop(L));
+
+		break;
+	}
+
+	err_setfd(L, I, fileno->fd);
+	err_setinfo(L, I, error, T, 0, "unable to update event disposition: %s (fd:%d)", cqs_strerror(error), fileno->fd);
 
 	return LUA_ERRRUN;
 } /* cqueue_update() */
 
 
-static int cqueue_reboot(struct cqueue *Q, _Bool stop, _Bool restart) {
+static cqs_error_t cqueue_reboot(struct cqueue *Q, _Bool stop, _Bool restart) {
 	if (stop) {
 		struct fileno *fileno;
 		struct thread *thread;
@@ -1705,28 +1836,34 @@ static int cqueue_reboot(struct cqueue *Q, _Bool stop, _Bool restart) {
 } /* cqueue_reboot() */
 
 
-static void luacq_xcopy(lua_State *from, lua_State *to, int count) {
+static _Bool auxL_xcopy(lua_State *from, lua_State *to, int count) {
 	int index;
+
+	if (!lua_checkstack(from, count)
+	||  !lua_checkstack(to, count + LUA_MINSTACK))
+		return 0;
 
 	for (index = 1; index <= count; index++)
 		lua_pushvalue(from, index);
 
 	lua_xmove(from, to, count);
-} /*  luacq_xcopy() */
+
+	return 1;
+} /*  auxL_xcopy() */
 
 
-static void luacq_slice(lua_State *L, int index, int count) {
+static void auxL_slice(lua_State *L, int index, int count) {
 	if (index + count == lua_gettop(L) + 1) {
 		lua_pop(L, count);
 	} else {
 		while (count--)
 			lua_remove(L, index);
 	}
-} /* luacq_slice() */
+} /* auxL_slice() */
 
 
-static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int otop, ntmp, nargs, status, index;
+static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
+	int otop, ntmp, nargs, nstack, status, index;
 	struct event *event;
 
 	if (lua_status(T->L) == LUA_YIELD) {
@@ -1739,11 +1876,16 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 		 */
 		otop  = lua_gettop(L);
 		ntmp = lua_gettop(T->L);
-		luacq_xcopy(T->L, L, ntmp);
+
+		if (!auxL_xcopy(T->L, L, ntmp))
+			goto nospace;
 
 		nargs = 0;
 
-		while((event = TAILQ_FIRST(&T->events))) {
+		if (!lua_checkstack(T->L, T->count + LUA_MINSTACK))
+			goto nospace;
+
+		while ((event = TAILQ_FIRST(&T->events))) {
 			if (event->pending) {
 				lua_pushvalue(T->L, event->index);
 				nargs++;
@@ -1779,13 +1921,13 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 				/* FALL THROUGH */
 			default:
-				if (LUA_OK != (status = event_add(L, Q, T, index)))
-					goto error;
+				if (LUA_OK != (status = event_add(L, Q, I, T, index)))
+					goto stopped;
 			}
 		}
 
-		if (LUA_OK != (status = cqueue_update(L, Q)))
-			goto error;
+		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
+			goto stopped;
 
 		timer_add(Q, &T->timer, thread_timeout(T));
 
@@ -1794,30 +1936,38 @@ static int cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, str
 
 		break;
 	case LUA_OK:
-		if (LUA_OK != (status = cqueue_update(L, Q)))
-			goto error;
+		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
+			goto stopped;
 
 		thread_del(L, Q, I, T);
 
 		break;
 	default:
-		if (LUA_OK != cqueue_update(L, Q))
-			goto error;
+		if (LUA_OK != cqueue_update(L, Q, I, T))
+			goto stopped;
 
-		lua_xmove(T->L, L, 1);
-error:
+		lua_xmove(T->L, L, 1); /* move error message */
+		I->error.string = lua_gettop(L);
+		err_setthread(L, I, T);
+stopped:
 		thread_del(L, Q, I, T);
 
 		break;
 	} /* switch() */
 
-	luacq_slice(L, otop + 1, ntmp);
+	/* discard objects preserved while resuming coroutine */
+	auxL_slice(L, otop + 1, ntmp);
 
 	return status;
+nospace:
+	err_setinfo(L, I, 0, T, 0, "stack overflow");
+	status = LUA_ERRMEM;
+
+	goto stopped;
 } /* cqueue_resume() */
 
 
-static int cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	int onalert = 0;
 	kpoll_event_t *ke;
 	struct fileno *fileno;
@@ -1897,22 +2047,25 @@ static int cqueue_step(lua_State *L) {
 
 	if (LIST_EMPTY(&Q->thread.pending)) {
 		timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
-	} else
-		timeout = 0.0;
-
-	if ((error = kpoll_wait(&Q->kp, timeout)))
-		return luaL_error(L, "internal error in continuation queue: %s", strerror(error));
-
-	if (LUA_OK != cqueue_process(L, Q, &I)) {
-		lua_pushboolean(L, 0);
-		lua_pushvalue(L, -2);
-
-		return 2;
 	} else {
-		lua_pushboolean(L, 1);
-
-		return 1;
+		timeout = 0.0;
 	}
+
+	if ((error = kpoll_wait(&Q->kp, timeout))) {
+		err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
+		err_setcode(L, &I, error);
+		goto oops;
+	}
+
+	if (LUA_OK != cqueue_process(L, Q, &I))
+		goto oops;
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+oops:
+	lua_pushnil(L);
+	return 1 + err_pushinfo(L, &I);
 } /* cqueue_step() */
 
 
@@ -1926,7 +2079,8 @@ static int cqueue_attach(lua_State *L) {
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TTHREAD);
 
-	thread_add(L, Q, &I, 2);
+	if ((error = thread_add(L, Q, &I, 2)))
+		goto error;
 
 	if ((error = cqueue_tryalert(Q)))
 		goto error;
@@ -1936,7 +2090,7 @@ static int cqueue_attach(lua_State *L) {
 	return 1;
 error:
 	lua_pushnil(L);
-	lua_pushstring(L, strerror(error));
+	lua_pushstring(L, cqs_strerror(error));
 	lua_pushinteger(L, error);
 
 	return 3;
@@ -1960,7 +2114,8 @@ static int cqueue_wrap(lua_State *L) {
 	}
 	lua_xmove(L, newL, top - 1);
 
-	thread_add(L, Q, &I, -1);
+	if ((error = thread_add(L, Q, &I, -1)))
+		goto error;
 
 	if ((error = cqueue_tryalert(Q)))
 		goto error;
@@ -1970,7 +2125,7 @@ static int cqueue_wrap(lua_State *L) {
 	return 1;
 error:
 	lua_pushnil(L);
-	lua_pushstring(L, strerror(error));
+	lua_pushstring(L, cqs_strerror(error));
 	lua_pushinteger(L, error);
 
 	return 3;
@@ -1995,25 +2150,24 @@ static int cqueue_count(lua_State *L) {
 } /* cqueue_count() */
 
 
-static int cqueue_cancelfd(struct cqueue *Q, int fd) {
+static cqs_error_t cqueue_cancelfd(struct cqueue *Q, int fd) {
 	struct fileno *fileno;
 
-	if ((fileno = fileno_find(Q, fd))) {
-		fileno_signal(Q, fileno, POLLIN|POLLOUT);
-		/* FIXME: throw error */
-		fileno_ctl(Q, fileno, 0);
-	}
+	if (!(fileno = fileno_find(Q, fd)))
+		return 0;
 
-	return 0;
+	fileno_signal(Q, fileno, POLLIN|POLLOUT);
+
+	return fileno_ctl(Q, fileno, 0);
 } /* cqueue_cancelfd() */
 
 
-static int cqueue_checkfd(lua_State *L, int index) {
+static int cqueue_checkfd(lua_State *L, struct callinfo *I, int index) {
 	int fd;
 
 	if (!lua_isnil(L, index) && !lua_isnumber(L, index)) {
-		if (LUA_OK != object_pcall(L, index, "pollfd", LUA_TNUMBER))
-			lua_error(L);
+		if (LUA_OK != object_pcall(L, I, NULL, index, "pollfd", LUA_TNUMBER))
+			err_error(L, I);
 
 		fd = luaL_optint(L, -1, -1);
 		lua_pop(L, 1);
@@ -2026,11 +2180,12 @@ static int cqueue_checkfd(lua_State *L, int index) {
 
 
 static int cqueue_cancel(lua_State *L) {
-	struct cqueue *Q = cqueue_checkself(L, 1);
+	struct callinfo I;
+	struct cqueue *Q = cqueue_enter(L, &I, 1);
 	int index, fd;
 
 	for (index = 2; index <= lua_gettop(L); index++)
-		cqueue_cancelfd(Q, cqueue_checkfd(L, index));
+		cqueue_cancelfd(Q, cqueue_checkfd(L, &I, index));
 
 	return 0;
 } /* cqueue_cancel() */
@@ -2041,7 +2196,7 @@ static int cqueue_reset(lua_State *L) {
 	int error;
 
 	if ((error = cqueue_reboot(Q, 1, 1)))
-		return luaL_error(L, "unable to reset continuation queue: %s", strerror(error));
+		return luaL_error(L, "unable to reset continuation queue: %s", cqs_strerror(error));
 
 	return 0;
 } /* cqueue_reset() */
@@ -2220,7 +2375,7 @@ static int cqueue_pause(lua_State *L) {
 
 	return 0;
 error:
-	return luaL_error(L, "cqueue:pause: %s", strerror(error));
+	return luaL_error(L, "cqueue:pause: %s", cqs_strerror(error));
 } /* cqueue_pause() */
 
 
@@ -2336,12 +2491,13 @@ static void cstack_del(struct cqueue *Q) {
 
 
 static int cstack_cancel(lua_State *L) {
+	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cstack *CS = cstack_self(L);
 	struct cqueue *Q;
 	int index, fd;
 
 	for (index = 1; index <= lua_gettop(L); index++) {
-		fd = cqueue_checkfd(L, index);
+		fd = cqueue_checkfd(L, &I, index);
 
 		LIST_FOREACH(Q, &CS->cqueues, le) {
 			cqueue_cancelfd(Q, fd);
@@ -2373,7 +2529,7 @@ static int cstack_reset(lua_State *L) {
 
 	LIST_FOREACH(Q, &CS->cqueues, le) {
 		if ((error = cqueue_reboot(Q, 0, 1)))
-			return luaL_error(L, "unable to reset continuation queue: %s", strerror(error));
+			return luaL_error(L, "unable to reset continuation queue: %s", cqs_strerror(error));
 	}
 
 	return 0;

@@ -26,14 +26,16 @@
 #ifndef CQUEUES_H
 #define CQUEUES_H
 
+#include <limits.h>     /* CHAR_BIT */
+#include <stdlib.h>     /* abs(3) */
+#include <string.h>     /* strerror_r(3) strnlen(3) */
 #include <signal.h>	/* sigset_t */
-
 #include <errno.h>	/* EINTR EOVERFLOW */
+#include <assert.h>     /* assert */
 
 #include <sys/param.h>  /* __NetBSD_Version__ OpenBSD __FreeBSD__version */
 #include <sys/types.h>
 #include <sys/socket.h>	/* socketpair(2) */
-
 #include <unistd.h>	/* close(2) pipe(2) */
 #include <fcntl.h>	/* fcntl(2) */
 
@@ -56,6 +58,16 @@
 #endif
 
 #define NETBSD_PREREQ(M, m) __NetBSD_Prereq__(M, m, 0)
+
+#define FREEBSD_PREREQ(M, m) (defined __FreeBSD_version && __FreeBSD_version >= ((M) * 100000) + ((m) * 1000))
+
+#if defined __GLIBC_PREREQ
+#define GLIBC_PREREQ(M, m) (defined __GLIBC__ && __GLIBC_PREREQ(M, m) && !__UCLIBC__)
+#else
+#define GLIBC_PREREQ(M, m) 0
+#endif
+
+#define UCLIBC_PREREQ(M, m, p) (defined __UCLIBC__ && (__UCLIBC_MAJOR__ > M || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ > m) || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ == m && __UCLIBC_SUBLEVEL__ >= p)))
 
 #define HAVE_EPOLL  (__linux)
 #define HAVE_PORTS  (__sun)
@@ -81,8 +93,10 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define cqs_nargs_t int
-#define cqs_error_t int
+#define cqs_index_t int  /* for documentation purposes */
+#define cqs_nargs_t int  /* "" */
+#define cqs_error_t int  /* "" */
+#define cqs_status_t int /* "" */
 
 #define CQS_CQUEUE "Continuation Queue"
 #define CQS_SOCKET "CQS Socket"
@@ -392,6 +406,81 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 	return 0;
 #endif
 } /* cqs_pipe2() */
+
+
+#ifndef STRERROR_R_CHAR_P
+#define STRERROR_R_CHAR_P ((GLIBC_PREREQ(0,0) || UCLIBC_PREREQ(0,0,0)) && (_GNU_SOURCE || !(_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600)))
+#endif
+
+static cqs_error_t cqs_strerror_r(int error, char *dst, size_t lim) {
+#if STRERROR_R_CHAR_P
+	char *src;
+
+	if (!(src = strerror_r(error, dst, lim)))
+		return EINVAL;
+
+	if (src != dst && lim > 0) {
+		size_t n = strnlen(src, lim - 1);
+		memcpy(dst, src, n);
+		dst[n] = '\0';
+	}
+
+	return 0;
+#else
+	/* glibc between 2.3.4 and 2.13 returns -1 on error */
+	if (-1 == (error = strerror_r(error, dst, lim)))
+		return errno;
+	else
+		return error;
+#endif
+
+} /* cqs_strerror_r() */
+
+
+/*
+ * NB: Compound literals have block scope in C. But g++ creates
+ * list-initialized temporaries, which only have expression scope.
+ */
+#if !__cplusplus
+#define cqs_strerror(...) cqs_strerror_(__VA_ARGS__, (char [128]){ 0 }, 128, 0)
+#define cqs_strerror_(error, dst, lim, ...) (cqs_strerror)((error), (dst), (lim))
+#endif
+
+static const char *(cqs_strerror)(int error, void *dst, size_t lim) {
+	char *p, *pe, *unknown;
+	char e10[((sizeof error * CHAR_BIT) / 3) + 1], *ep;
+	int n;
+
+	if (!lim)
+		return dst;
+
+	if (0 == cqs_strerror_r(error, dst, lim) && *(char *)dst)
+		return dst;
+
+	p = dst;
+	pe = p + lim;
+
+	unknown = "Unknown error: ";
+	while (*unknown && p < pe)
+		*p++ = *unknown++;
+
+	if (error < 0 && p < pe)
+		*p++ = '-';
+
+	/* translate integer to string in LSB order */
+	for (ep = e10, n = error; n; ep++, n /= 10)
+		*ep = "0123456789"[abs(n % 10)];
+	if (ep == e10)
+		*ep++ = '0';
+
+	/* copy string, flipping from LSB to MSB */
+	while (ep > e10 && p < pe)
+		*p++ = *--ep;
+
+	p[-1] = '\0';
+
+	return dst;
+} /* cqs_strerror() */
 
 
 cqs_error_t cqs_sigmask(int, const sigset_t *, sigset_t *);
