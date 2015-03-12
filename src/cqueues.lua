@@ -116,9 +116,7 @@ local loader = function(loader, ...)
 
 			if not ok then
 				return false, ...
-			elseif self:empty() then
-				return true
-			elseif expired then
+			elseif expired or self:empty() then
 				return true
 			else
 				return checkstep(self, deadline, self:step(timeout))
