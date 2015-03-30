@@ -1759,7 +1759,7 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	if (0 != fstat(fd, &st))
 		goto syerr;
 
-	if (st.st_mode & S_IFSOCK) {
+	if ((st.st_mode & S_IFMT) == S_IFSOCK) {
 		struct sockaddr_storage ss;
 
 		if (0 != getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
