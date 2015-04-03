@@ -41,6 +41,12 @@
 #include "lib/llrb.h"
 
 
+#if defined EOWNERDEAD
+#define CT_EOWNERDEAD EOWNERDEAD
+#else
+#define CT_EOWNERDEAD EBUSY
+#endif
+
 struct cthread_arg {
 	int type;
 	int iscfunction:1;
@@ -694,7 +700,7 @@ static int ct_join(lua_State *L) {
 		error = errno;
 
 		if (error == EAGAIN && !hdl_isheld(&ct->handle))
-			error = EOWNERDEAD;
+			error = CT_EOWNERDEAD;
 
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
