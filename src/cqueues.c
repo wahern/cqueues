@@ -30,7 +30,7 @@
 #include <string.h>	/* memset(3) */
 #include <signal.h>	/* sigprocmask(2) pthread_sigmask(3) */
 #include <time.h>	/* struct timespec clock_gettime(3) */
-#include <math.h>	/* FP_* NAN fmax(3) fpclassify(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) */
+#include <math.h>	/* FP_* NAN fmax(3) fpclassify(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) ceil(3) */
 #include <errno.h>	/* errno */
 #include <assert.h>	/* assert */
 
@@ -197,8 +197,9 @@ static inline int f2ms(const double f) {
 			return INT_MAX;
 		}
 
-		return ((int)f * 1000) + ((int)(f * 1000.0) % 1000);
+		return ((int)f * 1000) + ((int)ceil(f * 1000.0) % 1000);
 	case FP_SUBNORMAL:
+		return 1;
 	case FP_ZERO:
 		return 0;
 	case FP_INFINITE:
@@ -219,11 +220,15 @@ static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
 		} else {
 			ts->tv_sec = (time_t)f;
 			/* SunPRO chokes on modulo here unless unsigned. */
-			ts->tv_nsec = (unsigned long)(f * 1000000000.0) % 1000000000UL;
+			ts->tv_nsec = (unsigned long)ceil(f * 1000000000.0) % 1000000000UL;
 		}
 
 		return ts;
 	case FP_SUBNORMAL:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1;
+
+		return ts;
 	case FP_ZERO:
 		return ts;
 	case FP_INFINITE:
