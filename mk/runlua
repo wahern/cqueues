@@ -48,23 +48,29 @@
 # and
 #
 #   #!/bin/sh
-#   echo "running shell code!"
-#   exec runlua -r5.2 -s"^exec" "$0" "$@"
+#   _=[[
+#     echo "running shell code!"
+#     exec runlua -r5.2 "$0" "$@"
+#   ]]
 #   print "running Lua code!"
 #
 # Only Linux and OS X support the first mode. The second is portable in
 # practice--although POSIX does not require sh to be located at
 # /bin/sh, it nonetheless can be invoked from that location on all the
-# environments I've tested.
+# environments I've tested. And POSIX effectively requires shells to parse
+# and execute scripts command-by-command, so no shell should read past the
+# exec line.
 #
 # Also, the first mode requires a fully qualified path name, whereas with
-# the second mode the shell code in the header can locate runlua
+# the second mode the shell code in the header could locate runlua
 # dynamically. For example, a regression or example script in a project
 # repository might have a header like
 #
 #   #!/bin/sh
-#   PATH="${PATH}:$(dirname "$0")/../bin"
-#   exec "$(dirname "$0")/../contrib/runlua" -s"^exec" "$0" "$@"
+#   _=[[
+#     PATH="${PATH}:$(dirname "$0")/../bin"
+#     exec "$(dirname "$0")/../contrib/runlua" "$0" "$@"
+#   ]]
 #   local mymodule = require"mymodule"
 #   -- ...
 #
@@ -123,19 +129,20 @@ export LC_ALL=C
 : ${PATH:=$(command -p getconf PATH)}
 : ${TMPDIR:=/tmp}
 
-MYVERSION=20150218
+: ${RUNLUA_E:=}
+: ${RUNLUA_R:=1-}
+: ${RUNLUA_J:=0-}
+: ${RUNLUA_T:=}
+: ${RUNLUA_D:=}
+: ${RUNLUA_P:=}
+
+MYVERSION=20150401
 MYVENDOR="william@25thandClement.com"
 
-LUA_MIN=10000
-LUA_MAX=999999
-JIT_MIN=00000
-JIT_MAX=999999
-
 TMPWD=
-DEBUG=0
 
 warn() {
-	if [ "${DEBUG}" -gt 0 -a -t 2 ]; then
+	if [ "${RUNLUA_D#!}" -gt 0 -a -t 2 ]; then
 		printf "\033[0;31m%s: %.0s${1}\033[0m\n" "${0##*/}" "$@" >&2
 	else
 		printf "%s: %.0s${1}\n" "${0##*/}" "$@" >&2
@@ -148,13 +155,13 @@ panic() {
 }
 
 debug() {
-	if [ "${DEBUG}" -gt 0 ]; then
+	if [ "${RUNLUA_D#!}" -gt 0 ]; then
 		printf "%s: %.0s${1}\n" "${0##*/}" "$@" >&2
 	fi
 }
 
 dump() {
-	if [ "${DEBUG}" -gt 1 ]; then
+	if [ "${RUNLUA_D#!}" -gt 1 ]; then
 		printf "%s: %.0s${1}\n" "${0##*/}" "$@" >&2
 	fi
 }
@@ -170,6 +177,24 @@ null_ifs() {
 
 tempnam() {
 	printf "%s-%s\n" "${1}" "$(od -An -N8 -tx1 -v /dev/urandom 2>>/dev/null | tr -cd '0123456789abcdef')"
+}
+
+# istrue STRING
+istrue() {
+	case "${1#!}" in
+	true)
+		return 0
+		;;
+	yes)
+		return 0
+		;;
+	1)
+		return 0
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 # isinteger STRING
@@ -232,6 +257,79 @@ getrel() {
 	fi
 }
 
+trypth() {
+	trypth_LUA="${1}"
+	shift 1
+	for L; do
+		dump "testing LD_PRELOAD=\"%s\" %s" "${L}" "${trypth_LUA}"
+		# glibc's ld.so ignores LD_PRELOAD errors. It does emit a
+		# diagnostic to stderr, so we redirect stderr to stdout so
+		# that it corrupts our expected output.
+		#
+		# NB: musl's ld.so ignores LD_PRELOAD errors, but never
+		# issues a diagnostic. There's no way to distinguish success
+		# and failure.
+		TMP="$(noenv; cdwd; LD_PRELOAD="${L}" "${trypth_LUA}" -e 'print"OK"' </dev/null 2>&1 || true)"
+		[ "${TMP}" = "OK" ] && printf "%s\n" "${L}" && return 0
+		dump "unable to preload %s (expected 'OK', got '%s')" "${L}" "$(printf "%s" "${TMP}" | tr '\n' ' ')"
+	done
+
+	return 1
+}
+
+getpth() {
+	case "${getpth_UNAME:=$(uname -s)}" in
+	Linux)
+		# Linux/glibc supports loading libpthread through a DSO, but
+		# glibc has several bugs, including a race in libdl.
+		#
+		# Linux/musl unifies libpthread with libc. But it's a noop
+		# to preload libpthread.so.0 so we don't bother trying to
+		# distinguish musl.
+		set +f
+		trypth "${1}" "libpthread.so.0" /lib/*/libpthread.so* /lib/libpthread.so* && return 0
+		set -f
+		;;
+	FreeBSD|NetBSD|OpenBSD)
+		# Neither FreeBSD, NetBSD, nor OpenBSD support loading
+		# libpthread through a DSO. NetBSD requires a full path.
+		set +f
+		trypth "${1}" "libpthread.so" /usr/lib/libpthread.so* && return 0
+		set -f
+		;;
+	*BSD*)
+		# Assume other BSDs are similar and make a best effort.
+		set +f
+		trypth "${1}" "libpthread.so" /usr/lib/libpthread.so* && return 0
+		set -f
+
+		debug "skipping libpthread preloading (unknown operating system: %s)" "${getpth_UNAME}"
+		return 0
+		;;
+	Darwin)
+		# libpthread.dylib integrated with libSystem.dylib
+		return 0
+		;;
+	SunOS)
+		# libpthread integrated with libc since Solaris 10
+		getpth_V="$(ver2num "$(uname -v)")"
+		getpth_M="$(ver2num "10")"
+		[ ${getpth_V} -ge ${getpth_M} ] && return 0
+
+		trypth "${1}" "libpthread.so" && return 0
+		;;
+	oops)
+		# for regression testing
+		;;
+	*)
+		debug "skipping libpthread preloading (unknown operating system: %s)" "${getpth_UNAME}"
+		return 0
+		;;
+	esac
+
+	panic "unable to locate libpthread"
+}
+
 cdwd() {
 	if [ ${#TMPWD} -gt 0 ]; then
 		cd "${TMPWD}"
@@ -239,15 +337,20 @@ cdwd() {
 }
 
 mkwd() {
-	TMPWD="$(tempnam "${TMPDIR}/${0##*/}")"
-	debug "creating working directory %s" "${TMPWD}"
-	mkdir -m0500 "${TMPWD}"
+	if [ -d "/dev" -a ! -w "/dev" ]; then
+		TMPWD="/dev"
+		debug "reusing /dev as non-writable working directory"
+	else
+		TMPWD="$(tempnam "${TMPDIR}/${0##*/}")"
+		debug "creating non-writable working directory %s" "${TMPWD}"
+		mkdir -m0500 "${TMPWD}"
+	fi
 }
 
 trap "rmwd" EXIT # see portability note "trap EXIT"
 
 rmwd() {
-	if [ ${#TMPWD} -gt 0 -a -d "${TMPWD}" ]; then
+	if [ ${#TMPWD} -gt 0 -a "${TMPWD}" != "/dev" -a -d "${TMPWD}" ]; then
 		debug "removing working directory %s" "${TMPWD}"
 		rmdir -- "${TMPWD}"
 		TMPWD=
@@ -261,6 +364,13 @@ findlua() {
 	fi
 
 	mkwd
+
+	TMP="${RUNLUA_R#!}"
+	find_LUA_MIN="$(ver2num "${TMP%%[,:-]*}" 1 0 0)"
+	find_LUA_MAX="$(ver2num "${TMP##*[,:-]}" 99 99 99)"
+	TMP="${RUNLUA_J#!}"
+	find_JIT_MIN="$(ver2num "${TMP%%[,:-]*}" 1 0 0)"
+	find_JIT_MAX="$(ver2num "${TMP##*[,:-]}" 99 99 99)"
 
 	found_PATH=
 	found_API=0
@@ -281,10 +391,10 @@ findlua() {
 
 		IFS="${NULL_IFS="$(null_ifs)"}"
 		set +f
-		if [ ! $JIT_MIN -gt 0 ]; then # PUC Lua
+		if [ ! $find_JIT_MIN -gt 0 ]; then # PUC Lua
 			set -- "$@" ${D}/lu[a] ${D}/lua5* ${D}/lua-5*
 		fi
-		if [ $JIT_MAX -gt 0 ]; then # LuaJIT
+		if [ $find_JIT_MAX -gt 0 ]; then # LuaJIT
 			set -- "$@" ${D}/luajit*
 		fi
 		set -f
@@ -311,32 +421,36 @@ findlua() {
 
 			debug "%s is version %s (%s API)" "${F}" "$(num2ver "${R}")" "$(num2api "${V}")"
 
-			if [ ${V} -ge ${LUA_MIN} -a ${V} -le ${LUA_MAX} ]; then
-				if [ ${V} -gt 0 -a ${V} -ge ${found_API} -a ${R} -gt ${found_REL} ]; then
-					found_PATH="${F}"
-					found_API=${V}
-					found_REL=${R}
-				fi
+			# does it meet our range criteria?
+			[ ${V} -ge ${find_LUA_MIN} -a ${V} -le ${find_LUA_MAX} ] || continue
+
+			# is it a better fit than what we already found?
+			[ ${V} -gt 0 -a ${V} -ge ${found_API} -a ${R} -gt ${found_REL} ] || continue
+
+			# does it work if we preload libpthread?
+			if istrue "${RUNLUA_T}"; then
+				found_PTH="$(getpth "${F}")"
+			else
+				found_PTH=""
 			fi
+
+			found_PATH="${F}"
+			found_API=${V}
+			found_REL=${R}
 		done
 	done
 
 	rmwd
 
 	LUA="${found_PATH}"
+	LUA_PRELOAD="${found_PTH-}"
 
 	[ -n "${LUA}" ] || panic "unable to locate Lua interpreter"
 
 	debug "using %s" "${LUA}"
+	[ -n "${LUA_PRELOAD}" ] && debug "preloading %s" "${LUA_PRELOAD}"
 
 	printf "%s\n" "${LUA}"
-}
-
-escape() {
-	printf "%s" "${1}" | \
-	od -An -tu1 -v | \
-	sed -e 's/\([0123456789][0123456789]*\)/\\\1/g' | \
-	tr -cd '\\0123456789'
 }
 
 noenv() {
@@ -345,51 +459,15 @@ noenv() {
 	done
 }
 
-loader() {
-	I=$#
-	while [ $I -gt 0 ]; do
-		set -- "$@" "\"$(escape "${1}")\""
-		shift 1
-		I=$(($I - 1))
-	done
+setopt() {
+	setopt_VAR="${1}"
+	setopt_NVAL="${2:-}"
+	eval "setopt_OVAL=\"\${${setopt_VAR}:-}\""
 
-	IFS=","
-	ARGS="$*"
-	unset IFS
+	# don't set if value prefixed with "!"
+	[ "${setopt_OVAL}" = "${setopt_OVAL#!}" ] || return 0
 
-	cat <<-EOF
-	local function loadpath(skip, path)
-		local fh = assert(io.open(path, "r"))
-		local buf = {}
-		local pat = not tonumber(skip) and skip
-		local skip = tonumber(skip) or 0
-
-		for ln in fh:lines() do
-			if pat then
-				if string.match(ln, pat) then
-					pat = nil
-				end
-				ln = string.rep(" ", #ln)
-			elseif skip > 0 then
-				skip = skip - 1
-				ln = string.rep(" ", #ln)
-			end
-			buf[#buf + 1] = ln
-		end
-
-		fh:close()
-
-		return (loadstring or load)(table.concat(buf, "\n"), "@" .. path)
-	end
-
-	return (function (skip, path, ...)
-		if path == "-" then
-			path = "/dev/stdin"
-		end
-
-		return (loadpath(skip, path))(...)
-	end)($ARGS)
-	EOF
+	eval "${setopt_VAR}=\"\${setopt_NVAL}\""
 }
 
 usage() {
@@ -403,19 +481,11 @@ usage() {
 	  -r RANGE   run specific Lua version
 	  -j RANGE   run specific LuaJIT version
 	  -J         exclude LuaJIT from candidate interpreters
-	  -s SKIP    line(s) to skip when loading script
 	  -t         preload POSIX threading library
-	  -d         enable debug logging
+	  -d         enable debug logging (twice for even more logging)
 	  -p         print path of Lua interpreter
 	  -V         print runlua version information
 	  -h         print this usage message
-
-	BNF:
-	  <PATH>    ::= <STRING>
-	  <RANGE>   ::= <VERSION> | [VERSION] "-" [VERSION]
-	  <VERSION> ::= <NUMBER> ["." <NUMBER> ["." <NUMBER>]]
-	  <SKIP>    ::= <NUMBER> | <PATTERN>
-	  <PATTERN> ::= <STRING>
 
 	Examples:
 	  -r5.2.1    only run PUC Lua 5.2.1 interpreter
@@ -423,8 +493,27 @@ usage() {
 	  -r5.2-5.3  run any Lua 5.2 or 5.3 interpreter
 	  -r5.2-     run any Lua 5.2 or later interpreter
 	  -j2.1      only run LuaJIT 2.1 interpreter
-	  -s4        skip first 4 lines of script
-	  -s"^exec"  skip lines up to and including line matching ^exec
+
+	Environment:
+	  RUNLUA_E=BOOLEAN  same as -E if TRUE
+	  RUNLUA_R=RANGE    same as -r (use !RANGE to override -r)
+	  RUNLUA_J=RANGE    same as -j (use !RANGE to override -j or -J)
+	  RUNLUA_T=BOOLEAN  same as -t if TRUE
+	  RUNLUA_D=NUMBER   set debug level (e.g. same -dd if 2)
+	  RUNLUA_P=BOOLEAN  same as -p if TRUE
+
+	Examples:
+	  RUNLUA_R=5.2 runlua           run any Lua 5.2 interpreter
+	  RUNLUA_R=5.3 runlua -r5.2     same as above (-r has higher precedence)
+	  RUNLUA_R='!5.3' runlua -r5.2  run any Lua 5.3 interpreter (! overrides -r)
+
+	BNF:
+	  <PATH>    ::= <STRING>
+	  <RANGE>   ::= <VERSION> | [VERSION] "-" [VERSION]
+	  <VERSION> ::= <NUMBER> ["." <NUMBER> ["." <NUMBER>]]
+	  <BOOLEAN> ::= <TRUE> | <FALSE>
+	  <TRUE>    ::= "yes" | "true" | "1"
+	  <FALSE>   ::= "no" | "false" | "0" | ""
 
 	Report bugs to <william@25thandClement.com>
 	EOF
@@ -442,7 +531,7 @@ version() {
 # Field-split first argument. See porting note "#!".
 #
 # If we only have one argument than it's either a script path or we're not
-# running as a shebang interpreter. If we have zero than We don't want to
+# running as a shebang interpreter. If we have zero then we don't want to
 # accidentally field-split the script path becaues it might contain spaces.
 #
 if [ $# -ge 2 ]; then
@@ -458,9 +547,6 @@ pusharg() {
 	eval "ARG${ARGC}=\"\${1}\""
 	ARGC=$((${ARGC} + 1))
 }
-
-SKIP=
-PRINT=
 
 while getopts "e:il:vEr:j:Js:tdpVh" OPTC; do
 	case "${OPTC}" in
@@ -479,40 +565,25 @@ while getopts "e:il:vEr:j:Js:tdpVh" OPTC; do
 		pusharg "-v"
 		;;
 	E)
-		noenv
+		setopt RUNLUA_E yes
 		;;
 	r)
-		LUA_MIN="$(ver2num "${OPTARG%%[,:-]*}" 1 0 0)"
-		LUA_MAX="$(ver2num "${OPTARG##*[,:-]}" 99 99 99)"
+		setopt RUNLUA_R "${OPTARG}"
 		;;
 	j)
-		JIT_MIN="$(ver2num "${OPTARG%%[,:-]*}" 1 0 0)"
-		JIT_MAX="$(ver2num "${OPTARG##*[,:-]}" 99 99 99)"
+		setopt RUNLUA_J "${OPTARG}"
 		;;
 	J)
-		JIT_MIN=0
-		JIT_MAX=0
-		;;
-	s)
-		[ ${#OPTARG} -gt 0 ] || panic "-s: empty skip directive"
-		SKIP="${OPTARG}"
+		setopt RUNLUA_J "0-0"
 		;;
 	t)
-		case "$(uname -s)" in
-		OpenBSD)
-			export LD_PRELOAD="libpthread.so"
-			;;
-		FreeBSD)
-			export LD_PRELOAD="libpthread.so"
-			;;
-		esac
-
+		setopt RUNLUA_T yes
 		;;
 	d)
-		DEBUG="$((${DEBUG} + 1))"
+		main_DEBUG="$((${main_DEBUG:-0} + 1))"
 		;;
 	p)
-		PRINT=yes
+		setopt RUNLUA_P yes
 		;;
 	V)
 		version
@@ -530,14 +601,6 @@ while getopts "e:il:vEr:j:Js:tdpVh" OPTC; do
 done
 
 shift $((${OPTIND} - 1))
-
-#
-# If we have to skip any lines we need to load and execute the script
-# through the -e option.
-#
-if [ $# -gt 0 -a ${#SKIP} -gt 0 ]; then
-	set -- "-e" "$(loader "${SKIP}" "$@")"
-fi
 
 #
 # Prepend our argument stack to the positional list.
@@ -568,9 +631,16 @@ if [ ${ARGC} -gt 0 ]; then
 	done
 fi
 
+setopt RUNLUA_D "${main_DEBUG:-0}"
+isinteger "${RUNLUA_D#!}" || panic "%s: not an integer" "${RUNLUA_D#!}"
+
+if istrue "${RUNLUA_E}"; then
+	noenv
+fi
+
 findlua >>/dev/null
 
-if [ "${PRINT:-}" = "yes" ]; then
+if istrue "${RUNLUA_P}"; then
 	printf "%s\n" "${LUA}"
 	exit 0
 fi
@@ -579,6 +649,10 @@ if [ ${#_LC_ALL} -gt 0 ]; then
 	LC_ALL="${_LC_ALL#X}"
 else
 	unset LC_ALL
+fi
+
+if [ -n "${LUA_PRELOAD-}" ]; then
+	export LD_PRELOAD="${LD_PRELOAD-}${LD_PRELOAD:+:}${LUA_PRELOAD}"
 fi
 
 # see portability note "$@"

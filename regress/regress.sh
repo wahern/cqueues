@@ -26,4 +26,8 @@ export LUA_CPATH_5_3="${lua53cpath}/?.so;;"
 	lua52path="${lua52path}" lua52cpath="${lua52cpath}" \
 	lua53path="${lua53path}" lua53cpath="${lua53cpath}")
 
+if [ ! -d "${SRCDIR}/regress/.local/lib/5.3" ]; then
+	export RUNLUA_R="${RUNLUA_R:=5.1-5.2}"
+fi
+
 export PROGNAME="${0##*/}"
