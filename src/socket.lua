@@ -6,7 +6,6 @@ local errno = require("cqueues.errno")
 
 local poll = cqueues.poll
 local monotime = cqueues.monotime
-local running = cqueues.running
 
 local AF_INET = socket.AF_INET
 local AF_INET6 = socket.AF_INET6
@@ -283,17 +282,6 @@ local _starttls; _starttls = socket.interpose("starttls", function(self, arg1, a
 	elseif type(arg2) == "number" then
 		timeout = arg2
 	else
-		-- NOTE: Backwards compatibility for old behavior, where an
-		-- absent timeout simply returned immediately without
-		-- polling.
-		--
-		-- Earlier code examples called :starttls outside of the
-		-- event loop, and so we cannot yield in those cases without
-		-- needlessly breaking such code.
-		if not running() then
-			return _starttls(self, ctx)
-		end
-
 		timeout = self:timeout()
 	end
 
