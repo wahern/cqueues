@@ -101,7 +101,7 @@ static int sfd_init(struct signalfd *S) {
 
 
 static void sfd_destroy(struct signalfd *S) {
-	close(S->fd);
+	cqs_closefd(&S->fd);
 
 	sfd_preinit(S);
 } /* sfd_destroy() */

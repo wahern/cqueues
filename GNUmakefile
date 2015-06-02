@@ -100,7 +100,7 @@ endif
 
 ifeq ($(VENDOR_CC_$(d)), clang)
 CFLAGS_$(d) += -O2 -std=gnu99 -fPIC
-CFLAGS_$(d) += -g -Wall -Wextra -Wno-missing-field-initializers -Wno-initializer-overrides -Wno-unused
+CFLAGS_$(d) += -g -Wall -Wextra -Wno-missing-field-initializers -Wno-initializer-overrides -Wno-unused -Wno-dollar-in-identifier-extension
 endif
 
 ifeq ($(VENDOR_CC_$(d)), sunpro)

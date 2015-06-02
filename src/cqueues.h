@@ -334,8 +334,13 @@ static inline void cqs_setmacros(lua_State *L, int index, const struct cqs_macro
 
 static inline void cqs_closefd(int *fd) {
 	if (*fd != -1) {
-		while (0 != close(*fd) && errno == EINTR)
-			;;
+#if __APPLE__
+		/* Do we need bother with close$NOCANCEL$UNIX2003? */
+		extern int close$NOCANCEL(int);
+		close$NOCANCEL(*fd);
+#else
+		close(*fd);
+#endif
 		*fd = -1;
 	}
 } /* cqs_closefd() */
