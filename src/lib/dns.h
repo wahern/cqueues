@@ -1,7 +1,7 @@
 /* ==========================================================================
  * dns.h - Recursive, Reentrant DNS Resolver.
  * --------------------------------------------------------------------------
- * Copyright (c) 2009, 2010, 2012, 2013, 2014  William Ahern
+ * Copyright (c) 2009, 2010, 2012, 2013, 2014, 2015  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -108,7 +108,9 @@ enum dns_errno {
 	DNS_ENOQUERY,
 	DNS_ENOANSWER,
 	DNS_EFETCHED,
-	DNS_ESERVICE,
+	DNS_ESERVICE, /* EAI_SERVICE */
+	DNS_ENONAME,  /* EAI_NONAME */
+	DNS_EFAIL,    /* EAI_FAIL */
 	DNS_ELAST,
 }; /* dns_errno */
 

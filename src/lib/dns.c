@@ -1,7 +1,7 @@
 /* ==========================================================================
  * dns.c - Recursive, Reentrant DNS Resolver.
  * --------------------------------------------------------------------------
- * Copyright (c) 2008, 2009, 2010, 2012, 2013, 2014  William Ahern
+ * Copyright (c) 2008, 2009, 2010, 2012, 2013, 2014, 2015  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -276,7 +276,11 @@ const char *dns_strerror(int error) {
 	case DNS_EFETCHED:
 		return "Answer already fetched";
 	case DNS_ESERVICE:
-		return "Unknown service name";
+		return "The service passed was not recognized for the specified socket type";
+	case DNS_ENONAME:
+		return "The name does not resolve for the supplied parameters";
+	case DNS_EFAIL:
+		return "A non-recoverable error occurred when attempting to resolve the name";
 	default:
 		return strerror(error);
 	} /* switch() */
@@ -7120,6 +7124,7 @@ struct dns_addrinfo {
 	char cname[DNS_D_MAXNAME + 1];
 
 	int state;
+	int found;
 
 	struct dns_stat st;
 }; /* struct dns_addrinfo */
@@ -7267,6 +7272,8 @@ static int dns_ai_setent(struct addrinfo **ent, union dns_any *any, enum dns_typ
 
 	if (ai->hints.ai_flags & AI_CANONNAME)
 		(*ent)->ai_canonname	= memcpy((unsigned char *)*ent + sizeof **ent + dns_sa_len(saddr), cname, clen + 1);
+
+	ai->found++;
 
 	return 0;
 } /* dns_ai_setent() */
@@ -7452,7 +7459,20 @@ exec:
 
 		dns_ai_goto(DNS_AI_S_FOREACH_G);
 	case DNS_AI_S_DONE:
-		return ENOENT;
+		if (ai->found) {
+			return ENOENT; /* TODO: Just return 0 */
+		} else if (ai->answer) {
+			switch (dns_header(ai->answer)->rcode) {
+			case DNS_RC_NOERROR:
+				/* FALL THROUGH */
+			case DNS_RC_NXDOMAIN:
+				return DNS_ENONAME;
+			default:
+				return DNS_EFAIL;
+			}
+		} else {
+			return DNS_EFAIL;
+		}
 	default:
 		return EINVAL;
 	} /* switch() */
