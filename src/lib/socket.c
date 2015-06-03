@@ -52,6 +52,7 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/bio.h>
 
 #include "dns.h"
 #include "socket.h"
@@ -601,6 +602,57 @@ error:
 
 	return memset(lcl, 0, lim);
 } /* sa_egress() */
+
+
+static so_error_t so_ffamily(int fd, int *family) {
+	struct sockaddr_storage ss;
+
+	if (0 != getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
+		return errno;
+
+	*family = ss.ss_family;
+
+	return 0;
+} /* so_ffamily() */
+
+
+static so_error_t so_ftype(int fd, int *mode, int *domain, int *type, int *protocol __attribute__((unused))) {
+	struct stat st;
+	int error;
+
+	if (0 != fstat(fd, &st))
+		return errno;
+
+	*mode = S_IFMT & st.st_mode;
+
+	if (!S_ISSOCK(*mode))
+		return 0;
+
+#if defined SO_DOMAIN
+	if (0 != getsockopt(fd, SOL_SOCKET, SO_DOMAIN, domain, &(socklen_t){ sizeof *domain })) {
+		if (errno != ENOPROTOOPT)
+			return errno;
+
+		if ((error = so_ffamily(fd, domain)))
+			return error;
+	}
+#else
+	if ((error = so_ffamily(fd, domain)))
+		return error;
+#endif
+
+	if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, type, &(socklen_t){ sizeof *type }))
+		return errno;
+
+#if defined SO_PROTOCOL
+	if (0 != getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){ sizeof *protocol })) {
+		if (errno != ENOPROTOOPT)
+			return errno;
+	}
+#endif
+
+	return 0;
+} /* so_ftype() */
 
 
 static int so_opts2flags(const struct so_options *, int *);
@@ -1314,19 +1366,43 @@ static int so_starttls_(struct socket *so) {
 	ERR_clear_error();
 
 	switch (so->ssl.state) {
-	case 0:
-		if (1 != SSL_set_fd(so->ssl.ctx, so->fd)) {
-			error = SO_EOPENSSL;
+	case 0: {
+		int mode = 0, domain = AF_UNSPEC, type = 0, protocol = 0;
 
+		if ((error = so_ftype(so->fd, &mode, &domain, &type, &protocol)))
+			goto error;
+
+		if (S_ISSOCK(mode) && type == SOCK_DGRAM) {
+			struct sockaddr_storage peer;
+			BIO *bio;
+
+			if (0 != getpeername(so->fd, (struct sockaddr *)&peer, &(socklen_t){ sizeof peer })) {
+				error = errno;
+				goto error;
+			}
+
+			if (!(bio = BIO_new_dgram(so->fd, BIO_NOCLOSE))) {
+				error = SO_EOPENSSL;
+				goto error;
+			}
+
+			BIO_ctrl_set_connected(bio, 1, &peer);
+
+			SSL_set_bio(so->ssl.ctx, bio, bio);
+			SSL_set_read_ahead(so->ssl.ctx, 1);
+		} else if (1 != SSL_set_fd(so->ssl.ctx, so->fd)) {
+			error = SO_EOPENSSL;
 			goto error;
 		}
 
-		if (so->ssl.accept)
+		if (so->ssl.accept) {
 			SSL_set_accept_state(so->ssl.ctx);
-		else
+		} else {
 			SSL_set_connect_state(so->ssl.ctx);
+		}
 
 		so->ssl.state++;
+	}
 	case 1:
 		rval = SSL_do_handshake(so->ssl.ctx);
 
@@ -1750,31 +1826,13 @@ error:
 
 struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct socket *so;
-	struct stat st;
-	int family = AF_UNSPEC, type = 0, protocol = 0, flags, mask, need, error;
+	int mode = 0, family = AF_UNSPEC, type = 0, protocol = 0, flags, mask, need, error;
 
 	if (!(so = so_make(opts, &error)))
 		goto error;
 
-	if (0 != fstat(fd, &st))
-		goto syerr;
-
-	if ((st.st_mode & S_IFMT) == S_IFSOCK) {
-		struct sockaddr_storage ss;
-
-		if (0 != getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
-			goto syerr;
-
-		family = ss.ss_family;
-
-		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
-			goto syerr;
-
-		/*
-		 * FIXME: Use SO_PROTOCOL when available.
-		 * See http://austingroupbugs.net/view.php?id=840
-		 */
-	}
+	if ((error = so_ftype(fd, &mode, &family, &type, &protocol)))
+		goto error;
 
 	flags = so_opts2flags(opts, &mask);
 	mask &= so_type2mask(family, type, protocol);
@@ -1783,7 +1841,7 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	if ((error = so_rstfl(fd, &so->flags, flags, mask, need)))
 		goto error;
 
-	so->mode = st.st_mode;
+	so->mode = mode;
 	so->fd = fd;
 
 	return so;
