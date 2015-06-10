@@ -467,7 +467,7 @@ static void alert_destroy(struct kpoll *kp) {
 
 static int alert_rearm(struct kpoll *kp) {
 #if HAVE_PORTS
-	(void)kp;
+	return 0;
 #else
 	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
 #endif
@@ -638,7 +638,7 @@ static int kpoll_alert(struct kpoll *kp) {
 	if ((error = alert_init(kp)))
 		return error;
 #if HAVE_PORTS
-	if (0 != port_alert(kp->fd, PORT_ALERT_UPDATE, POLLIN, &kp->alert)) {
+	if (0 != port_send(kp->fd, POLLIN, &kp->alert)) {
 		if (errno != EBUSY)
 			return errno;
 	}
@@ -674,8 +674,7 @@ static int kpoll_calm(struct kpoll *kp) {
 	int error;
 
 #if HAVE_PORTS
-	if (0 != port_alert(kp->fd, PORT_ALERT_SET, 0, &kp->alert))
-		return errno;
+	/* each PORT_SOURCE_USER event is discrete */
 #elif HAVE_EVENTFD
 	uint64_t n;
 
@@ -713,7 +712,7 @@ static int kpoll_calm(struct kpoll *kp) {
 
 static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) {
 #if HAVE_PORTS
-	return event->portev_source == PORT_SOURCE_ALERT;
+	return event->portev_source == PORT_SOURCE_USER;
 #else
 	return kpoll_udata(event) == &kp->alert;
 #endif
