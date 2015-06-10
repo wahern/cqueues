@@ -671,7 +671,7 @@ int so_socket(int domain, int type, const struct so_options *opts, int *_error) 
 
 	flags = so_opts2flags(opts, &mask);
 	mask &= so_type2mask(domain, type, 0);
-	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
+	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
 
 	if ((error = so_setfl(fd, flags, mask, need)))
 		goto error;
@@ -1847,7 +1847,7 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 
 	flags = so_opts2flags(opts, &mask);
 	mask &= so_type2mask(so->domain, so->type, so->protocol);
-	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
+	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
 
 	if ((error = so_rstfl(fd, &so->flags, flags, mask, need)))
 		goto error;
