@@ -73,7 +73,7 @@
 #define HAVE_PORTS  (__sun)
 #define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
 
-#define HAVE_EVENTFD (__linux)
+#define HAVE_EVENTFD (__linux && (GLIBC_PREREQ(2, 9) || UCLIBC_PREREQ(0, 9, 33)))
 
 #if __GNUC__
 #define NOTUSED __attribute__((unused))
