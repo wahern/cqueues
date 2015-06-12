@@ -398,6 +398,10 @@ typedef port_event_t kpoll_event_t;
 typedef struct kevent kpoll_event_t;
 #endif
 
+#if HAVE_EVENTFD
+#include <sys/eventfd.h> /* eventfd */
+#endif
+
 struct kpoll {
 	int fd;
 
@@ -407,9 +411,15 @@ struct kpoll {
 	} pending;
 
 	struct {
+#if HAVE_PORTS
+#elif HAVE_EVENTFD
+		int fd[1];
+		short state;
+#else
 		int fd[2];
 		short state;
-		int pending;
+#endif
+		_Bool pending;
 	} alert;
 }; /* struct kpoll */
 
@@ -417,32 +427,26 @@ struct kpoll {
 static void kpoll_preinit(struct kpoll *kp) {
 	kp->fd = -1;
 	kp->pending.count = 0;
+#if HAVE_PORTS
+#elif HAVE_EVENTFD
+	kp->alert.fd[0] = -1;
+	kp->alert.state = 0;
+#else
 	kp->alert.fd[0] = -1;
 	kp->alert.fd[1] = -1;
 	kp->alert.state = 0;
+#endif
 	kp->alert.pending = 0;
 } /* kpoll_preinit() */
 
 
 static int kpoll_ctl(struct kpoll *, int, short *, short, void *);
 
-static int alert_init(struct kpoll *kp) {
-#if HAVE_PORTS
-	return 0;
-#else
-	int error;
-
-	if ((error = cqs_pipe(kp->alert.fd, O_CLOEXEC|O_NONBLOCK)))
-		return error;
-
-	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
-#endif
-} /* alert_init() */
-
-
 static void alert_destroy(struct kpoll *kp) {
 #if HAVE_PORTS
 	(void)0;
+#elif HAVE_EVENTFD
+	cqs_closefd(&kp->alert.fd[0]);
 #else
 	cqs_closefd(&kp->alert.fd[0]);
 	cqs_closefd(&kp->alert.fd[1]);
@@ -478,7 +482,7 @@ static int kpoll_init(struct kpoll *kp) {
 		return error;
 #endif
 
-	return alert_init(kp);
+	return 0;
 } /* kpoll_init() */
 
 
@@ -606,16 +610,49 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 
 static int kpoll_alert(struct kpoll *kp) {
 #if HAVE_PORTS
+	if (kp->alert.pending) {
+		return 0;
+	}
 	if (0 != port_alert(kp->fd, PORT_ALERT_UPDATE, POLLIN, &kp->alert)) {
 		if (errno != EBUSY)
 			return errno;
 	}
+#elif HAVE_EVENTFD
+	static const uint64_t one = 1;
+	int fd = kp->alert.fd[0];
+	int error;
+	if (-1 == fd) {
+		/* lazily create eventfd */
+		if (-1 == (fd = eventfd(0, O_CLOEXEC|O_NONBLOCK)))
+			return errno;
+		kp->alert.fd[0] = fd;
+	} else if (kp->alert.pending) {
+		return 0;
+	}
+	while (-1 == write(fd, (const char*)&one, 8)) {
+		switch(errno) {
+		case EINTR:
+			continue;
+		case EAGAIN:
+			/* the eventfd is about to overflow a 64 uint.
+			   we don't need to bother */
+			break;
+		default:
+			return errno;
+		}
+	}
+
+	if ((error = kpoll_ctl(kp, fd, &kp->alert.state, POLLIN, &kp->alert)))
+		return error;
 #else
 	int error;
-
-	if (kp->alert.pending)
+	if (-1 == kp->alert.fd[0]) {
+		/* lazily create pipe */
+		if ((error = cqs_pipe(kp->alert.fd, O_CLOEXEC|O_NONBLOCK)))
+			return error;
+	} else if (kp->alert.pending) {
 		return 0;
-
+	}
 	while (-1 == write(kp->alert.fd[1], "!", 1)) {
 		switch (errno) {
 		case EINTR:
@@ -641,6 +678,23 @@ static int kpoll_calm(struct kpoll *kp) {
 #if HAVE_PORTS
 	if (0 != port_alert(kp->fd, PORT_ALERT_SET, 0, &kp->alert))
 		return errno;
+#elif HAVE_EVENTFD
+	uint64_t n;
+	int error;
+
+	while (8 != read(kp->alert.fd[0], &n, 8)) {
+		switch (errno) {
+		case EINTR:
+			continue;
+		case EAGAIN:
+			/* no events pending */
+			break;
+		default:
+			return errno;
+		}
+	}
+	if ((error = kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert)))
+		return error;
 #else
 	char buf[64];
 	int error;
