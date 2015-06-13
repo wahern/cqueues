@@ -689,7 +689,7 @@ static int kpoll_calm(struct kpoll *kp) {
 #else
 	for (;;) {
 		char buf[64];
-		size_t n;
+		ssize_t n;
 
 		if (-1 == (n = read(kp->alert.fd[0], buf, sizeof buf))) {
 			if (errno == EAGAIN) {
