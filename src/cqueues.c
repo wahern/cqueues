@@ -39,7 +39,7 @@
 #include <sys/select.h>	/* pselect(3) */
 #include <unistd.h>	/* close(2) */
 #include <fcntl.h>	/* F_SETFD FD_CLOEXEC fcntl(2) */
-#include <poll.h>	/* POLLIN POLLOUT */
+#include <poll.h>	/* POLLIN POLLOUT POLLPRI POLLRDBAND POLLWRBAND */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -1679,7 +1679,7 @@ static cqs_status_t object_getinfo(lua_State *L, struct cqueue *Q, struct callin
 			goto oops;
 
 		if (lua_isnumber(L, -1)) {
-			event->events = (POLLIN|POLLOUT) & lua_tointeger(L, -1);
+			event->events = (POLLIN|POLLOUT|POLLPRI|POLLRDBAND|POLLWRBAND) & lua_tointeger(L, -1);
 		} else {
 			const char *mode = luaL_optstring(L, -1, "");
 
@@ -1690,6 +1690,8 @@ static cqs_status_t object_getinfo(lua_State *L, struct cqueue *Q, struct callin
 					event->events |= POLLIN;
 				else if (*mode == 'w')
 					event->events |= POLLOUT;
+				else if (*mode == 'p')
+					event->events |= POLLPRI;
 				mode++;
 			}
 		}
@@ -2234,7 +2236,7 @@ static cqs_error_t cqueue_cancelfd(struct cqueue *Q, int fd) {
 	if (!(fileno = fileno_find(Q, fd)))
 		return 0;
 
-	fileno_signal(Q, fileno, POLLIN|POLLOUT);
+	fileno_signal(Q, fileno, POLLIN|POLLOUT|POLLPRI|POLLRDBAND|POLLWRBAND);
 
 	return fileno_ctl(Q, fileno, 0);
 } /* cqueue_cancelfd() */
