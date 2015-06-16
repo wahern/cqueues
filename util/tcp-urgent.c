@@ -282,6 +282,13 @@ static short keventpending(int fd, short events) {
 		ep++;
 	}
 
+#if defined EVFILT_EXCEPT
+	if (events & (POLLRDBAND|POLLPRI)) {
+		EV_SET(ep, fd, EVFILT_EXCEPT, EV_ADD|EV_ONESHOT, NOTE_OOB, 0, 0);
+		ep++;
+	}
+#endif
+
 	if (-1 == (kq = kqueue()))
 		panic("kqueue");
 
@@ -303,6 +310,10 @@ static short keventpending(int fd, short events) {
 			revents |= events & (POLLIN|POLLRDNORM);
 		} else if (event[i].filter == EVFILT_WRITE) {
 			revents |= POLLOUT;
+#if defined EVFILT_EXCEPT
+		} else if (event[i].filter == EVFILT_EXCEPT) {
+			revents |= POLLPRI;
+#endif
 		}
 	}
 
