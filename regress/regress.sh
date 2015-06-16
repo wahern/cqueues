@@ -14,12 +14,15 @@ lua52cpath="${SRCDIR}/regress/.local/lib/5.2"
 lua53path="${SRCDIR}/regress/.local/share/5.3"
 lua53cpath="${SRCDIR}/regress/.local/lib/5.3"
 
-export LUA_PATH="${lua51path}/?.lua;${SRCDIR}/regress/?.lua;;"
-export LUA_CPATH="${lua51cpath}/?.so;;"
-export LUA_PATH_5_2="${lua52path}/?.lua;${SRCDIR}/regress/?.lua;;"
-export LUA_CPATH_5_2="${lua52cpath}/?.so;;"
-export LUA_PATH_5_3="${lua53path}/?.lua;${SRCDIR}/regress/?.lua;;"
-export LUA_CPATH_5_3="${lua53cpath}/?.so;;"
+export LUA_PATH="${lua51path}/?.lua;${SRCDIR}/regress/?.lua;${LUA_PATH:-;}"
+export LUA_CPATH="${lua51cpath}/?.so;${LUA_CPATH:-;}"
+export LUA_PATH_5_2="${lua52path}/?.lua;${SRCDIR}/regress/?.lua;${LUA_PATH_5_2:-;}"
+export LUA_CPATH_5_2="${lua52cpath}/?.so;${LUA_CPATH_5_2:-;}"
+export LUA_PATH_5_3="${lua53path}/?.lua;${SRCDIR}/regress/?.lua;${LUA_PATH_5_3:-;}"
+export LUA_CPATH_5_3="${lua53cpath}/?.so;${LUA_CPATH_5_3:-;}"
+
+echo "LUA_PATH_5_2=${LUA_PATH_5_2}"
+echo "LUA_CPATH_5_2=${LUA_CPATH_5_2}"
 
 (cd "${SRCDIR}" && make -s install \
 	lua51path="${lua51path}" lua51cpath="${lua51cpath}" \
