@@ -156,7 +156,7 @@ const char *notify_strflag(int flag) {
 
 #define countof(a) (sizeof (a) / sizeof *(a))
 
-#define LIST_MOVE(head, elm, le) do { \
+#define NFY_LIST_MOVE(head, elm, le) do { \
 	LIST_REMOVE((elm), le); \
 	LIST_INSERT_HEAD((head), (elm), le); \
 } while (0)
@@ -439,7 +439,7 @@ static struct file *lookup(struct notify *nfy, const char *name, size_t namelen)
 static void change(struct notify *nfy, struct file *file, int changes) {
 	if (changes & file->flags) {
 		file->changes |= (file->flags & changes);
-		LIST_MOVE(&nfy->changed, file, le);
+		NFY_LIST_MOVE(&nfy->changed, file, le);
 	}
 } /* change() */
 
@@ -447,24 +447,24 @@ static void change(struct notify *nfy, struct file *file, int changes) {
 static void status(struct notify *nfy, struct file *file, enum status status) {
 	switch (status) {
 	case S_DEFUNCT:
-		LIST_MOVE(&nfy->defunct, file, sle);
+		NFY_LIST_MOVE(&nfy->defunct, file, sle);
 		break;
 	case S_POLLING:
-		LIST_MOVE(&nfy->polling, file, sle);
+		NFY_LIST_MOVE(&nfy->polling, file, sle);
 
 		if (file->status != status)
 			change(nfy, file, (file->status == S_REVOKED)? NOTIFY_ATTRIB : NOTIFY_CREATE);
 
 		break;
 	case S_REVOKED:
-		LIST_MOVE(&nfy->revoked, file, sle);
+		NFY_LIST_MOVE(&nfy->revoked, file, sle);
 
 		if (file->status != status)
 			change(nfy, file, NOTIFY_REVOKE);
 
 		break;
 	case S_DELETED:
-		LIST_MOVE(&nfy->deleted, file, sle);
+		NFY_LIST_MOVE(&nfy->deleted, file, sle);
 
 		if (file->status != status)
 			change(nfy, file, NOTIFY_DELETE);
@@ -694,7 +694,7 @@ static int in_step1(struct notify *nfy) {
 
 				if ((file = lookup(nfy, msg->name, namelen))) {
 					file->changes |= decode(msg->mask);
-					LIST_MOVE(&nfy->pending, file, le);
+					NFY_LIST_MOVE(&nfy->pending, file, le);
 				}
 			} else {
 				nfy->changes |= decode(msg->mask);
@@ -765,9 +765,9 @@ static int in_post(struct notify *nfy) {
 		file->changes &= file->flags;
 
 		if (file->changes)
-			LIST_MOVE(&nfy->changed, file, le);
+			NFY_LIST_MOVE(&nfy->changed, file, le);
 		else
-			LIST_MOVE(&nfy->dormant, file, le);
+			NFY_LIST_MOVE(&nfy->dormant, file, le);
 	}
 
 	nfy->dirty = 0;
@@ -799,7 +799,7 @@ static int fen_step(struct notify *nfy, int timeout) {
 		} else {
 			struct file *file = event[i].portev_user;
 			file->changes |= decode(event[i].portev_events);
-			LIST_MOVE(&nfy->pending, file, le);
+			NFY_LIST_MOVE(&nfy->pending, file, le);
 		}
 	}
 
@@ -864,9 +864,9 @@ static int fen_post(struct notify *nfy) {
 		file->changes &= file->flags;
 
 		if (file->changes)
-			LIST_MOVE(&nfy->changed, file, le);
+			NFY_LIST_MOVE(&nfy->changed, file, le);
 		else
-			LIST_MOVE(&nfy->dormant, file, le);
+			NFY_LIST_MOVE(&nfy->dormant, file, le);
 	}
 
 	if (nfy->dirty) {
@@ -919,7 +919,7 @@ static int kq_step(struct notify *nfy, int timeout) {
 		} else {
 			file = (void *)event[i].udata;
 			file->changes |= decode(event[i].fflags);
-			LIST_MOVE(&nfy->pending, file, le);
+			NFY_LIST_MOVE(&nfy->pending, file, le);
 		}
 	}
 
@@ -991,9 +991,9 @@ static int kq_post(struct notify *nfy) {
 		file->changes &= file->flags;
 
 		if (file->changes)
-			LIST_MOVE(&nfy->changed, file, le);
+			NFY_LIST_MOVE(&nfy->changed, file, le);
 		else
-			LIST_MOVE(&nfy->dormant, file, le);
+			NFY_LIST_MOVE(&nfy->dormant, file, le);
 	}
 
 	if (nfy->dirty) {
@@ -1088,13 +1088,13 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	if ((error = kq_readd(nfy, file)))
 		goto error;
 
-	LIST_MOVE(&nfy->dormant, file, le);
+	NFY_LIST_MOVE(&nfy->dormant, file, le);
 	nfy->changes = 0;
 #elif HAVE_FEN
 	if ((error = fen_readd(nfy, file)))
 		goto error;
 
-	LIST_MOVE(&nfy->dormant, file, le);
+	NFY_LIST_MOVE(&nfy->dormant, file, le);
 	nfy->changes = 0;
 #endif
 
@@ -1127,7 +1127,7 @@ int notify_get(struct notify *nfy, const char **name) {
 	int changes;
 
 	if ((file = LIST_FIRST(&nfy->changed))) {
-		LIST_MOVE(&nfy->dormant, file, le);
+		NFY_LIST_MOVE(&nfy->dormant, file, le);
 
 		if (name)
 			*name = file->name;
