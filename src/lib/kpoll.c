@@ -39,12 +39,25 @@
 #define __GLIBC_PREREQ(m, n) 0
 #endif
 
+#ifndef HAVE_KQUEUE
 #define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__)
-#define HAVE_EPOLL (__linux__)
-#define HAVE_PORTS (__sun)
+#endif
 
+#ifndef HAVE_EPOLL
+#define HAVE_EPOLL (__linux__)
+#endif
+
+#ifndef HAVE_PORTS
+#define HAVE_PORTS (__sun)
+#endif
+
+#ifndef HAVE_EPOLL_CREATE1
 #define HAVE_EPOLL_CREATE1 (HAVE_EPOLL && __GLIBC_PREREQ(2, 9))
+#endif
+
+#ifndef HAVE_PIPE2
 #define HAVE_PIPE2 __GLIBC_PREREQ(2, 9)
+#endif
 
 #if HAVE_EPOLL
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */

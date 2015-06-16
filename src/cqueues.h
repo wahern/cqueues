@@ -69,11 +69,21 @@
 
 #define UCLIBC_PREREQ(M, m, p) (defined __UCLIBC__ && (__UCLIBC_MAJOR__ > M || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ > m) || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ == m && __UCLIBC_SUBLEVEL__ >= p)))
 
-#define HAVE_EPOLL  (__linux)
-#define HAVE_PORTS  (__sun)
-#define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
+#ifndef HAVE_EPOLL
+#define HAVE_EPOLL (__linux)
+#endif
 
+#ifndef HAVE_PORTS
+#define HAVE_PORTS (__sun)
+#endif
+
+#ifndef HAVE_KQUEUE
+#define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
+#endif
+
+#ifndef HAVE_EVENTFD
 #define HAVE_EVENTFD (__linux && (GLIBC_PREREQ(2, 9) || UCLIBC_PREREQ(0, 9, 33)))
+#endif
 
 #if __GNUC__
 #define NOTUSED __attribute__((unused))

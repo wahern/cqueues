@@ -46,14 +46,49 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define HAVE_INOTIFY    (defined __linux__)
-#define HAVE_FEN        (defined __sun)
-#define HAVE_KQUEUE     (!HAVE_INOTIFY && !HAVE_FEN)
-#define HAVE_KQUEUE1    (__NetBSD_Version__ >= 600000000)
-#define HAVE_OPENAT     (!__NetBSD__ && !__APPLE__)
-#define HAVE_FDOPENDIR  (!__NetBSD__ && !__APPLE__)
-#define HAVE_O_CLOEXEC  (defined O_CLOEXEC)
+#ifndef HAVE_INOTIFY
+#define HAVE_INOTIFY (defined __linux__)
+#endif
+
+#ifndef HAVE_INOTIFY_INIT1
+#define HAVE_INOTIFY_INIT1 (HAVE_IN_CLOEXEC)
+#endif
+
+#ifndef HAVE_FEN
+#define HAVE_FEN (defined __sun)
+#endif
+
+#ifndef HAVE_KQUEUE
+#define HAVE_KQUEUE (!HAVE_INOTIFY && !HAVE_FEN)
+#endif
+
+#ifndef HAVE_KQUEUE1
+#define HAVE_KQUEUE1 (__NetBSD_Version__ >= 600000000)
+#endif
+
+#ifndef HAVE_OPENAT
+#define HAVE_OPENAT (!__NetBSD__ && !__APPLE__)
+#endif
+
+#ifndef HAVE_FDOPENDIR
+#define HAVE_FDOPENDIR (!__NetBSD__ && !__APPLE__)
+#endif
+
+#ifndef HAVE_O_CLOEXEC
+#define HAVE_O_CLOEXEC (defined O_CLOEXEC)
+#endif
+
+#ifndef HAVE_O_DIRECTORY
+#define HAVE_O_DIRECTORY (defined O_DIRECTORY)
+#endif
+
+#ifndef HAVE_IN_CLOEXEC
 #define HAVE_IN_CLOEXEC (defined IN_CLOEXEC)
+#endif
+
+#ifndef HAVE_IN_NONBLOCK
+#define HAVE_IN_NONBLOCK (defined IN_NONBLOCK)
+#endif
 
 #if HAVE_INOTIFY
 
@@ -238,11 +273,11 @@ static int (nfy_openfd)(int *_fd, const struct nfy_open *opts) {
 		flags |= O_TRUNC;
 	if (opts->nofollow)
 		flags |= O_NOFOLLOW;
-#if defined O_CLOEXEX
+#if HAVE_O_CLOEXEC
 	if (opts->cloexec)
 		flags |= O_CLOEXEC;
 #endif
-#if defined O_DIRETORY
+#if HAVE_O_DIRECTORY
 	if (opts->directory)
 		flags |= O_DIRECTORY;
 #endif
@@ -253,7 +288,7 @@ static int (nfy_openfd)(int *_fd, const struct nfy_open *opts) {
 			goto syerr;
 #else
 		if (opts->chdir) {
-#if defined O_CLOEXEC
+#if HAVE_O_CLOEXEC
 			if (-1 == (wd = open(".", O_RDONLY|O_CLOEXEC)))
 				goto syerr;
 #else
@@ -517,7 +552,7 @@ struct notify *notify_opendir(const char *dirpath, int flags, int *_error) {
 	memcpy(nfy->dirpath, dirpath, dirlen);
 
 #if HAVE_INOTIFY
-#if defined IN_NONBLOCK && defined IN_CLOEXEC
+#if HAVE_INOTIFY_INIT1 && HAVE_IN_NONBLOCK && HAVE_IN_CLOEXEC
 	if (-1 == (nfy->fd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC)))
 		goto syerr;
 #else
