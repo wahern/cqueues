@@ -21,9 +21,6 @@ export LUA_CPATH_5_2="${lua52cpath}/?.so;${LUA_CPATH_5_2:-;}"
 export LUA_PATH_5_3="${lua53path}/?.lua;${SRCDIR}/regress/?.lua;${LUA_PATH_5_3:-;}"
 export LUA_CPATH_5_3="${lua53cpath}/?.so;${LUA_CPATH_5_3:-;}"
 
-echo "LUA_PATH_5_2=${LUA_PATH_5_2}"
-echo "LUA_CPATH_5_2=${LUA_CPATH_5_2}"
-
 (cd "${SRCDIR}" && make -s install \
 	lua51path="${lua51path}" lua51cpath="${lua51cpath}" \
 	lua52path="${lua52path}" lua52cpath="${lua52cpath}" \
