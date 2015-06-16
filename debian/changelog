@@ -1,3 +1,13 @@
+liblua-cqueues (20150616-0) unstable; urgency=low
+
+  * Add support for POLLPRI.
+  * Fix Solaris Ports controller alerts.
+  * Add support for eventfd for controller alerts.
+  * Synchronize dns.c with upstream.
+  * Various bug fixes.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 16 Jun 2015 15:37:34 -0700
+
 liblua-cqueues (20150310-0) unstable; urgency=low
 
   * :step, :loop, and :errors now return additional error information.
