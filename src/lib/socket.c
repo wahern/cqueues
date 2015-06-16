@@ -616,7 +616,7 @@ static so_error_t so_ffamily(int fd, int *family) {
 } /* so_ffamily() */
 
 
-static so_error_t so_ftype(int fd, int *mode, int *domain, int *type, int *protocol __attribute__((unused))) {
+static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *protocol __attribute__((unused))) {
 	struct stat st;
 	int error;
 
@@ -1120,8 +1120,11 @@ struct socket {
 
 	int fd;
 
-	mode_t mode;
-	int flags;
+	mode_t mode;  /* file mode */
+	int domain;   /* socket domain (address family) */
+	int type;     /* socket type */
+	int protocol; /* socket protocol */
+	int flags;    /* descriptor flags */
 
 	struct so_stat st;
 
@@ -1274,12 +1277,10 @@ static int so_socket_(struct socket *so) {
 	if (-1 == (so->fd = so_socket(so->host->ai_family, so->host->ai_socktype, &so->opts, &error)))
 		return error;
 
+	if ((error = so_ftype(so->fd, &so->mode, &so->domain, &so->type, &so->protocol)))
+		return error;
+
 	so->flags = so_getfl(so->fd, ~0);
-
-	if (0 != fstat(so->fd, &st))
-		return errno;
-
-	so->mode = st.st_mode;
 
 	return 0;
 } /* so_socket_() */
@@ -1304,7 +1305,9 @@ static int so_bind_(struct socket *so) {
 
 
 static int so_listen_(struct socket *so) {
-	/* FIXME: Do we support non-SOCK_STREAM sockets? */
+	if (!S_ISSOCK(so->mode) || (so->type != SOCK_STREAM && so->type != SOCK_SEQPACKET))
+		return 0;
+
 	return (0 == listen(so->fd, SOMAXCONN))? 0 : so_soerr();
 } /* so_listen_() */
 
@@ -1367,12 +1370,7 @@ static int so_starttls_(struct socket *so) {
 
 	switch (so->ssl.state) {
 	case 0: {
-		int mode = 0, domain = AF_UNSPEC, type = 0, protocol = 0;
-
-		if ((error = so_ftype(so->fd, &mode, &domain, &type, &protocol)))
-			goto error;
-
-		if (S_ISSOCK(mode) && type == SOCK_DGRAM) {
+		if (S_ISSOCK(so->mode) && so->type == SOCK_DGRAM) {
 			struct sockaddr_storage peer;
 			BIO *bio;
 
@@ -1646,7 +1644,11 @@ error:
 
 
 static struct socket *so_make(const struct so_options *opts, int *error) {
-	static const struct socket so_initializer = { .fd = -1, .cred = { (pid_t)-1, (uid_t)-1, (gid_t)-1, } };
+	static const struct socket so_initializer = {
+		.fd = -1,
+		.domain = PF_UNSPEC,
+		.cred = { (pid_t)-1, (uid_t)-1, (gid_t)-1, }
+	};
 	struct socket *so;
 	size_t len;
 
@@ -1826,22 +1828,21 @@ error:
 
 struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	struct socket *so;
-	int mode = 0, family = AF_UNSPEC, type = 0, protocol = 0, flags, mask, need, error;
+	int flags, mask, need, error;
 
 	if (!(so = so_make(opts, &error)))
 		goto error;
 
-	if ((error = so_ftype(fd, &mode, &family, &type, &protocol)))
+	if ((error = so_ftype(fd, &so->mode, &so->domain, &so->type, &so->protocol)))
 		goto error;
 
 	flags = so_opts2flags(opts, &mask);
-	mask &= so_type2mask(family, type, protocol);
+	mask &= so_type2mask(so->domain, so->type, so->protocol);
 	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE);
 
 	if ((error = so_rstfl(fd, &so->flags, flags, mask, need)))
 		goto error;
 
-	so->mode = mode;
 	so->fd = fd;
 
 	return so;
