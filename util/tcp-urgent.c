@@ -4,9 +4,13 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#if BSD
+#include <sys/event.h>
+#endif
 #include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -18,6 +22,8 @@
 #elif __GNUC__
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
+
+#define countof(a) (sizeof (a) / sizeof *(a))
 
 static struct {
 	const char *progname;
@@ -178,13 +184,14 @@ static char *strevents(char *dst, size_t lim, short events) {
 		{ "POLLPRI", POLLPRI },
 	};
 	char *p, *pe;
+	size_t i;
 
 	p = dst;
 	pe = dst + lim;
 
 	#define p_putc(c) do { if (p < pe) *p++ = (c); } while (0)
 
-	for (size_t i = 0; i < sizeof event / sizeof *event; i++) {
+	for (i = 0; i < countof(event); i++) {
 		const char *tp;
 
 		if (!(event[i].flag & events))
@@ -249,9 +256,80 @@ static short selectpending(int fd, short events) {
 	return revents;
 } /* selectpending() */
 
-static void checktcp(int fd[2]) {
-	char data[32], urgent[1], revents_text[128];
+static short keventpending(int fd, short events) {
+#if BSD
+	struct kevent event[3], *ep = event;
 	short revents;
+	int kq, i, n;
+
+#if defined EV_OOBAND
+	if (events & (POLLIN|POLLRDNORM|POLLRDBAND|POLLPRI)) {
+		int flags = EV_ADD|EV_ONESHOT;
+		if (events & (POLLRDBAND|POLLPRI))
+			flags |= EV_OOBAND;
+		EV_SET(ep, fd, EVFILT_READ, flags, 0, 0, 0);
+		ep++;
+	}
+#else
+	if (events & (POLLIN|POLLRDNORM)) {
+		EV_SET(ep, fd, EVFILT_READ, EV_ADD|EV_ONESHOT, 0, 0, 0);
+		ep++;
+	}
+#endif
+
+	if (events & POLLOUT) {
+		EV_SET(ep, fd, EVFILT_WRITE, EV_ADD|EV_ONESHOT, 0, 0, 0);
+		ep++;
+	}
+
+	if (-1 == (kq = kqueue()))
+		panic("kqueue");
+
+	if (-1 == (n = kevent(kq, event, ep - event, event, countof(event), &(struct timespec){ 0, 0 })))
+		panic("kevent");
+
+	close(kq);
+
+	revents = 0;
+
+	for (i = 0; i < n; i++) {
+		if (event[i].filter == EVFILT_READ) {
+#if defined EV_OOBAND
+			if (event[i].flags & EV_OOBAND)
+				revents |= events & (POLLPRI|POLLRDBAND);
+
+			/* NB: no way to know whether _only_ OOB available */
+#endif
+			revents |= events & (POLLIN|POLLRDNORM);
+		} else if (event[i].filter == EVFILT_WRITE) {
+			revents |= POLLOUT;
+		}
+	}
+
+	return revents;
+#else
+	return 0;
+#endif
+} /* keventpending() */
+
+static void showpending(int fd, short events) {
+	char text[128];
+	short revents;
+
+	info("checking events: %s", strevents(text, sizeof text, events));
+
+	revents = pollpending(fd, events);
+	info("  poll:   %s", strevents(text, sizeof text, revents));
+
+	revents = selectpending(fd, events);
+	info("  select: read:%d write:%d except:%d", !!(revents & POLLIN), !!(revents & POLLOUT), !!(revents & POLLPRI));
+
+	revents = keventpending(fd, events);
+	info("  kevent: %s", strevents(text, sizeof text, revents));
+} /* showpending() */
+
+static void checktcp(int fd[2]) {
+	char data[32], urgent[1];
 	ssize_t n;
 
 	memset(data, 'A', sizeof data);
@@ -261,21 +339,13 @@ static void checktcp(int fd[2]) {
 		panic("send");
 
 	info("sent %d bytes of OOB data", n);
-
-	revents = pollpending(fd[0], POLLALL);
-	info("poll ready events: %s", strevents(revents_text, sizeof revents_text, revents));
-	revents = selectpending(fd[0], POLLALL);
-	info("select ready events: read:%d write:%d except:%d", !!(revents & POLLIN), !!(revents & POLLOUT), !!(revents & POLLPRI));
+	showpending(fd[0], POLLALL);
 
 	if (-1 == (n = send(fd[1], data, sizeof data, 0)))
 		panic("send");
 
 	info("sent %d bytes of normal data", n);
-
-	revents = pollpending(fd[0], POLLALL);
-	info("poll ready events: %s", strevents(revents_text, sizeof revents_text, revents));
-	revents = selectpending(fd[0], POLLALL);
-	info("select ready events: read:%d write:%d except:%d", !!(revents & POLLIN), !!(revents & POLLOUT), !!(revents & POLLPRI));
+	showpending(fd[0], POLLALL);
 
 	return;
 } /* checktcp() */
