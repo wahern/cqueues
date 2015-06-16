@@ -265,6 +265,14 @@ static short keventpending(int fd, short events) {
 #if defined EV_OOBAND
 	if (events & (POLLIN|POLLRDNORM|POLLRDBAND|POLLPRI)) {
 		int flags = EV_ADD|EV_ONESHOT;
+		/*
+		 * NB: This is pointless as the xnu kernel discards
+		 * EV_OOBAND by doing
+		 *
+		 * 	kev.flags &= ~EV_SYSFLAGS
+		 *
+		 * during changelist processing in bsd/kern/kern_event.c.
+		 */
 		if (events & (POLLRDBAND|POLLPRI))
 			flags |= EV_OOBAND;
 		EV_SET(ep, fd, EVFILT_READ, flags, 0, 0, 0);
