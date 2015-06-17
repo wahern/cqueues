@@ -297,6 +297,7 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 
 #define LSO_BUFSIZ  4096
 #define LSO_MAXLINE 4096
+#define LSO_INFSIZ  ((size_t)-1)
 
 #define LSO_LINEBUF 0x01
 #define LSO_FULLBUF 0x02
@@ -309,7 +310,6 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
 #define LSO_WRMASK(m) (m)
 
-
 /*
  * A placeholder until we make it optional. Some Microsoft services have
  * buggy line buffering and will choke if, e.g., an SMTP command is
@@ -317,6 +317,11 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
  */
 #define LSO_DEFRAG 1
 
+#if !defined __NetBSD__ || NETBSD_PREREQ(6,0)
+#define LSO_NAN (NAN)
+#else
+#define LSO_NAN (__builtin_nan(""))
+#endif
 
 struct luasocket {
 	struct {
@@ -367,24 +372,42 @@ static struct luasocket lso_initializer = {
 	.type = AF_UNSPEC,
 	.type = SOCK_STREAM,
 	.onerror = LUA_NOREF,
-#if !defined __NetBSD__ || NETBSD_PREREQ(6,0)
-	.timeout = NAN,
-#else
-	.timeout = __builtin_nan(""),
-#endif
+	.timeout = LSO_NAN,
 };
 
 
 static size_t lso_optsize(struct lua_State *L, int index, size_t def) {
-	size_t size = luaL_optunsigned(L, index, def);
+	lua_Number size;
 
-	return (size)? size : def;
+	if (lua_isnoneornil(L, index))
+		return def;
+
+	size = luaL_checknumber(L, index);
+
+	if (size < 0 || isinf(size))
+		return LSO_INFSIZ;
+
+	return (size > 0)? (size_t)size : def;
 } /* lso_optsize() */
 
 
 static size_t lso_checksize(struct lua_State *L, int index) {
-	return luaL_checkunsigned(L, index);
+	lua_Number size = luaL_checknumber(L, index);
+
+	if (size < 0 || isinf(size))
+		return LSO_INFSIZ;
+
+	return (size_t)size;
 } /* lso_checksize() */
+
+
+static void lso_pushsize(struct lua_State *L, size_t size) {
+	if (size == LSO_INFSIZ) {
+		lua_pushnumber(L, INFINITY);
+	} else {
+		lua_pushnumber(L, size);
+	}
+} /* lso_pushsize() */
 
 
 static int lso_tofileno(lua_State *L, int index) {
@@ -738,13 +761,20 @@ static struct luasocket *lso_newsocket(lua_State *L, int family, int type) {
 } /* lso_newsocket() */
 
 
+static lso_error_t lso_adjbuf(struct fifo *buf, size_t size) {
+	if (size == LSO_INFSIZ)
+		return 0;
+
+	return fifo_realloc(buf, size);
+} /* lso_adjbuf() */
+
 static lso_error_t lso_adjbufs(struct luasocket *S) {
 	int error;
 
-	if ((error = fifo_realloc(&S->ibuf.fifo, S->ibuf.bufsiz)))
+	if ((error = lso_adjbuf(&S->ibuf.fifo, S->ibuf.bufsiz)))
 		return error;
 
-	if ((error = fifo_realloc(&S->obuf.fifo, S->obuf.bufsiz)))
+	if ((error = lso_adjbuf(&S->obuf.fifo, S->obuf.bufsiz)))
 		return error;
 
 	return 0;
@@ -1246,8 +1276,8 @@ static lso_nargs_t lso_setmode3(struct lua_State *L) {
 
 
 static lso_nargs_t lso_setbufsiz_(struct lua_State *L, struct luasocket *S, int ridx, int widx) {
-	lua_pushnumber(L, S->ibuf.bufsiz);
-	lua_pushnumber(L, S->obuf.bufsiz);
+	lso_pushsize(L, S->ibuf.bufsiz);
+	lso_pushsize(L, S->obuf.bufsiz);
 
 	S->ibuf.bufsiz = lso_optsize(L, ridx, S->ibuf.bufsiz);
 	S->obuf.bufsiz = lso_optsize(L, widx, S->obuf.bufsiz);
@@ -1285,8 +1315,8 @@ error:
 
 
 static lso_nargs_t lso_setmaxline_(struct lua_State *L, struct luasocket *S, int ridx, int widx) {
-	lua_pushnumber(L, S->ibuf.maxline);
-	lua_pushnumber(L, S->obuf.maxline);
+	lso_pushsize(L, S->ibuf.maxline);
+	lso_pushsize(L, S->obuf.maxline);
 
 	S->ibuf.maxline = lso_optsize(L, ridx, S->ibuf.maxline);
 	S->obuf.maxline = lso_optsize(L, widx, S->obuf.maxline);
