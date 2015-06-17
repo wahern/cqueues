@@ -1108,11 +1108,20 @@ error:
 
 static lso_nargs_t lso_pair(lua_State *L) {
 	struct luasocket *a = NULL, *b = NULL;
-	struct so_options *opts = so_opts();
+	struct so_options opts;
 	int fd[2] = { -1, -1 };
 	int type, error;
 
-	type = luaL_optinteger(L, 1, SOCK_STREAM);
+	if (lua_istable(L, 1)) {
+		opts = lso_checkopts(L, 1);
+
+		lua_getfield(L, 1, "type");
+		type = luaL_optinteger(L, -1, SOCK_STREAM);
+		lua_pop(L, 1);
+	} else {
+		opts = *so_opts();
+		type = luaL_optinteger(L, 1, SOCK_STREAM);
+	}
 
 	a = lso_newsocket(L, AF_UNIX, type);
 	b = lso_newsocket(L, AF_UNIX, type);
@@ -1125,10 +1134,10 @@ static lso_nargs_t lso_pair(lua_State *L) {
 		goto syerr;
 #endif
 
-	opts->fd_close.arg = a;
-	opts->fd_close.cb = &lso_closefd;
+	opts.fd_close.arg = a;
+	opts.fd_close.cb = &lso_closefd;
 
-	if (!(a->socket = so_fdopen(fd[0], opts, &error)))
+	if (!(a->socket = so_fdopen(fd[0], &opts, &error)))
 		goto error;
 
 	fd[0] = -1;
@@ -1136,10 +1145,10 @@ static lso_nargs_t lso_pair(lua_State *L) {
 	if ((error = lso_prepsocket(a)))
 		goto error;
 
-	opts->fd_close.arg = b;
-	opts->fd_close.cb = &lso_closefd;
+	opts.fd_close.arg = b;
+	opts.fd_close.cb = &lso_closefd;
 
-	if (!(b->socket = so_fdopen(fd[1], opts, &error)))
+	if (!(b->socket = so_fdopen(fd[1], &opts, &error)))
 		goto error;
 
 	fd[1] = -1;
