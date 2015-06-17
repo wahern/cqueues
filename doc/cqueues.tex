@@ -252,9 +252,13 @@ Install Lua 5.3 module.
 \subsubsection[\method{object:pollfd}]{\method{:pollfd()}} The \method{:pollfd} method should return a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
 
 Alternatively, \method{:pollfd} may return a condition variable object, or the member field may itself
-be a condition variable instead of a function. This permits user code to create \textit{ad hoc} pollable objects.
+be a condition variable instead of a function.  Similarly, the \method{:pollfd} field may be an integer descriptor. This permits user code to create \textit{ad hoc} pollable objects.
 
-\subsubsection[\method{object:events}]{\method{:events()}} The \method{:events} method should return a string or nil. \cqueues searches the string for the flags `r' and `w', which describe the events to associate with the descriptor---respectively, POLLIN and POLLOUT.
+\subsubsection[\method{object:events}]{\method{:events()}} The \method{:events} method should return a string or nil. \cqueues searches the string for the flags `r' and `w', which describe the events to associate with the descriptor---respectively, \texttt{POLLIN} and \texttt{POLLOUT}.
+
+The flag `p' may also be specified, describing \texttt{POLLPRI}. However, \texttt{POLLPRI} is not supported for kqueue-based environments.\footnote{OS X's \texttt{EV\_OOBAND} is only useable as an output flag. DragonflyBSD's \texttt{EVFILT\_EXCEPT} maps well and will be supported in a future release.}
+
+Alternatively, the events may be a literal integer value of the logical-OR of the system event values \texttt{POLLIN}, \texttt{POLLOUT}, \texttt{POLLPRI}, etc. However, specifying any events beyond the three discussed is not currently supported and may lead to unexpected behavior.
 
 \subsubsection[\method{object:timeout}]{\method{:timeout()}} The \method{:timeout} should return a number or nil. This schedules an independent timeout event. To effect a simple one second timeout, you can do
 
