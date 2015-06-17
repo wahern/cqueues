@@ -7,9 +7,14 @@ require"regress".export".*"
 
 local main = cqueues.new()
 
-local kb = string.rep("x", 1024)
-local mb = string.rep(kb, 1024)
+local _cache = {}
+local function megarep(s)
+	if not _cache[s] then
+		_cache[s] = string.rep(string.rep(s, 1024), 1024)
+	end
 
+	return _cache[s]
+end
 
 local function test(bufsiz)
 	local loop = cqueues.new()
@@ -41,10 +46,9 @@ local function test(bufsiz)
 			sem_get()
 
 			local ch = string.char(string.byte"A" + i)
-			local mb = string.rep(string.rep(ch, 1024), 1024)
 
 			for i=1,10 do
-				check(wr:write(mb))
+				check(wr:write(megarep(ch)))
 			end
 
 			check(wr:flush())
