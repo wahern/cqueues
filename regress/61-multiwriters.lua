@@ -1,0 +1,89 @@
+#!/bin/sh
+_=[[
+	. "${0%%/*}/regress.sh"
+	exec runlua "$0" "$@"
+]]
+require"regress".export".*"
+
+local main = cqueues.new()
+
+local kb = string.rep("x", 1024)
+local mb = string.rep(kb, 1024)
+
+
+local function test(bufsiz)
+	local loop = cqueues.new()
+
+	local rd, wr = check(socket.pair())
+
+	wr:setvbuf("full", bufsiz)
+
+	local sem = { count = 0, condvar = condition.new() }
+
+	local function sem_get()
+		while sem.count < 1 do
+			sem.condvar:wait()
+		end
+
+		sem.count = sem.count - 1
+		sem.condvar:signal()
+		cqueues.sleep(0)
+	end
+
+	local function sem_put(n)
+		sem.count = sem.count + (n or 1)
+		sem.condvar:signal()
+		cqueues.sleep(0)
+	end
+
+	for i=0,3 do
+		loop:wrap(function ()
+			sem_get()
+
+			local ch = string.char(string.byte"A" + i)
+			local mb = string.rep(string.rep(ch, 1024), 1024)
+
+			for i=1,10 do
+				check(wr:write(mb))
+			end
+
+			check(wr:flush())
+
+			sem_put()
+		end)
+	end
+
+	loop:wrap(function ()
+		sem_put(4)
+
+		repeat
+			sem.condvar:wait()
+		until sem.count == 4
+
+		wr:shutdown"rw"
+	end)
+
+	local interleaved = false
+
+	loop:wrap(function ()
+		for buf in rd:lines(1024 * 1024) do
+			local ch = string.sub(buf, 1, 1)
+
+			if buf:match(string.format("[^%s]", ch)) then
+				interleaved = true
+			end
+		end
+	end)
+
+	check(loop:loop())
+
+	return interleaved
+end
+
+check(test(4096) == true, "expected control test to interleave")
+info"control test OK"
+
+check(test(-1) == false, "test case interleaved")
+info"test case OK"
+
+say("OK")

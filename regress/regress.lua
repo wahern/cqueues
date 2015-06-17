@@ -6,6 +6,7 @@ local regress = {
 	socket = require"cqueues.socket",
 	thread = require"cqueues.thread",
 	errno = require"cqueues.errno",
+	condition = require"cqueues.condition",
 	auxlib = auxlib,
 	assert = auxlib.assert,
 	fileresult = auxlib.fileresult,
