@@ -31,7 +31,7 @@ local function openssl_version(path)
 	local M, m, p = ln:match("(%d+)%.(%d+)%.(%d+)")
 
 	if p then
-		return (tonumber(M) * 268435456) + (tonumber(m) * 268435456) + (tonumber(p) * 4096)
+		return (tonumber(M) * 268435456) + (tonumber(m) * 1048576) + (tonumber(p) * 4096)
 	end
 end
 
@@ -74,7 +74,7 @@ local function openssl_run(path)
 	local stdout_r, stdout_w = assert(socket.pair{ cloexec = false })
 	check(stdout_r:pollfd() < 10 and stdout_w:pollfd() < 10, "descriptors too high (%d, %d)", stdout_r:pollfd(), stdout_w:pollfd())
 
-	local exec = string.format("%s s_server -dtls1 -key %s -cert %s <&%d %d<&- >%d %d<&- 2>&1 &", path, tmpname, tmpname, stdin_r:pollfd(), stdin_w:pollfd(), stdout_w:pollfd(), stdout_r:pollfd())
+	local exec = string.format("exec <&%d %d<&- >%d %d<&-; %s s_server -quiet -dtls1 -key %s -cert %s &", stdin_r:pollfd(), stdin_w:pollfd(), stdout_w:pollfd(), stdout_r:pollfd(), path, tmpname, tmpname)
 	os.execute(exec)
 
 	info("executed `%s`", exec)
@@ -82,8 +82,12 @@ local function openssl_run(path)
 	stdin_r:close()
 	stdout_w:close()
 
+	-- exit quickly if utility fails, otherwise give 1s to start up
 	stdout_r:xread("*l", 1)
 	os.remove(tmpname)
+
+	-- don't permit to be garbage collected
+	_G._stdin_w = stdin_w
 end
 
 local main = cqueues.new()
