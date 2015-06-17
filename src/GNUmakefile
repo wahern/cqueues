@@ -128,6 +128,7 @@ MODS$(1)_$(d) = \
 	$$(DESTDIR)$(3)/cqueues/condition.lua \
 	$$(DESTDIR)$(3)/cqueues/promise.lua \
 	$$(DESTDIR)$(3)/cqueues/auxlib.lua \
+	$$(DESTDIR)$(3)/cqueues/auxjit.lua \
 	$$(DESTDIR)$(3)/cqueues/dns.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/resolver.lua \
 	$$(DESTDIR)$(3)/cqueues/dns/config.lua \

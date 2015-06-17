@@ -1,10 +1,18 @@
 local loader = function(loader, ...)
+	local auxjit = require"cqueues.auxjit"
 	local core = require"_cqueues"
 	local errno = require"_cqueues.errno"
 	local monotime = core.monotime
 	local running = core.running
 	local strerror = errno.strerror
 	local unpack = assert(table.unpack or unpack) -- 5.1 compat
+
+	local cdef = auxjit.load(core.cdef)
+
+	if cdef then
+		monotime = cdef.monotime
+		core.monotime = cdef.monotime
+	end
 
 	-- lazily load auxlib to prevent circular or unused dependencies
 	local auxlib = setmetatable({}, { __index = function (t, k)
