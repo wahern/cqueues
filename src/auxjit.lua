@@ -7,8 +7,16 @@ local loader = function(loader, ...)
 	local ffi = require_ffi()
 	local auxjit = {}
 
-	auxjit.load = ffi and function (getcdef)
-		local cdef, table = getcdef()
+	auxjit.loadlib = ffi and function (cdef, modname)
+		local path = assert(package.searchpath(modname, package.cpath))
+
+print(cdef)
+		ffi.cdef(cdef)
+
+		return assert(ffi.load(path))
+	end or function () return end
+
+	auxjit.loadtable = ffi and function (cdef, table)
 		local typename = assert(cdef:match("^%s*(struct%s+[%w_]+)"), "bad typename in module cdef")
 
 		ffi.cdef(cdef)

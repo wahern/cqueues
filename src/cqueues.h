@@ -508,6 +508,9 @@ cqs_error_t cqs_sigmask(int, const sigset_t *, sigset_t *);
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#define CQS_STRINGIFY_(s) #s
+#define CQS_STRINGIFY(s)  CQS_STRINGIFY_(s)
+
 #ifndef MIN
 #define MIN(a, b) (((a) < (b))? (a) : (b))
 #endif

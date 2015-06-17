@@ -7,11 +7,21 @@ local loader = function(loader, ...)
 	local strerror = errno.strerror
 	local unpack = assert(table.unpack or unpack) -- 5.1 compat
 
-	local cdef = auxjit.load(core.cdef)
+	if os.getenv"CDEF" == 1 then
+print"DIRECT"
+		local cdef = auxjit.loadlib(core.cdef1())
 
-	if cdef then
+		monotime = function ()
+			return cdef.cqueueJ_monotime()
+		end
+
+		core.monotime = monotime
+	else
+print"INDIRECT"
+		local cdef = auxjit.loadtable(core.cdef2())
+
 		monotime = cdef.monotime
-		core.monotime = cdef.monotime
+		core.monotime = monotime
 	end
 
 	-- lazily load auxlib to prevent circular or unused dependencies

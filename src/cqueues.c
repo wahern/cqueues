@@ -2660,8 +2660,31 @@ static int cstack_running(lua_State *L) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define CQS_STRINGIFY_(s) #s
-#define CQS_STRINGIFY(s)  CQS_STRINGIFY_(s)
+#define CQS_CDEF(rtype, name, ...) \
+	static const char name ## _cdef[] = \
+		CQS_STRINGIFY(rtype) " " CQS_STRINGIFY(name) "(" CQS_STRINGIFY(__VA_ARGS__) ");"; \
+		rtype name(__VA_ARGS__)
+
+CQS_CDEF(double, cqueueJ_monotime, void) {
+	return monotime();
+}
+
+static int cqueue_cdef1(lua_State *L) {
+	static const char *const cdef[] = {
+		cqueueJ_monotime_cdef,
+	};
+	size_t i;
+
+	for (i = 0; i < countof(cdef); i++) {
+		lua_pushstring(L, cdef[i]);
+	}
+
+	lua_concat(L, i);
+	lua_pushliteral(L, "_cqueues");
+
+	return 2;
+} /* cqueue_cdef1() */
+
 
 #define CQUEUE_CDEF \
 	struct cqueue_cdef { \
@@ -2670,7 +2693,7 @@ static int cstack_running(lua_State *L) {
 
 CQUEUE_CDEF
 
-static int cqueue_cdef(lua_State *L) {
+static int cqueue_cdef2(lua_State *L) {
 	static const struct cqueue_cdef table = {
 		.monotime = &monotime,
 	};
@@ -2679,7 +2702,7 @@ static int cqueue_cdef(lua_State *L) {
 	memcpy(lua_newuserdata(L, sizeof table), &table, sizeof table);
 
 	return 2;
-} /* cqueue_cdef() */
+} /* cqueue_cdef2() */
 
 
 static const luaL_Reg cqueue_methods[] = {
@@ -2712,7 +2735,8 @@ static const luaL_Reg cqueues_globals[] = {
 	{ "cancel",    &cstack_cancel },
 	{ "reset",     &cstack_reset },
 	{ "running",   &cstack_running },
-	{ "cdef",      &cqueue_cdef },
+	{ "cdef1",     &cqueue_cdef1 },
+	{ "cdef2",     &cqueue_cdef2 },
 	{ NULL,        NULL }
 }; /* cqueues_globals[] */
 
