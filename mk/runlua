@@ -136,7 +136,7 @@ export LC_ALL=C
 : ${RUNLUA_D:=}
 : ${RUNLUA_P:=}
 
-MYVERSION=20150401
+MYVERSION=20150617
 MYVENDOR="william@25thandClement.com"
 
 TMPWD=
@@ -241,13 +241,18 @@ num2ver() {
 	printf "${M}.${m}.${p}\n"
 }
 
+api2num() {
+	n="$(ver2num "$@")"
+	printf "$((${n} / 100))\n"
+}
+
 num2api() {
-	printf "$((${1} / 10000 % 100)).$((${1} / 100 % 100))\n"
+	printf "$((${1} / 100 % 100)).$((${1} % 100))\n"
 }
 
 getapi() {
 	if [ -x "${1}" ]; then
-		ver2num "$(noenv; cdwd; "${1}" -e 'print(string.match(_VERSION, [[[%d.]+]]))' </dev/null 2>>/dev/null || true)"
+		api2num "$(noenv; cdwd; "${1}" -e 'print(string.match(_VERSION, [[[%d.]+]]))' </dev/null 2>>/dev/null || true)"
 	fi
 }
 
@@ -366,8 +371,11 @@ findlua() {
 	mkwd
 
 	TMP="${RUNLUA_R#!}"
-	find_LUA_MIN="$(ver2num "${TMP%%[,:-]*}" 1 0 0)"
-	find_LUA_MAX="$(ver2num "${TMP##*[,:-]}" 99 99 99)"
+	find_API_MIN="$(api2num "${TMP%%[,:-]*}" 1 0)"
+	find_API_MAX="$(api2num "${TMP##*[,:-]}" 99 99)"
+	TMP="${RUNLUA_R#!}"
+	find_REL_MIN="$(ver2num "${TMP%%[,:-]*}" 1 0 0)"
+	find_REL_MAX="$(ver2num "${TMP##*[,:-]}" 99 99 99)"
 	TMP="${RUNLUA_J#!}"
 	find_JIT_MIN="$(ver2num "${TMP%%[,:-]*}" 1 0 0)"
 	find_JIT_MAX="$(ver2num "${TMP##*[,:-]}" 99 99 99)"
@@ -405,10 +413,18 @@ findlua() {
 
 			dump "testing %s" "${F}"
 
-			# strip version suffix from basename
+			# NB: match only a narrow range of basenames so we
+			# don't execute something like luatex or lua-tool
 			B="${F##*/}"
-			while [ "${B}" != "${B%%[0123456789.-]}" ]; do
-				B="${B%%[0123456789.-]}"
+
+			# strip pre-release suffix from basename (luajit-2.1.0-alpha)
+			B="${B%[._-]alpha}"
+			B="${B%[._-]beta}"
+			B="${B%[._-]dev}"
+
+			# strip version suffix from basename (lua51,  luajit-2.0.3)
+			while [ "${B}" != "${B%%[0123456789._-]}" ]; do
+				B="${B%%[0123456789._-]}"
 			done
 
 			# skip if basename isn't "lua" or "luajit"
@@ -421,8 +437,16 @@ findlua() {
 
 			debug "%s is version %s (%s API)" "${F}" "$(num2ver "${R}")" "$(num2api "${V}")"
 
-			# does it meet our range criteria?
-			[ ${V} -ge ${find_LUA_MIN} -a ${V} -le ${find_LUA_MAX} ] || continue
+			# does it meet out API range criteria?
+			[ ${V} -ge ${find_API_MIN} -a ${V} -le ${find_API_MAX} ] || continue
+
+			# does it meet our release range criteria?
+			if [ ${R} -lt ${find_REL_MIN} -o ${R} -gt ${find_REL_MAX} -o ${find_JIT_MIN} -gt 0 ]; then
+				# try luajit release range
+				[ "${B}" = "luajit" ] || continue
+				[ ${R} -ge ${find_JIT_MIN} ] || continue
+				[ ${R} -le ${find_JIT_MAX} ] || continue
+			fi
 
 			# is it a better fit than what we already found?
 			[ ${V} -gt 0 -a ${V} -ge ${found_API} -a ${R} -gt ${found_REL} ] || continue
