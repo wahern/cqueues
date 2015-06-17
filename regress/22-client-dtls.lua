@@ -55,7 +55,7 @@ local function openssl_path()
 	return version > 0 and path
 end
 
-local function openssl_run(path)
+local function openssl_popen(path)
 	local key, crt = genkey()
 	local tmpname = os.tmpname()
 	local tmpfile = check(io.open(tmpname, "w"))
@@ -65,40 +65,75 @@ local function openssl_run(path)
 	check(tmpfile:flush())
 	tmpfile:close()
 
-	-- The openssl will exit when stdin closes, so arrange for stdin to
-	-- disappear when we do. Hack necessary because we can't rely on any
-	-- process control bindings.
-	local stdin_r, stdin_w = assert(socket.pair{ cloexec = false })
-	check(stdin_r:pollfd() < 10 and stdin_w:pollfd() < 10, "descriptors too high (%d, %d)", stdin_r:pollfd(), stdin_w:pollfd())
+	local perl_main = [[
+		use POSIX;
+		use strict;
 
-	local stdout_r, stdout_w = assert(socket.pair{ cloexec = false })
-	check(stdout_r:pollfd() < 10 and stdout_w:pollfd() < 10, "descriptors too high (%d, %d)", stdout_r:pollfd(), stdout_w:pollfd())
+		my ($openssl, $key) = @ARGV;
 
-	local exec = string.format("exec <&%d %d<&- >%d %d<&-; %s s_server -quiet -dtls1 -key %s -cert %s &", stdin_r:pollfd(), stdin_w:pollfd(), stdout_w:pollfd(), stdout_r:pollfd(), path, tmpname, tmpname)
-	os.execute(exec)
+		my $pid = fork;
+		die "$!" unless defined $pid;
 
-	info("executed `%s`", exec)
+		# exec openssl in child
+		exec $openssl, "s_server", "-quiet", "-dtls1", "-key", $key, "-cert", $key
+			or die "$!" if $pid == 0;
 
-	stdin_r:close()
-	stdout_w:close()
+		<STDIN>; # wait for EOF
 
-	-- exit quickly if utility fails, otherwise give 1s to start up
-	stdout_r:xread("*l", 1)
-	os.remove(tmpname)
+		unlink $key;
 
-	-- don't permit to be garbage collected
-	_G._stdin_w = stdin_w
+		while ($pid != (my $rpid = waitpid($pid, WNOHANG))) {
+			die "$!" if $rpid == -1;
+			#print STDERR "killing $pid\n";
+			kill 9, $pid;
+			sleep 1;
+		}
+
+		#print STDERR "reaped $pid\n";
+
+		1;
+
+		EOF
+	]]
+
+	local perl_begin = ([[
+		my @code;
+
+		while (<STDIN>) {
+			last if m/^\s+EOF\s+$/;
+			push @code, $_;
+		}
+
+		eval join("", @code)
+			or die $@;
+	]]):gsub("%s+", " ")
+
+	local function quote(txt)
+		return string.format("'%s'", txt:gsub("'", "'\"'\"'"))
+	end
+
+	local perl_cmd = string.format("perl -e %s %s %s", quote(perl_begin), quote(path), quote(tmpname))
+
+	local fh = check(io.popen(perl_cmd, "w"))
+	fh:write(perl_main)
+	fh:flush()
+
+	cqueues.sleep(1) -- wait for server to begin listening
+
+	return fh
 end
 
 local main = cqueues.new()
 
 assert(main:wrap(function ()
 	-- spin up DTLS server using openssl(1) command-line utility
-	openssl_run(check(openssl_path(), "no openssl command-line utility found"))
+	local fh = openssl_popen(check(openssl_path(), "no openssl command-line utility found"))
 
 	-- create client socket
 	local con = socket.connect{ host="localhost", port=4433, type=socket.SOCK_DGRAM };
 	check(fileresult(con:starttls(context.new"DTLSv1", 3)))
+
+	fh:close()
 end):loop())
 
 say"OK"
