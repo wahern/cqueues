@@ -455,6 +455,8 @@ field & type:default & description\\\hline
 
 .v6only & boolean:nil & enables or disables IPV6\_V6ONLY IPv6 option, otherwise the system default is left as-is \\
 
+.oobinline & boolean:false & SO\_OOBLINE socket option \\
+
 .nonblock & boolean:true & O\_NONBLOCK descriptor flag \\
 
 .cloexec & boolean:true & O\_CLOEXEC descriptor flag \\
@@ -532,7 +534,7 @@ If in TLS mode, returns an \module{openssl.ssl} object, otherwise nil. If the op
 Same as Lua \fn{file:setvbuf}. Analogous to ``n'', ``l'', and ``f'' mode flags. Returns the previous output mode and output buffer size.
 
 \subsubsection[\fn{socket:setmode}]{\fn{socket:setmode([input] [, output])}}
-Sets the the input and output buffering and translation modes. Either mode can be nil or none, in which case the mode is left unchanged.
+Sets the the input and output buffering and translation modes, which mirror C's stdio semantics. Either mode can be nil or none, in which case the mode is left unchanged.
 
 A mode is specified as a string containing one or more of the following flags
 
@@ -540,13 +542,12 @@ A mode is specified as a string containing one or more of the following flags
 flag & description \\\hline
 t & text mode; input or output undergoes LF/CRLF translation \\
 b & binary mode; no LF/CRLF translation \\
-n & no output buffering \\
-l & line buffered output \\
-f & fully buffered output \\
+n & no output buffering; output buffer is always flushed completely after every write operation \\
+l & line buffered output; output buffer is flushed up to and including the last LF after every write operation  \\
+f & fully buffered output; all buffer-sized blocks are flushed after every write operation (see \fn{socket:setbufsiz} and \fn{socket:setvbuf}) \\
 \end{ctabular}
 
 Returns the previous input and output modes as fixed-sized strings. At present the first character is one of ``t'' or ``b'', and the second character one of ``n'', ``l'', ``f'', or ``-'' (for in the input mode).
-
 
 \subsubsection[\fn{socket:setbufsiz}]{\fn{socket:setbufsiz([input] [, output])}}
 Sets the input and output buffer size. Either size can be nil or none, in which case the size is left unchanged.
@@ -649,7 +650,7 @@ end
 Same as Lua \fn{file:write}.
 
 \subsubsection[\fn{socket:flush}]{\fn{socket:flush([mode][, timeout])}}
-Flushes output buffer. Mode is one of the ``nlf'' flags described in \method{socket.connect}. A nil mode implies ``n'', i.e.\ no buffering and effecting a full flush. An empty string mode resolves to the configured output buffering mode.
+Flushes the output buffer. Mode is one of the ``nlf'' flags described in \method{socket:setmode}. A nil mode implies ``n'', i.e.\ no buffering and effecting a full flush. An empty string mode resolves to the configured output buffering mode.
 
 \subsubsection[\fn{socket:fill}]{\fn{socket:fill(size[, timeout])}}
 Fills the input buffer with `size' bytes. Returns true on success, false and an error code on failure.
