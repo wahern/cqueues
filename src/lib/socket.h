@@ -59,9 +59,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20150616
-#define SOCKET_V_ABI  0x20141021
-#define SOCKET_V_API  0x20141021
+#define SOCKET_V_REL  0x20150617
+#define SOCKET_V_ABI  0x20150617
+#define SOCKET_V_API  0x20150617
 
 
 const char *socket_vendor(void);
@@ -143,6 +143,7 @@ struct so_options {
 	_Bool sin_reuseport;
 	_Bool sin_nodelay;
 	_Bool sin_nopush;
+	_Bool sin_oobinline;
 
 	enum {
 		SO_V6ONLY_DEFAULT = 0, /* system default */
@@ -457,15 +458,17 @@ int so_nosigpipe(int, _Bool);
 
 int so_v6only(int, _Bool);
 
+int so_oobinline(int, _Bool);
 
-#define SO_F_CLOEXEC   0x01
-#define SO_F_NONBLOCK  0x02
-#define SO_F_REUSEADDR 0x04
-#define SO_F_REUSEPORT 0x08
-#define SO_F_NODELAY   0x10
-#define SO_F_NOPUSH    0x20
-#define SO_F_NOSIGPIPE 0x40
-#define SO_F_V6ONLY    0x80
+#define SO_F_CLOEXEC   0x0001
+#define SO_F_NONBLOCK  0x0002
+#define SO_F_REUSEADDR 0x0004
+#define SO_F_REUSEPORT 0x0008
+#define SO_F_NODELAY   0x0010
+#define SO_F_NOPUSH    0x0020
+#define SO_F_NOSIGPIPE 0x0040
+#define SO_F_V6ONLY    0x0080
+#define SO_F_OOBINLINE 0x0100
 
 int so_getfl(int fd, int which); /* no failure mode */
 

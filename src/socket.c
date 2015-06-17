@@ -574,6 +574,9 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 	if (lso_altfield(L, index, "v6only", "sin_v6only"))
 		opts.sin_v6only = (lso_popbool(L))? SO_V6ONLY_ENABLE : SO_V6ONLY_DISABLE;
 
+	if (lso_altfield(L, index, "oobinline", "sin_oobinline"))
+		opts.sin_oobinline = lso_popbool(L);
+
 	if (lso_altfield(L, index, "nonblock", "fd_nonblock"))
 		opts.fd_nonblock = lso_popbool(L);
 

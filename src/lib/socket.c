@@ -871,6 +871,11 @@ int so_v6only(int fd, _Bool v6only) {
 } /* so_v6only() */
 
 
+int so_oobinline(int fd, _Bool oobinline) {
+	return so_setboolopt(fd, SOL_SOCKET, SO_OOBINLINE, oobinline);
+} /* so_oobinline() */
+
+
 #define NO_OFFSET ((size_t)-1)
 #define optoffset(m) offsetof(struct so_options, m)
 
@@ -887,6 +892,7 @@ static const struct flops {
 	{ SO_F_NOPUSH,    &so_nopush,    optoffset(sin_nopush),    },
 	{ SO_F_NOSIGPIPE, &so_nosigpipe, optoffset(fd_nosigpipe),  },
 	{ SO_F_V6ONLY,    &so_v6only,    NO_OFFSET,                },
+	{ SO_F_OOBINLINE, &so_oobinline, optoffset(sin_oobinline), },
 };
 
 
@@ -996,6 +1002,9 @@ int so_getfl(int fd, int which) {
 
 	if ((which & SO_F_V6ONLY) && so_getboolopt(fd, IPPROTO_IPV6, IPV6_V6ONLY))
 		flags |= SO_F_V6ONLY;
+
+	if ((which & SO_F_OOBINLINE) && so_getboolopt(fd, SOL_SOCKET, SO_OOBINLINE))
+		flags |= SO_F_OOBINLINE;
 
 	return flags;
 } /* so_getfl() */
