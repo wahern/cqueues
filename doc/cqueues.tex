@@ -336,7 +336,9 @@ Cancels the specified descriptor for all controllers. This ensures safe early cl
 Any coroutine polling on the canceled descriptor is placed on its controller's pending queue.
 
 \subsubsection[\routine{cqueues.poll}]{\routine{cqueues.poll($\ldots$)}}
-Takes a series of objects obeying the polling protocol and yields control to the parent \cqueues controller. On an event resumes the coroutine, passing the objects which triggered resumption. A number value is interpreted as a timeout.
+Takes a series of objects obeying the polling protocol and yields control to the parent \cqueues controller. On an event the coroutine is resumed and \fn{.poll} returns the objects which polled ready. A number value is interpreted as a simple timeout, \emph{not} a file descriptor.
+
+Tip: This routine is intended to be behave much like POSIX poll(2). Think of each object as a \texttt{struct pollfd} object.
 
 \subsubsection[\routine{cqueues.sleep}]{\routine{cqueues.sleep(number)}}
 
@@ -366,7 +368,7 @@ Execute function inside a new coroutine managed by the controller. Returns the c
 \subsubsection[\routine{cqueues:step}]{\routine{cqueue:step([timeout])}}
 Step once through the event queue. Unless the timeout is explicitly specified as \texttt{0}, or unless the current thread of execution is a \cqueues managed coroutine, \emph{it suspends the process indefinitely or for the specified timeout} until a descriptor event or timeout fires.
 
-Returns true or false. If false---i.e. a coroutine exited abnormally---then a second return value holds the error message. :step can be called again after errors.
+Returns true on success. Otherwise returns false, an error message, and additional context: a numeric error code (possibly $nil$), a Lua thread object (possibly $nil$), an object that was polled (possibly $nil$), and an integer file descriptor (possibly $nil$). :step can be called again after errors.
 
 If embedding \cqueues within an existing application, the top-level :step invocation should always specify a 0 timeout. A controller is a pollable object, and the descriptor returned by the :pollfd method can be used with third-party event libraries, whether written in Lua, C, or some other language. Don't forget to also schedule a timeout using the value from :timeout.
 
@@ -374,7 +376,7 @@ If embedding \cqueues within an existing application, the top-level :step invoca
 
 \subsubsection[\routine{cqueues:loop}]{\routine{cqueue:loop([timeout])}}
 
-Invoke \method{cqueues:step} in a loop, exiting on error, timeout, or if the event queue is empty. Returns true if no error occurred, or false and an error string from \method{cqueues:step}.
+Invoke \method{cqueues:step} in a loop, exiting on error, timeout, or if the event queue is empty. Returns same values as \method{cqueues:step}.
 
 \subsubsection[\routine{cqueues:errors}]{\routine{cqueue:errors([timeout])}}
 
@@ -470,7 +472,10 @@ field & type:default & description\\\hline
 	Like \fn{socket.listen} with list arguments, but takes a table of named arguments. See also \fn{socket.connect\{\}}.
 
 \subsubsection[\fn{socket.pair}]{\fn{socket.pair([type])}}
-Returns two bound sockets. Type should be the system type number, e.g. \fn{socket.SOCK\_STREAM} or \fn{socket.SOCK\_DGRAM}.
+	Returns two bound sockets. Type should be the system type number, e.g. \fn{socket.SOCK\_STREAM} or \fn{socket.SOCK\_DGRAM}.
+
+\subsubsection[\fn{socket.pair}]{\fn{socket.pair\{ $\ldots$ \}}}
+	Like single argument form of \fn{socket.listen}, but takes a table of named arguments. See also \fn{socket.connect\{\}}.
 
 \subsubsection[\fn{socket.setvbuf}]{\fn{socket.setvbuf(mode [, size])}}
 	Set the default output buffering mode for all new sockets. See \fn{socket:setvbuf}.
