@@ -65,30 +65,25 @@ local function openssl_run(path)
 	check(tmpfile:flush())
 	tmpfile:close()
 
-	local thr, com = check(thread.start(function (com, path, tmpname)
-		require"regress".export".*"
+	-- The openssl will exit when stdin closes, so arrange for stdin to
+	-- disappear when we do. Hack necessary because we can't rely on any
+	-- process control bindings.
+	local stdin_r, stdin_w = assert(socket.pair{ cloexec = false })
+	check(stdin_r:pollfd() < 10 and stdin_w:pollfd() < 10, "descriptors too high (%d, %d)", stdin_r:pollfd(), stdin_w:pollfd())
 
-		-- utility will exit when stdin closes, so arrange for
-		-- stdin to close when we exit
-		local stdin_r, stdin_w = assert(socket.pair{ cloexec = false })
-		local exec = string.format("exec %s s_server -dtls1 -key %s -cert %s <&%d %d<&-", path, tmpname, tmpname, stdin_r:pollfd(), stdin_w:pollfd())
-		local fh = io.popen(exec, "r")
+	local stdout_r, stdout_w = assert(socket.pair{ cloexec = false })
+	check(stdout_r:pollfd() < 10 and stdout_w:pollfd() < 10, "descriptors too high (%d, %d)", stdout_r:pollfd(), stdout_w:pollfd())
 
-		info("executed `%s`", exec)
+	local exec = string.format("%s s_server -dtls1 -key %s -cert %s <&%d %d<&- >%d %d<&- 2>&1 &", path, tmpname, tmpname, stdin_r:pollfd(), stdin_w:pollfd(), stdout_w:pollfd(), stdout_r:pollfd())
+	os.execute(exec)
 
-		fh:read() --> only care that it started up
-		os.remove(tmpname)
+	info("executed `%s`", exec)
 
-		com:write"OK\n"
+	stdin_r:close()
+	stdout_w:close()
 
-		for _ in fh:lines() do
-			-- nothing
-		end
-	end, path, tmpname))
-
-	local ok = check(com:read()) --> only care that it started up
-
-	check(ok == "OK", "failed to run openssl command-line utility")
+	stdout_r:xread("*l", 1)
+	os.remove(tmpname)
 end
 
 local main = cqueues.new()
