@@ -7,7 +7,7 @@ local loader = function(loader, ...)
 	local strerror = errno.strerror
 	local unpack = assert(table.unpack or unpack) -- 5.1 compat
 
-	if os.getenv"CDEF" == 1 then
+	if os.getenv"CDEF" == "1" then
 print"DIRECT"
 		local cdef = auxjit.loadlib(core.cdef1())
 
