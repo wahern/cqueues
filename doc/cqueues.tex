@@ -252,7 +252,7 @@ Install Lua 5.3 module.
 \subsubsection[\method{object:pollfd}]{\method{:pollfd()}} The \method{:pollfd} method should return a descriptor integer or nil. This descriptor must remain in existence until the owner object is garbage collected, \routine{cqueues.cancel} is used, the coroutine executes one additional yield/resume cycle (so the old descriptor is expired from the descriptor queue), or until after the coroutine exits. If the descriptor is closed prematurely, the kernel will remove it from the internal descriptor queue, bringing it out of sync with the controller, and probably causing \method{cqueues:step} to return EBADF or ENOENT errors.
 
 Alternatively, \method{:pollfd} may return a condition variable object, or the member field may itself
-be a condition variable instead of a function.  Similarly, the \method{:pollfd} field may be an integer descriptor. This permits user code to create \textit{ad hoc} pollable objects.
+be a condition variable instead of a function.  Similarly, the \texttt{.pollfd} member field may be an integer descriptor. This permits user code to create \textit{ad hoc} pollable objects.
 
 \subsubsection[\method{object:events}]{\method{:events()}} The \method{:events} method should return a string or nil. \cqueues searches the string for the flags `r' and `w', which describe the events to associate with the descriptor---respectively, \texttt{POLLIN} and \texttt{POLLOUT}.
 
@@ -335,14 +335,41 @@ Add or interpose a \cqueues controller class method. Returns the previous method
 Return the system's monotonic clock time, usually clock\_gettime(CLOCK\_MONOTONIC).
 
 \subsubsection[\routine{cqueues.cancel}]{\routine{cqueues.cancel(fd)}}
-Cancels the specified descriptor for all controllers. This ensures safe early closure of descriptors. However, the complexity is approximately M 2 log N, where M is the number of controllers, and N the number of descriptors per controller (presuming equal distribution). For most purposes this is entirely inconsequential. By contrast, however, implicit cancellation through GC or yield/resume cycling is O(1).
+Cancels the specified descriptor, $fd$, for all controllers. If $fd$ is an object, the descriptor is obtained by calling the \method{:pollfd} method. Any coroutine polling on the canceled descriptor is placed on its controller's pending queue.
 
-Any coroutine polling on the canceled descriptor is placed on its controller's pending queue.
+To simplify error and exit paths in application code, canceling a descriptor that isn't installed is a no-op. Similarly, $fd$ may be -1. However, if $fd$ was installed with any controller but the descriptor has already been closed, then this is an error.
+
+Cancellation must be done before closing a descriptor\footnote{Unless the application knows the descriptor isn't currently installed. But note that \cqueues persists descriptor events for at least one yield/resume cycle. When \method{cqueues.poll} returns, for example, the descriptor is still installed. It won't be uninstalled until the coroutine yields again without requesting any events for the descriptor.}, otherwise controller state becomes corrupted. Closing a descriptor automatically removes the descriptor from the kernel's internal polling data structures, but not the user-land data structures. When the process then attempts to modify or remove the descriptor, the operation will fail with \texttt{EBADF}. Some event loops silently suppress such errors because it's very common for applications to close a descriptor before destroying an event handle. But such ordering issues aren't always so benign. If a new socket object was created between the close and cancel operations which happens to have the same descriptor number, then the controller erroneously believes the descriptor is already installed, or if not previously installed than the cancel stalls some other thread. Such bugs can be extremely difficult to track down; they're much easier to discover if the library bubbles up \texttt{EBADF} when canceling an already closed descriptor.
+
+\cqueues objects---controller, notify, resolver, signal, socket, etc---automatically call cancel before closing any descriptor. Normally only extension libraries and modules need to explicitly cancel descriptors.
 
 \subsubsection[\routine{cqueues.poll}]{\routine{cqueues.poll($\ldots$)}}
 Takes a series of objects obeying the polling protocol and yields control to the parent \cqueues controller. On an event the coroutine is resumed and \fn{.poll} returns the objects which polled ready. A number value is interpreted as a simple timeout, \emph{not} a file descriptor.
 
-Tip: This routine is intended to be behave much like POSIX poll(2). Think of each object as a \texttt{struct pollfd} object.
+This routine is intended to be behave much like POSIX \texttt{poll(2)}. Think of each object as a \texttt{struct pollfd} object. Then
+
+\begin{example}{lua}
+	local ready = { assert(cqueues.poll(socket1, socket2, 10)) }
+	for i=1,#ready do
+		...
+	end
+\end{example}
+
+looks and behaves like
+
+\begin{example}{c}
+	struct pollfd pollset[2];
+	pollset[0].fd = fd1;
+	pollset[0].events = POLLIN;
+	pollset[1].fd = fd2;
+	pollset[1].events = POLLIN;
+	int n = poll(pollset, 2, 10 * 1000);
+	assert(n != -1);
+	for (i = 0; i < n; i++) {
+		...
+	}
+\end{example}
+
 
 \subsubsection[\routine{cqueues.sleep}]{\routine{cqueues.sleep(number)}}
 
@@ -622,32 +649,39 @@ Both the MIME header and MIME entity reader require a proper terminating conditi
 For MIME headers the next line should be non-$nil$ and should not appear to be a prefix of a header.
 
 \begin{example}{lua}
-local function isbreak(ln) -- requires *L, not *l
-	return find(ln, "\n", #ln, true) and not match(ln, "[%w%-_]+%s*:")
-end
+	local function isbreak(ln) -- requires *L, not *l
+		return find(ln, "\n", #ln, true) and not match(ln, "[%w%-_]+%s*:")
+	end
 \end{example}
 
 For MIME entities the next line should begin with the boundary text.
 
 \begin{example}{lua}
-local function isboundary(marker, ln)
-	local p, pe = find(ln, marker, 1, true)
+	local function isboundary(marker, ln)
+		local p, pe = find(ln, marker, 1, true)
 
-	if p == 1 then
-		if find(ln, "^\r?\n?$", pe + 1) then
-			return "begin"
-		elseif find(ln, "^--\r?\n?$", pe + 1) then
-			return "end"
+		if p == 1 then
+			if find(ln, "^\r?\n?$", pe + 1) then
+				return "begin"
+			elseif find(ln, "^--\r?\n?$", pe + 1) then
+				return "end"
+			end
 		end
-	end
 
-	return false
-end
+		return false
+	end
 \end{example}
 
+\subsubsection[\fn{socket:xread}]{\fn{socket:xread(format[, mode][, timeout])}}
+
+Like \method{socket:read}, but only takes a single format instead of a list of formats, and permits specifying an input mode and timeout. $mode$ should be in the format described at \method{socket:setmode}. $mode$ and $timeout$ are used only for the current read operation; they do not change the default mode and timeout for the socket.
 
 \subsubsection[\fn{socket:write}]{\fn{socket:write(...)}}
 Same as Lua \fn{file:write}.
+
+\subsubsection[\fn{socket:xwrite}]{\fn{socket:xwrite(string[, mode][, timeout])}}
+
+Like \method{socket:write}, but only takes a single string, and permits specifying an output mode and timeout. $mode$ should be in the format described at \method{socket:setmode}. $mode$ and $timeout$ are used only for the current write operation; they do not change the default mode and timeout for the socket.
 
 \subsubsection[\fn{socket:flush}]{\fn{socket:flush([mode][, timeout])}}
 Flushes the output buffer. Mode is one of the ``nlf'' flags described in \method{socket:setmode}. A nil mode implies ``n'', i.e.\ no buffering and effecting a full flush. An empty string mode resolves to the configured output buffering mode.
