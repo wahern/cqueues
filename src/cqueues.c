@@ -2125,20 +2125,22 @@ static int cqueue_step(lua_State *L) {
 
 	Q = cqueue_enter(L, &I, 1);
 
-	if (LIST_EMPTY(&Q->thread.pending)) {
-		timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
-	} else {
-		timeout = 0.0;
-	}
+	if (Q->thread.count) {
+		if (LIST_EMPTY(&Q->thread.pending)) {
+			timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
+		} else {
+			timeout = 0.0;
+		}
 
-	if ((error = kpoll_wait(&Q->kp, timeout))) {
-		err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
-		err_setcode(L, &I, error);
-		goto oops;
-	}
+		if ((error = kpoll_wait(&Q->kp, timeout))) {
+			err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
+			err_setcode(L, &I, error);
+			goto oops;
+		}
 
-	if (LUA_OK != cqueue_process(L, Q, &I))
-		goto oops;
+		if (LUA_OK != cqueue_process(L, Q, &I))
+			goto oops;
+	}
 
 	lua_pushboolean(L, 1);
 
