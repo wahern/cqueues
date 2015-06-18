@@ -1533,23 +1533,23 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 		if ((error = fifo_grow(&S->ibuf.fifo, prepbuf)))
 			return error;
 
-		while (fifo_wvec(&S->ibuf.fifo, &iov, 0)) {
-			if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
-				fifo_update(&S->ibuf.fifo, count);
+		fifo_wvec(&S->ibuf.fifo, &iov, 0);
 
-				if (S->type == SOCK_DGRAM) {
-					S->ibuf.eom = 1;
+		if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
+			fifo_update(&S->ibuf.fifo, count);
 
-					return 0;
-				}
-			} else {
-				switch (error) {
-				case EPIPE:
-					S->ibuf.eof = 1;
-				default:
-					return error;
-				} /* switch() */
+			if (S->type == SOCK_DGRAM) {
+				S->ibuf.eom = 1;
+
+				return 0;
 			}
+		} else {
+			switch (error) {
+			case EPIPE:
+				S->ibuf.eof = 1;
+			default:
+				return error;
+			} /* switch() */
 		}
 	}
 
