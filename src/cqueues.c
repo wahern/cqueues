@@ -2141,6 +2141,7 @@ static int cqueue_step(lua_State *L) {
 		if (LUA_OK != cqueue_process(L, Q, &I))
 			goto oops;
 	}
+
 	lua_pushboolean(L, 1);
 
 	return 1;
