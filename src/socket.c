@@ -1530,26 +1530,24 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 	prepbuf = (S->type == SOCK_DGRAM)? (SO_MIN(limit, 65536)) : 1;
 
 	while (fifo_rlen(&S->ibuf.fifo) < limit) {
-		if ((error = fifo_grow(&S->ibuf.fifo, prepbuf)))
+		if ((error = fifo_wbuf(&S->ibuf.fifo, &iov, prepbuf)))
 			return error;
 
-		while (fifo_wvec(&S->ibuf.fifo, &iov, 0)) {
-			if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
-				fifo_update(&S->ibuf.fifo, count);
+		if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
+			fifo_update(&S->ibuf.fifo, count);
 
-				if (S->type == SOCK_DGRAM) {
-					S->ibuf.eom = 1;
+			if (S->type == SOCK_DGRAM) {
+				S->ibuf.eom = 1;
 
-					return 0;
-				}
-			} else {
-				switch (error) {
-				case EPIPE:
-					S->ibuf.eof = 1;
-				default:
-					return error;
-				} /* switch() */
+				return 0;
 			}
+		} else {
+			switch (error) {
+			case EPIPE:
+				S->ibuf.eof = 1;
+			default:
+				return error;
+			} /* switch() */
 		}
 	}
 
