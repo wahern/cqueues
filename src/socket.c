@@ -1530,10 +1530,8 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 	prepbuf = (S->type == SOCK_DGRAM)? (SO_MIN(limit, 65536)) : 1;
 
 	while (fifo_rlen(&S->ibuf.fifo) < limit) {
-		if ((error = fifo_grow(&S->ibuf.fifo, prepbuf)))
+		if ((error = fifo_wbuf(&S->ibuf.fifo, &iov, prepbuf)))
 			return error;
-
-		fifo_wvec(&S->ibuf.fifo, &iov, 0);
 
 		if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
 			fifo_update(&S->ibuf.fifo, count);
