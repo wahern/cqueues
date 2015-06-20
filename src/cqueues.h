@@ -53,9 +53,19 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#ifndef __has_feature
+#define __has_feature(...) 0
+#endif
+
+#ifndef __has_extension
+#define __has_extension(...) 0
+#endif
+
 #ifndef __NetBSD_Prereq__
 #define __NetBSD_Prereq__(M, m, p) 0
 #endif
+
+#define GNUC_PREREQ(M, m) (defined __GNUC__ && ((__GNUC__ > M) || (__GNUC__ == M && __GNUC_MINOR__ >= m)))
 
 #define NETBSD_PREREQ(M, m) __NetBSD_Prereq__(M, m, 0)
 
@@ -422,7 +432,25 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 
 	return 0;
 #endif
-} /* cqs_pipe2() */
+} /* cqs_socketpair() */
+
+
+#ifndef HAVE_STATIC_ASSERT
+#define HAVE_STATIC_ASSERT (defined static_assert)
+#endif
+
+#ifndef HAVE__STATIC_ASSERT
+#define HAVE__STATIC_ASSERT (GNUC_PREREQ(4, 6) || __has_feature(c_static_assert) || __has_extension(c_static_assert))
+#endif
+
+#if HAVE_STATIC_ASSERT
+#define cqs_static_assert(cond, msg) static_assert(cond, msg)
+#elif HAVE__STATIC_ASSERT
+#define cqs_static_assert(cond, msg) _Static_assert(cond, msg)
+#else
+#define cqs_inline_assert(cond) (sizeof (int[1 - 2*!(cond)]))
+#define cqs_static_assert(cond, msg) extern char CQS_XPASTE(assert_, __LINE__)[cqs_inline_assert(cond)]
+#endif
 
 
 #ifndef STRERROR_R_CHAR_P
@@ -524,6 +552,10 @@ cqs_error_t cqs_sigmask(int, const sigset_t *, sigset_t *);
 #define endof(a) (&(a)[countof(a)])
 #endif
 
+#define cqs_ispowerof2(x) (((x) != 0) && (0 == (((x) - 1) & (x))))
+
+#define CQS_PASTE(x, y) x ## y
+#define CQS_XPASTE(x, y) CQS_PASTE(x, y)
 
 typedef int cqs_ref_t;
 

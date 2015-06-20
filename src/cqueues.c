@@ -24,13 +24,14 @@
  * ==========================================================================
  */
 #include <limits.h>	/* INT_MAX LONG_MAX */
-#include <stdarg.h>     /* va_list va_start va_end */
+#include <float.h>	/* FLT_RADIX */
+#include <stdarg.h>	/* va_list va_start va_end */
 #include <stddef.h>	/* NULL offsetof() size_t */
 #include <stdlib.h>	/* malloc(3) free(3) */
 #include <string.h>	/* memset(3) */
 #include <signal.h>	/* sigprocmask(2) pthread_sigmask(3) */
 #include <time.h>	/* struct timespec clock_gettime(3) */
-#include <math.h>	/* FP_* NAN fmax(3) fpclassify(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) ceil(3) */
+#include <math.h>	/* FP_* NAN fmax(3) fpclassify(3) isfinite(3) signbit(3) islessequal(3) isgreater(3) ceil(3) modf(3) */
 #include <errno.h>	/* errno */
 #include <assert.h>	/* assert */
 
@@ -189,15 +190,16 @@ static int clock_gettime(int clockid, struct timespec *ts) {
 
 
 static inline int f2ms(const double f) {
+	double ms;
+
 	switch (fpclassify(f)) {
 	case FP_NORMAL:
-		if (signbit(f)) {
+		if (signbit(f))
 			return 0;
-		} else if (f > INT_MAX / 1000) {
-			return INT_MAX;
-		}
 
-		return ((int)f * 1000) + ((int)ceil(f * 1000.0) % 1000);
+		ms = ceil(f * 1000);
+
+		return (ms > INT_MAX)? INT_MAX : ms;
 	case FP_SUBNORMAL:
 		return 1;
 	case FP_ZERO:
@@ -210,17 +212,30 @@ static inline int f2ms(const double f) {
 } /* f2ms() */
 
 static inline struct timespec *f2ts_(struct timespec *ts, const double f) {
+	double s, ns;
+
 	switch (fpclassify(f)) {
 	case FP_NORMAL:
-		if (signbit(f)) {
+		if (signbit(f))
 			return ts;
-		} else if (f > INT_MAX) {
-			ts->tv_sec = (time_t)INT_MAX;
+
+		ns = modf(f, &s);
+		ns = ceil(ns * 1000000000);
+
+		if (ns >= 1000000000) {
+			s++;
+			ns = 0;
+		}
+
+		cqs_static_assert(FLT_RADIX == 2, "FLT_RADIX != 2");
+		cqs_static_assert(cqs_ispowerof2((unsigned long)LONG_MAX + 1), "LONG_MAX + 1 not a power of 2");
+
+		if (s >= (unsigned long)LONG_MAX + 1) {
+			ts->tv_sec = LONG_MAX;
 			ts->tv_nsec = 0;
 		} else {
-			ts->tv_sec = (time_t)f;
-			/* SunPRO chokes on modulo here unless unsigned. */
-			ts->tv_nsec = (unsigned long)ceil(f * 1000000000.0) % 1000000000UL;
+			ts->tv_sec = s;
+			ts->tv_nsec = ns;
 		}
 
 		return ts;
@@ -2739,3 +2754,52 @@ int luaopen__cqueues(lua_State *L) {
 	return 1;
 } /* luaopen__cqueues() */
 
+
+/*
+ * D E B U G  &  U N I T  T E S T I N G  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+static int dbg_f2ms(lua_State *L) {
+	int ms = f2ms(luaL_checknumber(L, 1));
+
+	lua_pushinteger(L, ms);
+	lua_pushboolean(L, ms == INT_MAX);
+
+	return 2;
+} /* dbg_f2ms() */
+
+static int dbg_f2ts(lua_State *L) {
+	struct timespec *ts = f2ts(luaL_checknumber(L, 1));
+
+	if (!ts)
+		return 0;
+
+	lua_createtable(L, 0, 2);
+	lua_pushinteger(L, ts->tv_sec);
+	lua_setfield(L, -2, "tv_sec");
+	lua_pushinteger(L, ts->tv_nsec);
+	lua_setfield(L, -2, "tv_nsec");
+
+	lua_pushboolean(L, ts->tv_sec == LONG_MAX);
+
+	return 2;
+} /* dbg_f2ts() */
+
+static luaL_Reg dbg_globals[] = {
+	{ "f2ms", &dbg_f2ms },
+	{ "f2ts", &dbg_f2ts },
+	{ NULL,   NULL }
+}; /* dbg_globals[] */
+
+int luaopen__cqueues_debug(lua_State *L) {
+	luaL_newlib(L, dbg_globals);
+
+	lua_pushinteger(L, INT_MAX);
+	lua_setfield(L, -2, "INT_MAX");
+
+	lua_pushinteger(L, LONG_MAX);
+	lua_setfield(L, -2, "LONG_MAX");
+
+	return 1;
+} /* luaopen__cqueues_debug() */
