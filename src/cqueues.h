@@ -446,7 +446,7 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 #if HAVE_STATIC_ASSERT
 #define cqs_static_assert(cond, msg) static_assert(cond, msg)
 #elif HAVE__STATIC_ASSERT
-#define cqs_static_assert(cond, msg) _Static_assert(cond, msg)
+#define cqs_static_assert(cond, msg) EXTENSION _Static_assert(cond, msg)
 #else
 #define cqs_inline_assert(cond) (sizeof (int[1 - 2*!(cond)]))
 #define cqs_static_assert(cond, msg) extern char CQS_XPASTE(assert_, __LINE__)[cqs_inline_assert(cond)]
