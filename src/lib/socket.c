@@ -814,7 +814,7 @@ int so_reuseport(int fd, _Bool reuseport) {
 	(void)fd;
 	error = EOPNOTSUPP;
 #endif
-	if (error == EOPTNOTSUPP && !reuseport)
+	if (error == EOPNOTSUPP && !reuseport)
 		error = 0; /* already disabled */
 
 	return error;
