@@ -807,12 +807,17 @@ int so_reuseaddr(int fd, _Bool reuseaddr) {
 
 
 int so_reuseport(int fd, _Bool reuseport) {
+	int error;
 #if defined SO_REUSEPORT
-	return so_setboolopt(fd, SOL_SOCKET, SO_REUSEPORT, reuseport);
+	error = so_setboolopt(fd, SOL_SOCKET, SO_REUSEPORT, reuseport);
 #else
 	(void)fd;
-	return (reuseport)? EOPNOTSUPP : 0 /* already disabled */;
+	error = EOPNOTSUPP;
 #endif
+	if (error == EOPTNOTSUPP && !reuseport)
+		error = 0; /* already disabled */
+
+	return error;
 } /* so_reuseport() */
 
 
