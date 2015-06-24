@@ -7,6 +7,42 @@ unset IFS
 SRCDIR="$(cd "${0%%/*}/.." && pwd -L)"
 PATH="${PATH:-$(command -p getconf PATH)}:${SRCDIR}/mk"
 
+PROGNAME="${0##*/}"
+PROGNAME="${PROGNAME%.lua}"
+VERBOSE=1
+
+export VERBOSE PROGNAME
+
+usage() {
+	cat <<-EOF
+	Usage: ${0##*/} [-qvh]
+	  -q  do not emit informational messages
+	  -v  emit verbose informational messages
+	  -h  print this usage message
+
+	Report bugs to <william@25thandClement.com>
+	EOF
+}
+
+while getopts "qvh" OPTC; do
+	case "${OPTC}" in
+	q)
+		VERBOSE=0
+		;;
+	v)
+		VERBOSE=2
+		;;
+	h)
+		usage
+		exit 0
+		;;
+	?)
+		usage >&2
+		exit 1
+		;;
+	esac
+done
+
 lua51path="${SRCDIR}/regress/.local/share/5.1"
 lua51cpath="${SRCDIR}/regress/.local/lib/5.1"
 lua52path="${SRCDIR}/regress/.local/share/5.2"
@@ -29,5 +65,3 @@ export LUA_CPATH_5_3="${lua53cpath}/?.so;${LUA_CPATH_5_3:-;}"
 if [ ! -d "${SRCDIR}/regress/.local/lib/5.3" ]; then
 	export RUNLUA_R="${RUNLUA_R:=5.1-5.2}"
 fi
-
-export PROGNAME="${0##*/}"

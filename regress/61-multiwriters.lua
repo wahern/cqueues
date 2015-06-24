@@ -72,10 +72,11 @@ local function test(bufsiz)
 	loop:wrap(function ()
 		for buf in rd:lines(1024 * 1024) do
 			local ch = string.sub(buf, 1, 1)
+			local uniform = not buf:match(string.format("[^%s]", ch))
 
-			if buf:match(string.format("[^%s]", ch)) then
-				interleaved = true
-			end
+			interleaved = interleaved or not uniform
+
+			info("read %d bytes (interleaved:%s)", #buf, not uniform)
 		end
 	end)
 
@@ -84,9 +85,11 @@ local function test(bufsiz)
 	return interleaved
 end
 
+info"begin control test"
 check(test(4096) == true, "expected control test to interleave")
 info"control test OK"
 
+info"begin test case"
 check(test(-1) == false, "test case interleaved")
 info"test case OK"
 

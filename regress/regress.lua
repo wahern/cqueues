@@ -12,17 +12,68 @@ local regress = {
 	fileresult = auxlib.fileresult,
 }
 
-function regress.say(fmt, ...)
-	io.stderr:write(os.getenv"PROGNAME" or "regress", ": ", string.format(fmt, ...), "\n")
+local emit_progname = os.getenv"PROGNAME" or "regress"
+local emit_verbose = tonumber(os.getenv"VERBOSE" or 1)
+local emit_info = {}
+local emit_ll = 0
+
+local function emit(fmt, ...)
+	local msg = string.format(fmt, ...)
+
+	for txt, nl in msg:gmatch("([^\n]*)(\n?)") do
+		if emit_ll == 0 and #txt > 0 then
+			io.stderr:write(emit_progname, ": ")
+			emit_ll = #emit_progname + 2
+		end
+
+		io.stderr:write(txt, nl)
+
+		if nl == "\n" then
+			emit_ll = 0
+		else
+			emit_ll = emit_ll + #txt
+		end
+	end
+end -- emit
+
+local function emitln(fmt, ...)
+	if emit_ll > 0 then
+		emit"\n"
+	end
+
+	emit(fmt .. "\n", ...)
+end -- emitln
+
+local function emitinfo()
+	for _, txt in ipairs(emit_info) do
+		emitln("%s", txt)
+	end
+end -- emitinfo
+
+function regress.say(...)
+	emitln(...)
 end -- say
 
 function regress.panic(...)
-	regress.say(...)
+	emitinfo()
+	emitln(...)
 	os.exit(false)
 end -- panic
 
 function regress.info(...)
-	regress.say(...)
+	if emit_verbose > 1 then
+		emitln(...)
+	else
+		emit_info[#emit_info + 1] = string.format(...)
+
+		if emit_verbose > 0 then
+			if emit_ll > 78 then
+				emit"\n."
+			else
+				emit"."
+			end
+		end
+	end
 end -- info
 
 function regress.check(v, ...)
