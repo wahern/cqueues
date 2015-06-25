@@ -332,7 +332,7 @@ struct luasocket {
 	int todo, done;
 
 	struct {
-		SSL_CTX *ctx;
+		struct so_starttls config;
 	} tls;
 
 	struct {
@@ -820,14 +820,14 @@ static lso_error_t lso_checktodo(struct luasocket *S) {
 		} else if (todo & LSO_DO_STARTTLS) {
 			so_clear(S->socket);
 
-			if ((error = so_starttls(S->socket, S->tls.ctx)))
+			if ((error = so_starttls(S->socket, &S->tls.config)))
 				return error;
 
 			S->done |= LSO_DO_STARTTLS;
 
-			if (S->tls.ctx) {
-				SSL_CTX_free(S->tls.ctx);
-				S->tls.ctx = NULL;
+			if (S->tls.config.context) {
+				SSL_CTX_free(S->tls.config.context);
+				S->tls.config.context = NULL;
 			}
 		}
 	}
@@ -1027,12 +1027,12 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 
 	ctx = luaL_testudata(L, 2, "SSL_CTX*");
 
-	if (ctx && *ctx && *ctx != S->tls.ctx) {
-		if (S->tls.ctx)
-			SSL_CTX_free(S->tls.ctx);
+	if (ctx && *ctx && *ctx != S->tls.config.context) {
+		if (S->tls.config.context)
+			SSL_CTX_free(S->tls.config.context);
 
 		CRYPTO_add(&(*ctx)->references, 1, CRYPTO_LOCK_SSL_CTX);
-		S->tls.ctx = *ctx;
+		S->tls.config.context = *ctx;
 	}
 
 	S->todo |= LSO_DO_STARTTLS;
@@ -2780,9 +2780,9 @@ static lso_nargs_t lso_stat(lua_State *L) {
 static void lso_destroy(lua_State *L, struct luasocket *S) {
 	cqs_unref(L, &S->onerror);
 
-	if (S->tls.ctx) {
-		SSL_CTX_free(S->tls.ctx);
-		S->tls.ctx = NULL;
+	if (S->tls.config.context) {
+		SSL_CTX_free(S->tls.config.context);
+		S->tls.config.context = NULL;
 	}
 
 	fifo_reset(&S->ibuf.fifo);

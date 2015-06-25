@@ -20,14 +20,17 @@ cq:wrap(function()
 	ctx:setPrivateKey(key)
 
 	check(fileresult(A:write("unsecure\n")))
+	info"(S) initiating TLS handshake"
 	A:starttls(ctx)
+	info"(S) handshake complete"
 	check(fileresult(A:write("secure\n")))
 end)
 
 cq:wrap(function()
 	check(check(fileresult(B:read())) == "unsecure")
-	info("starting TLS")
+	info"(C) initiating TLS handshake"
 	check(fileresult(B:starttls()))
+	info"(C) handshake complete"
 	check(check(fileresult(B:read())) == "secure")
 end)
 

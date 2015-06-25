@@ -1979,8 +1979,8 @@ error:
 } /* so_accept() */
 
 
-int so_starttls(struct socket *so, SSL_CTX *ctx) {
-	SSL_CTX *tmp = 0;
+int so_starttls(struct socket *so, const struct so_starttls *cfg) {
+	SSL_CTX *ctx = cfg->context, *tmp = NULL;
 	const SSL_METHOD *method;
 
 	if (so->done & SO_S_STARTTLS)
@@ -2010,7 +2010,9 @@ int so_starttls(struct socket *so, SSL_CTX *ctx) {
 
 	ERR_clear_error();
 
-	if (!ctx && !(ctx = tmp = SSL_CTX_new(SSLv23_method())))
+	method = (cfg->method)? cfg->method : SSLv23_method();
+
+	if (!ctx && !(ctx = tmp = SSL_CTX_new(method)))
 		goto error;
 
 	if (!(so->ssl.ctx = SSL_new(ctx)))

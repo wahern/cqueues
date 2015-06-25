@@ -59,10 +59,9 @@
 
 #define SOCKET_VENDOR "william@25thandClement.com"
 
-#define SOCKET_V_REL  0x20150622
-#define SOCKET_V_ABI  0x20150617
-#define SOCKET_V_API  0x20150617
-
+#define SOCKET_V_REL  0x20150625
+#define SOCKET_V_ABI  0x20150625
+#define SOCKET_V_API  0x20150625
 
 const char *socket_vendor(void);
 
@@ -520,7 +519,15 @@ int so_listen(struct socket *);
 
 int so_accept(struct socket *, struct sockaddr *, socklen_t *, int *);
 
-int so_starttls(struct socket *, SSL_CTX *);
+struct so_starttls {
+	SSL_METHOD *method;
+	SSL_CTX *context;
+	SSL *instance; /* TODO */
+
+	struct iovec pushback;
+}; /* struct so_starttls */
+
+int so_starttls(struct socket *, const struct so_starttls *);
 
 SSL *so_checktls(struct socket *);
 
