@@ -1163,8 +1163,16 @@ struct socket {
 		int state;
 		_Bool accept;
 		_Bool vrfd;
-		char *host;
 	} ssl;
+
+	struct {
+		int error;
+
+		struct {
+			void *data;
+			unsigned char *p, *pe;
+		} ahead;
+	} bio;
 
 	struct {
 		int ncalls;
@@ -1371,6 +1379,8 @@ error:
 } /* so_connect_() */
 
 
+static BIO *so_newbio(struct socket *, int *);
+
 static int so_starttls_(struct socket *so) {
 	X509 *peer;
 	int rval, error;
@@ -1402,9 +1412,13 @@ static int so_starttls_(struct socket *so) {
 
 			SSL_set_bio(so->ssl.ctx, bio, bio);
 			SSL_set_read_ahead(so->ssl.ctx, 1);
-		} else if (1 != SSL_set_fd(so->ssl.ctx, so->fd)) {
-			error = SO_EOPENSSL;
-			goto error;
+		} else {
+			BIO *bio;
+
+			if (!(bio = so_newbio(so, &error)))
+				goto error;
+
+			SSL_set_bio(so->ssl.ctx, bio, bio);
 		}
 
 		if (so->ssl.accept) {
@@ -1707,6 +1721,8 @@ error:
 } /* so_make() */
 
 
+static void so_resetssl(struct socket *);
+
 static int so_destroy(struct socket *so) {
 	ssl_discard(&so->ssl.ctx);
 
@@ -1979,9 +1995,23 @@ error:
 } /* so_accept() */
 
 
+static void so_resetssl(struct socket *so) {
+	ssl_discard(&so->ssl.ctx);
+	so->ssl.state  = 0;
+	so->ssl.error  = 0;
+	so->ssl.accept = 0;
+	so->ssl.vrfd   = 0;
+
+	free(so->bio.ahead.data);
+	so->bio.ahead.data = NULL;
+	so->bio.ahead.p = NULL;
+	so->bio.ahead.pe = NULL;
+} /* so_resetssl() */
+
 int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_CTX *ctx = cfg->context, *tmp = NULL;
 	const SSL_METHOD *method;
+	int error;
 
 	if (so->done & SO_S_STARTTLS)
 		return 0;
@@ -1989,34 +2019,36 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	if (so->todo & SO_S_STARTTLS)
 		goto check;
 
-	/*
-	 * reset SSL state
-	 */
-	ssl_discard(&so->ssl.ctx);
-	so->ssl.state  = 0;
-	so->ssl.error  = 0;
-	so->ssl.accept = 0;
-	so->ssl.vrfd   = 0;
+	so_resetssl(so);
 
 	/*
-	 * NOTE: Store any error in so->ssl.error because callers expect to
-	 * call-and-forget this routine, similar to so_connect() and
-	 * so_listen(). Likewise, commit to the SO_S_STARTTLS state at this
-	 * point, no matter whether we can allocate the proper objects, so
-	 * any errors will persist--so_starttls_() immediately returns if
-	 * so->ssl.error is set.
+	 * NOTE: Commit to the SO_S_STARTTLS state at this point, no matter
+	 * whether we can allocate the proper objects, so any errors will
+	 * persist. so_starttls_() immediately returns if so->ssl.error is
+	 * set. See NOTE at error label below.
 	 */
 	so->todo |= SO_S_STARTTLS;
+
+	if (cfg->pushback.iov_len > 0) {
+		if (!(so->bio.ahead.data = malloc(cfg->pushback.iov_len))) {
+			error = errno;
+			goto error;
+		}
+
+		memcpy(so->bio.ahead.data, cfg->pushback.iov_base, cfg->pushback.iov_len);
+		so->bio.ahead.p = so->bio.ahead.data;
+		so->bio.ahead.pe = so->bio.ahead.p + cfg->pushback.iov_len;
+	}
 
 	ERR_clear_error();
 
 	method = (cfg->method)? cfg->method : SSLv23_method();
 
 	if (!ctx && !(ctx = tmp = SSL_CTX_new(method)))
-		goto error;
+		goto eossl;
 
 	if (!(so->ssl.ctx = SSL_new(ctx)))
-		goto error;
+		goto eossl;
 
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
@@ -2035,7 +2067,7 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 
 	if (!so->ssl.accept && so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
 		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))
-			goto error;
+			goto eossl;
 	}
 
 	if (tmp)
@@ -2043,8 +2075,15 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 
 check:
 	return so_exec(so);
+eossl:
+	error = SO_EOPENSSL;
 error:
-	so->ssl.error = SO_EOPENSSL;
+	/*
+	 * NOTE: Store any error in so->ssl.error because callers expect to
+	 * call-and-forget this routine, similar to so_connect() and
+	 * so_listen(), but we still need to replay the error.
+	 */
+	so->ssl.error = error;
 
 	if (tmp)
 		SSL_CTX_free(tmp);
@@ -2076,6 +2115,247 @@ int so_shutdown(struct socket *so, int how) {
 
 	return so_exec(so);
 } /* so_shutdown() */
+
+
+static size_t so_sysread(struct socket *so, void *dst, size_t lim, int *error) {
+	long len;
+
+	so->events &= ~POLLIN;
+retry:
+#if _WIN32
+	len = recv(so->fd, dst, SO_MIN(lim, LONG_MAX), 0);
+#else
+	len = read(so->fd, dst, SO_MIN(lim, LONG_MAX));
+#endif
+
+	if (len == -1)
+		goto error;
+	if (len == 0)
+		goto epipe;
+
+	return len;
+epipe:
+	*error = EPIPE;
+	so->st.rcvd.eof = 1;
+
+	return 0;
+error:
+	*error = so_soerr();
+
+	switch (*error) {
+	case SO_EINTR:
+		goto retry;
+#if SO_EWOULDBLOCK != SO_EAGAIN
+	case SO_EWOULDBLOCK:
+		*error = SO_EAGAIN;
+		/* FALL THROUGH */
+#endif
+	case SO_EAGAIN:
+		so->events |= POLLIN;
+		break;
+	} /* switch() */
+
+	return 0;
+} /* so_sysread() */
+
+static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *error) {
+	long count;
+
+	so->events &= ~POLLOUT;
+
+	if (so->st.sent.eof) {
+		*error = EPIPE;
+		return 0;
+	}
+
+//	so_pipeign(so, 0);
+retry:
+#if _WIN32
+	count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
+#else
+#if defined(MSG_NOSIGNAL)
+	if (S_ISSOCK(so->mode) && so->opts.fd_nosigpipe) {
+		count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
+	} else {
+		count = write(so->fd, src, SO_MIN(len, LONG_MAX));
+	}
+#else
+	count = write(so->fd, src, SO_MIN(len, LONG_MAX));
+#endif
+#endif
+
+	if (count == -1)
+		goto error;
+
+//	so_pipeok(so, 0);
+
+	return count;
+error:
+	*error = so_soerr();
+
+	switch (*error) {
+	case EPIPE:
+		so->st.sent.eof = 1;
+		break;
+	case SO_EINTR:
+		goto retry;
+#if SO_EWOULDBLOCK != SO_EAGAIN
+	case SO_EWOULDBLOCK:
+		*error = SO_EAGAIN;
+		/* FALL THROUGH */
+#endif
+	case SO_EAGAIN:
+		so->events |= POLLOUT;
+		break;
+	} /* switch() */
+
+//	so_pipeok(so, 0);
+
+	return 0;
+} /* so_syswrite() */
+
+
+static _Bool bio_nonfatal(int error) {
+	switch (error) {
+	case SO_EAGAIN:
+	case SO_EALREADY:
+	case SO_EINPROGRESS:
+	case SO_EINTR:
+	case SO_ENOTCONN:
+		return 1;
+	default:
+		return 0;
+	}
+} /* bio_nonfatal() */
+
+static int bio_read(BIO *bio, char *dst, int lim) {
+	struct socket *so = bio->ptr;
+	size_t count;
+
+	assert(so);
+	assert(lim >= 0);
+
+	BIO_clear_retry_flags(bio);
+	so->bio.error = 0;
+
+	if (so->bio.ahead.p < so->bio.ahead.pe) {
+		count = SO_MIN(so->bio.ahead.pe - so->bio.ahead.p, lim);
+		memcpy(dst, so->bio.ahead.p, count);
+		so->bio.ahead.p += count;
+
+		return count;
+	}
+
+	if ((count = so_sysread(so, dst, lim, &so->bio.error)))
+		return (int)count;
+
+	if (bio_nonfatal(so->bio.error))
+		BIO_set_retry_read(bio);
+
+	return (so->bio.error == EPIPE)? 0 : -1;
+} /* bio_read() */
+
+static int bio_write(BIO *bio, const char *src, int len) {
+	struct socket *so = bio->ptr;
+	size_t count;
+
+	assert(so);
+	assert(len >= 0);
+
+	BIO_clear_retry_flags(bio);
+	so->bio.error;
+
+	if ((count = so_syswrite(so, src, len, &so->bio.error)))
+		return (int)count;
+
+	if (bio_nonfatal(so->bio.error))
+		BIO_set_retry_write(bio);
+
+	return -1;
+} /* bio_write() */
+
+static int bio_puts(BIO *bio, const char *src) {
+	size_t len = strlen(src);
+
+	return bio_write(bio, src, (int)SO_MIN(len, INT_MAX));
+} /* bio_puts() */
+
+static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
+	(void)bio;
+	(void)udata_i;
+
+	switch (cmd) {
+	case BIO_CTRL_DUP: {
+		/*
+		 * We'll permit duping, just like all the other BIOs do by
+		 * default and so we don't inadvertently break something.
+		 * But we won't copy our state because our memory management
+		 * assumes 1:1 mapping between BIO and socket objects. And
+		 * just to be safe, zero the state members. BIO_dup_chain,
+		 * for example, has a hack to always copy .init and .num.
+		 */
+		BIO *udata = udata_p;
+		udata->init = 0;
+		udata->num = 0;
+		udata->ptr = NULL;
+
+		return 1;
+	}
+	case BIO_CTRL_FLUSH:
+		return 1;
+	default:
+		/*
+		 * BIO_ctrl manual page says
+		 *
+		 * 	Source/sink BIOs return an 0 if they do not
+		 * 	recognize the BIO_ctrl() operation.
+		 */
+		return 0;
+	} /* switch() */
+} /* bio_ctrl() */
+
+static int bio_create(BIO *bio) {
+	bio->init = 0;
+	bio->shutdown = 0;
+	bio->num = 0;
+	bio->ptr = NULL;
+
+	return 1;
+} /* bio_create() */
+
+static int bio_destroy(BIO *bio) {
+	bio->init = 0;
+	bio->shutdown = 0;
+	bio->num = 0;
+	bio->ptr = NULL;
+
+	return 1;
+} /* bio_destroy() */
+
+static BIO_METHOD bio_methods = {
+	BIO_TYPE_SOURCE_SINK,
+	"struct socket*",
+	bio_write,
+	bio_read,
+	bio_puts,
+	NULL,
+	bio_ctrl,
+	bio_create,
+	bio_destroy,
+	NULL,
+};
+
+static BIO *so_newbio(struct socket *so, int *error) {
+	BIO *bio;
+
+	if (!(bio = BIO_new(&bio_methods)))
+		*error = SO_EOPENSSL;
+
+	bio->init = 1;
+	bio->ptr = so;
+
+	return bio;
+} /* so_newbio() */
 
 
 size_t so_read(struct socket *so, void *dst, size_t lim, int *error_) {
