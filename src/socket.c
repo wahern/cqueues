@@ -299,14 +299,15 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_MAXLINE 4096
 #define LSO_INFSIZ  ((size_t)-1)
 
-#define LSO_LINEBUF 0x01
-#define LSO_FULLBUF 0x02
-#define LSO_NOBUF   0x04
-#define LSO_ALLBUF  (LSO_LINEBUF|LSO_FULLBUF|LSO_NOBUF)
-#define LSO_TEXT    0x08
-#define LSO_BINARY  0x10
+#define LSO_LINEBUF   0x01
+#define LSO_FULLBUF   0x02
+#define LSO_NOBUF     0x04
+#define LSO_ALLBUF    (LSO_LINEBUF|LSO_FULLBUF|LSO_NOBUF)
+#define LSO_TEXT      0x08
+#define LSO_BINARY    0x10
+#define LSO_AUTOFLUSH 0x20
 
-#define LSO_INITMODE  (LSO_LINEBUF|LSO_TEXT)
+#define LSO_INITMODE  (LSO_LINEBUF|LSO_TEXT|LSO_AUTOFLUSH)
 #define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
 #define LSO_WRMASK(m) (m)
 
@@ -323,7 +324,17 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_NAN (__builtin_nan(""))
 #endif
 
+#define LSO_DO_TLSPURGE 0x01 /* purge input buffer before starttls */
+#define LSO_DO_TLSFLUSH 0x02 /* flush output buffer before starttls */
+#define LSO_DO_STARTTLS 0x04 /* initiate starttls */
+
 struct luasocket {
+	int todo, done;
+
+	struct {
+		SSL_CTX *ctx;
+	} tls;
+
 	struct {
 		int mode;
 		size_t maxline;
@@ -713,7 +724,9 @@ static void lso_pushmode(lua_State *L, int mode, _Bool libc) {
 		else
 			flag[1] = '-';
 
-		lua_pushlstring(L, flag, 2);
+		flag[2] = (mode & LSO_AUTOFLUSH)? 'a' : 'A';
+
+		lua_pushlstring(L, flag, 3);
 	}
 } /* lso_pushmode() */
 
@@ -784,6 +797,43 @@ static lso_error_t lso_adjbufs(struct luasocket *S) {
 static lso_error_t lso_prepsocket(struct luasocket *S) {
 	return lso_adjbufs(S);
 } /* lso_prepsocket() */
+
+
+static lso_error_t lso_doflush(struct luasocket *, int);
+
+static lso_error_t lso_checktodo(struct luasocket *S) {
+	int todo, error;
+
+	while ((todo = (S->todo & ~S->done))) {
+		if (todo & LSO_DO_TLSPURGE) {
+			fifo_purge(&S->ibuf.fifo);
+			S->ibuf.eom = 0;
+
+			S->done |= LSO_DO_TLSPURGE;
+		} else if (todo & LSO_DO_TLSFLUSH) {
+			so_clear(S->socket);
+
+			if ((error = lso_doflush(S, LSO_NOBUF)))
+				return error;
+
+			S->done |= LSO_DO_TLSFLUSH;
+		} else if (todo & LSO_DO_STARTTLS) {
+			so_clear(S->socket);
+
+			if ((error = so_starttls(S->socket, S->tls.ctx)))
+				return error;
+
+			S->done |= LSO_DO_STARTTLS;
+
+			if (S->tls.ctx) {
+				SSL_CTX_free(S->tls.ctx);
+				S->tls.ctx = NULL;
+			}
+		}
+	}
+
+	return 0;
+} /* lso_checktodo() */
 
 
 static lso_nargs_t lso_connect2(lua_State *L) {
@@ -964,21 +1014,46 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
-	SSL_CTX **ctx = luaL_testudata(L, 2, "SSL_CTX*");
+	SSL_CTX **ctx;
 	int error;
 
-	so_clear(S->socket);
+	/*
+	 * NB: short-circuit if we've already started so we don't
+	 * unnecessarily check for or take a reference to the SSL_CTX
+	 * object.
+	 */
+	if ((S->todo & LSO_DO_STARTTLS))
+		goto check;
 
-	if (!(error = so_starttls(S->socket, (ctx)? *ctx : 0))) {
-		lua_pushvalue(L, 1);
+	ctx = luaL_testudata(L, 2, "SSL_CTX*");
 
-		return 1;
-	} else {
-		lua_pushnil(L);
-		lua_pushinteger(L, error);
+	if (ctx && *ctx && *ctx != S->tls.ctx) {
+		if (S->tls.ctx)
+			SSL_CTX_free(S->tls.ctx);
 
-		return 2;
+		CRYPTO_add(&(*ctx)->references, 1, CRYPTO_LOCK_SSL_CTX);
+		S->tls.ctx = *ctx;
 	}
+
+	S->todo |= LSO_DO_STARTTLS;
+
+	if (S->ibuf.mode & LSO_AUTOFLUSH)
+		S->todo |= LSO_DO_TLSPURGE;
+
+	if (S->obuf.mode & LSO_AUTOFLUSH)
+		S->todo |= LSO_DO_TLSFLUSH;
+check:
+	if ((error = lso_checktodo(S)))
+		goto error;
+
+	lua_pushvalue(L, 1);
+
+	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 2;
 } /* lso_starttls() */
 
 
@@ -1814,13 +1889,48 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 	return (iobuf).error; \
 } while (0)
 
-static int lso_checkrcverrs(lua_State *L, struct luasocket *S) {
+static lso_error_t lso_checkrcverrs(lua_State *L, struct luasocket *S) {
 	LSO_CHECKERRS(L, S->ibuf);
 } /* lso_checkrcverrs() */
 
-static int lso_checksnderrs(lua_State *L, struct luasocket *S) {
+static lso_error_t lso_checksnderrs(lua_State *L, struct luasocket *S) {
 	LSO_CHECKERRS(L, S->obuf);
 } /* lso_checksnderrs() */
+
+
+static lso_error_t lso_preprcv(lua_State *L, struct luasocket *S) {
+	int error;
+
+	if ((error = lso_checkrcverrs(L, S)))
+		return error;
+
+	if ((error = lso_checktodo(S)))
+		return error;
+
+	so_clear(S->socket);
+
+	if (S->obuf.mode & LSO_AUTOFLUSH) {
+		switch ((error = lso_doflush(S, LSO_NOBUF))) {
+		case EAGAIN:
+			break;
+		case EPIPE:
+			break;
+		default:
+			return error;
+		}
+	}
+
+	return 0;
+} /* lso_preprcv() */
+
+static lso_error_t lso_prepsnd(lua_State *L, struct luasocket *S) {
+	int error;
+
+	if ((error = lso_checksnderrs(L, S)))
+		return error;
+
+	return lso_checktodo(S);
+} /* lso_prepsnd() */
 
 
 static lso_nargs_t lso_recv3(lua_State *L) {
@@ -1830,14 +1940,12 @@ static lso_nargs_t lso_recv3(lua_State *L) {
 	size_t count;
 	int error;
 
-	if ((error = lso_checkrcverrs(L, S)))
+	if ((error = lso_preprcv(L, S)))
 		goto error;
 
 	lua_settop(L, 3);
 
 	op = lso_checkrcvop(L, 2, lso_imode(luaL_optstring(L, 3, ""), S->ibuf.mode));
-
-	so_clear(S->socket);
 
 	switch (op.type) {
 	case LSO_NUMBER:
@@ -2046,13 +2154,14 @@ static lso_error_t lso_doflush(struct luasocket *S, int mode) {
 	int error;
 
 	if (mode & LSO_LINEBUF) {
-		if (S->obuf.eol > 0)
+		if (S->obuf.eol > 0) {
 			amount = S->obuf.eol;
-		else if (fifo_rlen(&S->obuf.fifo) > S->obuf.maxline)
+		} else if (fifo_rlen(&S->obuf.fifo) >= S->obuf.maxline) {
 			amount = S->obuf.maxline;
+		}
 	} else if (mode & LSO_FULLBUF) {
-		if (fifo_rlen(&S->obuf.fifo) > S->obuf.bufsiz)
-			amount = S->obuf.bufsiz;
+		amount = fifo_rlen(&S->obuf.fifo);
+		amount -= amount % S->obuf.bufsiz;
 	} else if (mode & LSO_NOBUF) {
 		amount = fifo_rlen(&S->obuf.fifo);
 	}
@@ -2088,7 +2197,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	size_t tp, p, pe, end, n;
 	int mode, byline, error;
 
-	if ((error = lso_checksnderrs(L, S))) {
+	if ((error = lso_prepsnd(L, S))) {
 		lua_pushnumber(L, 0);
 		lua_pushinteger(L, error);
 
@@ -2169,7 +2278,7 @@ static lso_nargs_t lso_flush(lua_State *L) {
 	int mode = lso_imode(luaL_optstring(L, 2, "n"), S->obuf.mode);
 	int error;
 
-	if ((error = lso_checksnderrs(L, S)) || (error = lso_doflush(S, mode))) {
+	if ((error = lso_prepsnd(L, S)) || (error = lso_doflush(S, mode))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
@@ -2217,7 +2326,7 @@ static lso_nargs_t lso_sendfd3(lua_State *L) {
 	luaL_Stream *fh;
 	int fd, error;
 
-	if ((error = lso_checksnderrs(L, S)))
+	if ((error = lso_prepsnd(L, S)))
 		goto error;
 
 	lua_settop(L, 3);
@@ -2254,7 +2363,7 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	struct so_options opts;
 	int fd = -1, error;
 
-	if ((error = lso_checkrcverrs(L, S)))
+	if ((error = lso_preprcv(L, S)))
 		goto error;
 
 	if ((error = fifo_grow(&S->ibuf.fifo, bufsiz)))
@@ -2263,8 +2372,6 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	fifo_wvec(&S->ibuf.fifo, &iov, 1);
 
 	msg = so_fdmsg(iov.iov_base, iov.iov_len, -1);
-
-	so_clear(S->socket);
 
 #if defined MSG_CMSG_CLOEXEC
 	if ((error = so_recvmsg(S->socket, msg, MSG_CMSG_CLOEXEC)))
@@ -2315,7 +2422,7 @@ static lso_nargs_t lso_pack4(lua_State *L) {
 	unsigned count;
 	int mode, error;
 
-	if ((error = lso_checksnderrs(L, S)))
+	if ((error = lso_prepsnd(L, S)))
 		goto error;
 
 	lua_settop(L, 4);
@@ -2349,14 +2456,12 @@ static lso_nargs_t lso_unpack2(lua_State *L) {
 	unsigned count;
 	int error;
 
-	if ((error = lso_checkrcverrs(L, S)))
+	if ((error = lso_preprcv(L, S)))
 		goto error;
 
 	lua_settop(L, 2);
 
 	count = luaL_optunsigned(L, 2, 32);
-
-	so_clear(S->socket);
 
 	if (fifo_rbits(&S->ibuf.fifo) < count) {
 		size_t rem = ((count - fifo_rbits(&S->ibuf.fifo)) + 7U) / 8U;
@@ -2390,7 +2495,7 @@ static lso_nargs_t lso_fill2(lua_State *L) {
 	size_t size = lso_checksize(L, 2);
 	int error;
 
-	if ((error = lso_checkrcverrs(L, S)) || (error = lso_fill(S, size))) {
+	if ((error = lso_preprcv(L, S)) || (error = lso_fill(S, size))) {
 		lua_pushboolean(L, 0);
 		lua_pushinteger(L, error);
 
@@ -2674,6 +2779,11 @@ static lso_nargs_t lso_stat(lua_State *L) {
 
 static void lso_destroy(lua_State *L, struct luasocket *S) {
 	cqs_unref(L, &S->onerror);
+
+	if (S->tls.ctx) {
+		SSL_CTX_free(S->tls.ctx);
+		S->tls.ctx = NULL;
+	}
 
 	fifo_reset(&S->ibuf.fifo);
 	fifo_reset(&S->obuf.fifo);
