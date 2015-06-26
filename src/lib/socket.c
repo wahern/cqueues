@@ -2010,7 +2010,7 @@ static void so_resetssl(struct socket *so) {
 
 int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_CTX *ctx, *tmp = NULL;
-	SSL_METHOD *method;
+	const SSL_METHOD *method;
 	int error;
 
 	if (so->done & SO_S_STARTTLS)
@@ -2047,7 +2047,7 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	if (!(ctx = cfg->context)) {
 		method = (cfg->method)? cfg->method : SSLv23_method();
 
-		if (!(ctx = tmp = SSL_CTX_new(method)))
+		if (!(ctx = tmp = SSL_CTX_new((SSL_METHOD *)method)))
 			goto eossl;
 	}
 
