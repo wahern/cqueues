@@ -12,7 +12,7 @@ local function starttls(autoflush, pushback)
 	local A, B = check(fileresult(socket.pair()))
 	local cv = condition.new()
 	local key, crt = genkey()
-	local ctx = context.new("TLSv1", true)
+	local ctx = context.new("SSLv23", true)
 	local text_unsecure = "unsecure"
 	local text_secure = "secure"
 

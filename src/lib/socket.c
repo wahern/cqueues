@@ -2010,7 +2010,7 @@ static void so_resetssl(struct socket *so) {
 
 int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_CTX *ctx, *tmp = NULL;
-	const SSL_METHOD *method;
+	SSL_METHOD *method;
 	int error;
 
 	if (so->done & SO_S_STARTTLS)
