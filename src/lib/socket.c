@@ -2221,7 +2221,7 @@ static _Bool bio_nonfatal(int error) {
 	case SO_EALREADY:
 	case SO_EINPROGRESS:
 	case SO_EINTR:
-	case SO_ENOTCONN:
+	case SO_ENOTCONN: /* FIXME (bss_sock.c has this but is it correct?) */
 		return 1;
 	default:
 		return 0;

@@ -306,8 +306,9 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_TEXT      0x08
 #define LSO_BINARY    0x10
 #define LSO_AUTOFLUSH 0x20
+#define LSO_PUSHBACK  0x40
 
-#define LSO_INITMODE  (LSO_LINEBUF|LSO_TEXT|LSO_AUTOFLUSH)
+#define LSO_INITMODE  (LSO_LINEBUF|LSO_TEXT|LSO_AUTOFLUSH|LSO_PUSHBACK)
 #define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
 #define LSO_WRMASK(m) (m)
 
@@ -324,14 +325,14 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_NAN (__builtin_nan(""))
 #endif
 
-#define LSO_DO_TLSPURGE 0x01 /* purge input buffer before starttls */
-#define LSO_DO_TLSFLUSH 0x02 /* flush output buffer before starttls */
-#define LSO_DO_STARTTLS 0x04 /* initiate starttls */
+#define LSO_DO_FLUSH    0x01 /* flush output buffer */
+#define LSO_DO_STARTTLS 0x02 /* initiate starttls */
 
 struct luasocket {
 	int todo, done;
 
 	struct {
+		_Bool once;
 		struct so_starttls config;
 	} tls;
 
@@ -688,6 +689,18 @@ static int lso_imode(const char *str, int init) {
 		case 'b':
 			mode = LSO_BINARY | (mode & ~LSO_TEXT);
 			break;
+		case 'a':
+			mode |= LSO_AUTOFLUSH;
+			break;
+		case 'A':
+			mode &= ~LSO_AUTOFLUSH;
+			break;
+		case 'p':
+			mode |= LSO_PUSHBACK;
+			break;
+		case 'P':
+			mode &= ~LSO_PUSHBACK;
+			break;
 		} /* switch() */
 	} /* while() */
 
@@ -805,30 +818,41 @@ static lso_error_t lso_checktodo(struct luasocket *S) {
 	int todo, error;
 
 	while ((todo = (S->todo & ~S->done))) {
-		if (todo & LSO_DO_TLSPURGE) {
-			fifo_purge(&S->ibuf.fifo);
-			S->ibuf.eom = 0;
-
-			S->done |= LSO_DO_TLSPURGE;
-		} else if (todo & LSO_DO_TLSFLUSH) {
+		if (todo & LSO_DO_FLUSH) {
 			so_clear(S->socket);
 
 			if ((error = lso_doflush(S, LSO_NOBUF)))
 				return error;
 
-			S->done |= LSO_DO_TLSFLUSH;
+			S->done |= LSO_DO_FLUSH;
 		} else if (todo & LSO_DO_STARTTLS) {
 			so_clear(S->socket);
 
-			if ((error = so_starttls(S->socket, &S->tls.config)))
-				return error;
+			if (!S->tls.once) {
+				S->tls.once = 1;
 
-			S->done |= LSO_DO_STARTTLS;
+				if (S->ibuf.mode & LSO_PUSHBACK)
+					fifo_rvec(&S->ibuf.fifo, &S->tls.config.pushback, 1);
+
+				error = so_starttls(S->socket, &S->tls.config);
+
+				if (S->ibuf.mode & LSO_PUSHBACK) {
+					fifo_purge(&S->ibuf.fifo);
+					S->ibuf.eom = 0;
+				}
+			} else {
+				error = so_starttls(S->socket, NULL);
+			}
 
 			if (S->tls.config.context) {
 				SSL_CTX_free(S->tls.config.context);
 				S->tls.config.context = NULL;
 			}
+
+			if (error)
+				return error;
+
+			S->done |= LSO_DO_STARTTLS;
 		}
 	}
 
@@ -1037,11 +1061,8 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 
 	S->todo |= LSO_DO_STARTTLS;
 
-	if (S->ibuf.mode & LSO_AUTOFLUSH)
-		S->todo |= LSO_DO_TLSPURGE;
-
 	if (S->obuf.mode & LSO_AUTOFLUSH)
-		S->todo |= LSO_DO_TLSFLUSH;
+		S->todo |= LSO_DO_FLUSH;
 check:
 	if ((error = lso_checktodo(S)))
 		goto error;
