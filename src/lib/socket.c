@@ -616,7 +616,7 @@ static so_error_t so_ffamily(int fd, int *family) {
 } /* so_ffamily() */
 
 
-static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *protocol __attribute__((unused))) {
+static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *protocol) {
 	struct stat st;
 	int error;
 
@@ -649,6 +649,8 @@ static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *pr
 		if (errno != ENOPROTOOPT)
 			return errno;
 	}
+#else
+	(void)protocol;
 #endif
 
 	return 0;
