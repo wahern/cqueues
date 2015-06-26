@@ -2009,7 +2009,7 @@ static void so_resetssl(struct socket *so) {
 } /* so_resetssl() */
 
 int so_starttls(struct socket *so, const struct so_starttls *cfg) {
-	SSL_CTX *ctx = cfg->context, *tmp = NULL;
+	SSL_CTX *ctx, *tmp = NULL;
 	const SSL_METHOD *method;
 	int error;
 
@@ -2018,6 +2018,8 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 
 	if (so->todo & SO_S_STARTTLS)
 		goto check;
+
+	cfg = (cfg)? cfg : &(struct so_starttls){ 0 };
 
 	so_resetssl(so);
 
@@ -2042,10 +2044,12 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 
 	ERR_clear_error();
 
-	method = (cfg->method)? cfg->method : SSLv23_method();
+	if (!(ctx = cfg->context)) {
+		method = (cfg->method)? cfg->method : SSLv23_method();
 
-	if (!ctx && !(ctx = tmp = SSL_CTX_new(method)))
-		goto eossl;
+		if (!(ctx = tmp = SSL_CTX_new(method)))
+			goto eossl;
+	}
 
 	if (!(so->ssl.ctx = SSL_new(ctx)))
 		goto eossl;
