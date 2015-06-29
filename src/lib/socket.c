@@ -1168,6 +1168,7 @@ struct socket {
 	} ssl;
 
 	struct {
+		BIO *ctx;
 		int error;
 
 		struct {
@@ -1396,6 +1397,11 @@ static int so_starttls_(struct socket *so) {
 
 	switch (so->ssl.state) {
 	case 0: {
+		/*
+		 * NOTE: For SOCK_DGRAM continue using OpenSSL's BIO until
+		 * we have time to reverse engineer the semantics necessary
+		 * for DTLS.
+		 */
 		if (S_ISSOCK(so->mode) && so->type == SOCK_DGRAM) {
 			struct sockaddr_storage peer;
 			BIO *bio;
@@ -1726,7 +1732,7 @@ error:
 static void so_resetssl(struct socket *);
 
 static int so_destroy(struct socket *so) {
-	ssl_discard(&so->ssl.ctx);
+	so_resetssl(so);
 
 	dns_ai_close(so->res);
 	so->res = NULL;
@@ -2003,6 +2009,11 @@ static void so_resetssl(struct socket *so) {
 	so->ssl.error  = 0;
 	so->ssl.accept = 0;
 	so->ssl.vrfd   = 0;
+
+	if (so->bio.ctx) {
+		BIO_free(so->bio.ctx)
+		so->bio.ctx = NULL;
+	}
 
 	free(so->bio.ahead.data);
 	so->bio.ahead.data = NULL;
@@ -2359,6 +2370,21 @@ static BIO *so_newbio(struct socket *so, int *error) {
 
 	bio->init = 1;
 	bio->ptr = so;
+
+	/*
+	 * NOTE: Applications can acquire a reference to our BIO via the SSL
+	 * state object. The lifetime of the BIO could last longer than the
+	 * lifetime of our socket object, so we must keep our own reference
+	 * and zero any pointer to ourselves here and from so_destroy.
+	 */
+	if (so->bio.ctx) {
+		so->bio.ctx->init = 0;
+		so->bio.ctx->ptr = NULL;
+		BIO_free(so->bio.ctx);
+	}
+
+	CRYPTO_add(&bio->references, -1, CRYPTO_LOCK_BIO);
+	so->bio.ctx = bio;
 
 	return bio;
 } /* so_newbio() */
