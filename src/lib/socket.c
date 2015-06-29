@@ -2011,7 +2011,7 @@ static void so_resetssl(struct socket *so) {
 	so->ssl.vrfd   = 0;
 
 	if (so->bio.ctx) {
-		BIO_free(so->bio.ctx)
+		BIO_free(so->bio.ctx);
 		so->bio.ctx = NULL;
 	}
 
@@ -2383,7 +2383,7 @@ static BIO *so_newbio(struct socket *so, int *error) {
 		BIO_free(so->bio.ctx);
 	}
 
-	CRYPTO_add(&bio->references, -1, CRYPTO_LOCK_BIO);
+	CRYPTO_add(&bio->references, 1, CRYPTO_LOCK_BIO);
 	so->bio.ctx = bio;
 
 	return bio;
