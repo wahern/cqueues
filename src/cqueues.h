@@ -1,7 +1,7 @@
 /* ==========================================================================
  * cqueues.h - Lua Continuation Queues
  * --------------------------------------------------------------------------
- * Copyright (c) 2012, 2014  William Ahern
+ * Copyright (c) 2012, 2014, 2015  William Ahern
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -26,18 +26,15 @@
 #ifndef CQUEUES_H
 #define CQUEUES_H
 
-#include <limits.h>     /* CHAR_BIT */
-#include <stdlib.h>     /* abs(3) */
-#include <string.h>     /* strerror_r(3) strnlen(3) */
 #include <signal.h>	/* sigset_t */
-#include <errno.h>	/* EINTR EOVERFLOW */
-#include <assert.h>     /* assert */
+#include <errno.h>	/* EOVERFLOW */
+#include <assert.h>     /* static_assert */
 
 #include <sys/param.h>  /* __NetBSD_Version__ OpenBSD __FreeBSD__version */
 #include <sys/types.h>
 #include <sys/socket.h>	/* socketpair(2) */
 #include <unistd.h>	/* close(2) pipe(2) */
-#include <fcntl.h>	/* fcntl(2) */
+#include <fcntl.h>	/* F_GETFL F_SETFD F_SETFL FD_CLOEXEC O_NONBLOCK O_CLOEXEC fcntl(2) */
 
 #include <lua.h>
 #include <lualib.h>
@@ -453,34 +450,7 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 #endif
 
 
-#ifndef STRERROR_R_CHAR_P
-#define STRERROR_R_CHAR_P ((GLIBC_PREREQ(0,0) || UCLIBC_PREREQ(0,0,0)) && (_GNU_SOURCE || !(_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600)))
-#endif
-
-static cqs_error_t cqs_strerror_r(int error, char *dst, size_t lim) {
-#if STRERROR_R_CHAR_P
-	char *src;
-
-	if (!(src = strerror_r(error, dst, lim)))
-		return EINVAL;
-
-	if (src != dst && lim > 0) {
-		size_t n = strnlen(src, lim - 1);
-		memcpy(dst, src, n);
-		dst[n] = '\0';
-	}
-
-	return 0;
-#else
-	/* glibc between 2.3.4 and 2.13 returns -1 on error */
-	if (-1 == (error = strerror_r(error, dst, lim)))
-		return errno;
-	else
-		return error;
-#endif
-
-} /* cqs_strerror_r() */
-
+cqs_error_t cqs_strerror_r(cqs_error_t, char *, size_t);
 
 /*
  * NB: Compound literals have block scope in C. But g++ creates
@@ -491,41 +461,7 @@ static cqs_error_t cqs_strerror_r(int error, char *dst, size_t lim) {
 #define cqs_strerror_(error, dst, lim, ...) (cqs_strerror)((error), (dst), (lim))
 #endif
 
-static const char *(cqs_strerror)(int error, void *dst, size_t lim) {
-	char *p, *pe, *unknown;
-	char e10[((sizeof error * CHAR_BIT) / 3) + 1], *ep;
-	int n;
-
-	if (!lim)
-		return dst;
-
-	if (0 == cqs_strerror_r(error, dst, lim) && *(char *)dst)
-		return dst;
-
-	p = dst;
-	pe = p + lim;
-
-	unknown = "Unknown error: ";
-	while (*unknown && p < pe)
-		*p++ = *unknown++;
-
-	if (error < 0 && p < pe)
-		*p++ = '-';
-
-	/* translate integer to string in LSB order */
-	for (ep = e10, n = error; n; ep++, n /= 10)
-		*ep = "0123456789"[abs(n % 10)];
-	if (ep == e10)
-		*ep++ = '0';
-
-	/* copy string, flipping from LSB to MSB */
-	while (ep > e10 && p < pe)
-		*p++ = *--ep;
-
-	p[-1] = '\0';
-
-	return dst;
-} /* cqs_strerror() */
+const char *(cqs_strerror)(cqs_error_t, void *, size_t);
 
 
 cqs_error_t cqs_sigmask(int, const sigset_t *, sigset_t *);
@@ -602,7 +538,6 @@ static inline cqs_error_t cqs_addzu(size_t *r, size_t a, size_t b) {
 
 #define HAI SAY("hai")
 #endif
-
 
 #include <string.h>
 
