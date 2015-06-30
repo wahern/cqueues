@@ -2138,7 +2138,6 @@ int so_shutdown(struct socket *so, int how) {
 static size_t so_sysread(struct socket *so, void *dst, size_t lim, int *error) {
 	long len;
 
-	so->events &= ~POLLIN;
 retry:
 #if _WIN32
 	len = recv(so->fd, dst, SO_MIN(lim, LONG_MAX), 0);
@@ -2178,8 +2177,6 @@ error:
 
 static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *error) {
 	long count;
-
-	so->events &= ~POLLOUT;
 
 	if (so->st.sent.eof) {
 		*error = EPIPE;
