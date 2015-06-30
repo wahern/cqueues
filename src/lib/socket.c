@@ -1169,6 +1169,7 @@ struct socket {
 
 	struct {
 		BIO *ctx;
+//		BIO *ctrl; /* proxy unknown DTLS BIO_ctrl commands */
 		int error;
 
 		struct {
@@ -1194,7 +1195,7 @@ struct socket {
 static _Bool so_needign(struct socket *so, _Bool rdonly) {
 	if (!so->opts.fd_nosigpipe || (so->flags & SO_F_NOSIGPIPE))
 		return 0;
-	if (so->ssl.ctx)
+	if (so->ssl.ctx && !so->bio.ctx)
 		return 1;
 	if (rdonly)
 		return 0;
@@ -2391,7 +2392,7 @@ static BIO *so_newbio(struct socket *so, int *error) {
 
 
 size_t so_read(struct socket *so, void *dst, size_t lim, int *error_) {
-	long len;
+	size_t len;
 	int error;
 
 	so_pipeign(so, 1);
@@ -2403,37 +2404,30 @@ size_t so_read(struct socket *so, void *dst, size_t lim, int *error_) {
 
 	if (so->fd == -1) {
 		error = ENOTCONN;
-
 		goto error;
 	}
 
 	so->events &= ~POLLIN;
-
 retry:
 	if (so->ssl.ctx) {
+		int n;
+
 		ERR_clear_error();
 
-		len = SSL_read(so->ssl.ctx, dst, SO_MIN(lim, INT_MAX));
-
-		if (len < 0) {
-			goto sslerr;
-		} else if (len == 0) {
-			*error_ = EPIPE; /* FIXME: differentiate clean from unclean shutdown? */
+		if ((n = SSL_read(so->ssl.ctx, dst, SO_MIN(lim, INT_MAX))) < 0) {
+			if (SO_EINTR == (error = ssl_error(so->ssl.ctx, n, &so->events)))
+				goto retry;
+			goto error;
+		} else if (n == 0) {
+			error = EPIPE; /* FIXME: differentiate clean from unclean shutdown? */
 			so->st.rcvd.eof = 1;
+			goto error;
 		}
+
+		len = n;
 	} else {
-#if _WIN32
-		len = recv(so->fd, dst, SO_MIN(lim, LONG_MAX), 0);
-#else
-		len = read(so->fd, dst, SO_MIN(lim, LONG_MAX));
-#endif
-
-		if (len == -1) {
-			goto soerr;
-		} else if (len == 0) {
-			*error_ = EPIPE;
-			so->st.rcvd.eof = 1;
-		}
+		if (!(len = so_sysread(so, dst, lim, &error)))
+			goto error;
 	}
 
 	so_trace(SO_T_READ, so->fd, so->host, dst, (size_t)len, "rcvd %zu bytes", (size_t)len);
@@ -2442,28 +2436,6 @@ retry:
 	so_pipeok(so, 1);
 
 	return len;
-sslerr:
-	error = ssl_error(so->ssl.ctx, (int)len, &so->events);
-
-	if (error == SO_EINTR)
-		goto retry;
-
-	goto error;
-soerr:
-	error = so_soerr();
-
-	switch (error) {
-	case SO_EINTR:
-		goto retry;
-#if SO_EWOULDBLOCK != SO_EAGAIN
-	case SO_EWOULDBLOCK:
-		/* FALL THROUGH */
-#endif
-	case SO_EAGAIN:
-		so->events |= POLLIN;
-
-		break;
-	} /* switch() */
 error:
 	*error_ = error;
 
@@ -2477,7 +2449,7 @@ error:
 
 
 size_t so_write(struct socket *so, const void *src, size_t len, int *error_) {
-	long count;
+	size_t count;
 	int error;
 
 	so_pipeign(so, 0);
@@ -2489,41 +2461,34 @@ size_t so_write(struct socket *so, const void *src, size_t len, int *error_) {
 
 	if (so->fd == -1) {
 		error = ENOTCONN;
-
 		goto error;
 	}
 
 	so->events &= ~POLLOUT;
-
 retry:
 	if (so->ssl.ctx) {
 		if (len > 0) {
+			int n;
+
 			ERR_clear_error();
 
-			count = SSL_write(so->ssl.ctx, src, SO_MIN(len, INT_MAX));
+			if ((n = SSL_write(so->ssl.ctx, src, SO_MIN(len, INT_MAX))) < 0) {
+				if (SO_EINTR == (error = ssl_error(so->ssl.ctx, n, &so->events)))
+					goto retry;
+				goto error;
+			} else if (n == 0) {
+				error = EPIPE; /* FIXME: differentiate clean from unclean shutdown? */
+				so->st.sent.eof = 1;
+				goto error;
+			}
 
-			if (count < 0)
-				goto sslerr;
-			else if (count == 0)
-				*error_ = EPIPE; /* FIXME: differentiate clean from unclean shutdown? */
-		} else
+			count = n;
+		} else {
 			count = 0;
+		}
 	} else {
-#if _WIN32
-		count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
-#else
-#if defined(MSG_NOSIGNAL)
-		if (S_ISSOCK(so->mode) && so->opts.fd_nosigpipe)
-			count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
-		else
-			count = write(so->fd, src, SO_MIN(len, LONG_MAX));
-#else
-		count = write(so->fd, src, SO_MIN(len, LONG_MAX));
-#endif
-#endif
-
-		if (count == -1)
-			goto soerr;
+		if (!(count = so_syswrite(so, src, len, &error)))
+			goto error;
 	}
 
 	so_trace(SO_T_WRITE, so->fd, so->host, src, (size_t)count, "sent %zu bytes", (size_t)len);
@@ -2532,28 +2497,6 @@ retry:
 	so_pipeok(so, 0);
 
 	return count;
-sslerr:
-	error = ssl_error(so->ssl.ctx, (int)count, &so->events);
-
-	if (error == SO_EINTR)
-		goto retry;
-
-	goto error;
-soerr:
-	error = so_soerr();
-
-	switch (error) {
-	case SO_EINTR:
-		goto retry;
-#if SO_EWOULDBLOCK != SO_EAGAIN
-	case SO_EWOULDBLOCK:
-		/* FALL THROUGH */
-#endif
-	case SO_EAGAIN:
-		so->events |= POLLOUT;
-
-		break;
-	} /* switch() */
 error:
 	*error_ = error;
 
@@ -2582,7 +2525,6 @@ size_t so_peek(struct socket *so, void *dst, size_t lim, int flags, int *_error)
 
 	if (flags & SO_F_PEEKALL)
 		so->events &= ~POLLIN;
-
 retry:
 	count = recv(so->fd, dst, lim, MSG_PEEK);
 
