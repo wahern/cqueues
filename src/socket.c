@@ -571,7 +571,7 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 		luaL_argcheck(L, addr != NULL, index, "no bind address specified");
 
 		if (!sa_pton(ss, sizeof *ss, addr, NULL, &error))
-			luaL_argerror(L, index, lua_pushfstring(L, "%s: unable to parse bind address (%s)", addr, so_strerror(error)));
+			luaL_argerror(L, index, lua_pushfstring(L, "%s: unable to parse bind address (%s)", addr, cqs_strerror(error)));
 
 		if (port >= 0)
 			*sa_port(ss, &(unsigned short){ 0 }, NULL) = htons((unsigned short)port);
@@ -749,7 +749,7 @@ static void lso_pushmode(lua_State *L, int mode, int mask, _Bool libc) {
 
 
 //static lso_nargs_t lso_throw(lua_State *L, struct luasocket *S, int error) {
-//	return luaL_error(L, "socket: %s", so_strerror(error));
+//	return luaL_error(L, "socket: %s", cqs_strerror(error));
 //} /* lso_throw() */
 
 
@@ -1910,7 +1910,7 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 	if (!(iobuf).error) \
 		return 0; \
 	if (++(iobuf).numerrs > (iobuf).maxerrs) \
-		luaL_error((L), "exceeded unchecked error limit (%s)", so_strerror((iobuf).error)); \
+		luaL_error((L), "exceeded unchecked error limit (%s)", cqs_strerror((iobuf).error)); \
 	return (iobuf).error; \
 } while (0)
 
@@ -2994,7 +2994,7 @@ static int dbg_iov_eoh(lua_State *L) {
 
 	if ((size_t)-1 == (eoh = iov_eoh(&iov, eof, 0, &error))) {
 		lua_pushnil(L);
-		lua_pushstring(L, strerror(error));
+		lua_pushstring(L, cqs_strerror(error));
 		lua_pushinteger(L, error);
 
 		return 3;
@@ -3026,7 +3026,7 @@ static int dbg_iov_eot(lua_State *L) {
 
 	if ((size_t)-1 == (n = iov_eot(&iov, minbuf, maxbuf, eof, &error))) {
 		lua_pushnil(L);
-		lua_pushstring(L, strerror(error));
+		lua_pushstring(L, cqs_strerror(error));
 		lua_pushinteger(L, error);
 
 		return 3;

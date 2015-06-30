@@ -812,12 +812,7 @@ int luaopen__cqueues_thread(lua_State *L) {
 		if (error == -1) {
 			return luaL_error(L, "%s", dlerror());
 		} else {
-			char why[256];
-
-			if (0 != strerror_r(error, why, sizeof why) || *why == '\0')
-				return luaL_error(L, "Unknown error: %d", error);
-
-			return luaL_error(L, "%s", why);
+			return luaL_error(L, "%s", cqs_strerror(error));
 		}
 	}
 

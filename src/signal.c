@@ -24,11 +24,8 @@
  * ==========================================================================
  */
 #include <string.h>
-
 #include <math.h>
-
 #include <signal.h>
-
 #include <errno.h>
 
 #include <unistd.h>
@@ -225,7 +222,7 @@ static int lsl_listen(lua_State *L) {
 	lua_setmetatable(L, -2);
 
 	if ((error = sfd_init(S)) || (error = sfd_update(S)))
-		return luaL_error(L, "signal.listen: %s", strerror(error));
+		return luaL_error(L, "signal.listen: %s", cqs_strerror(error));
 
 	return 1;
 } /* lsl_listen() */
@@ -246,7 +243,7 @@ static int lsl_wait(lua_State *L) {
 	int error, signo;
 
 	if ((error = sfd_query(S)))
-		return luaL_error(L, "signal:get: %s", strerror(error));
+		return luaL_error(L, "signal:get: %s", cqs_strerror(error));
 
 	sigemptyset(&none);
 
@@ -357,7 +354,7 @@ static int ls_ignore(lua_State *L) {
 		sa.sa_flags = 0;
 
 		if (0 != sigaction(luaL_checkint(L, index), &sa, 0))
-			return luaL_error(L, "signal.ignore: %s", strerror(errno));
+			return luaL_error(L, "signal.ignore: %s", cqs_strerror(errno));
 	}
 
 	lua_pushboolean(L, 1);
@@ -376,7 +373,7 @@ static int ls_default(lua_State *L) {
 		sa.sa_flags = 0;
 
 		if (0 != sigaction(luaL_checkint(L, index), &sa, 0))
-			return luaL_error(L, "signal.default: %s", strerror(errno));
+			return luaL_error(L, "signal.default: %s", cqs_strerror(errno));
 	}
 
 	lua_pushboolean(L, 1);
@@ -399,7 +396,7 @@ static int ls_discard(lua_State *L) {
 		sa.sa_flags = 0;
 
 		if (0 != sigaction(luaL_checkint(L, index), &sa, 0))
-			return luaL_error(L, "signal.discard: %s", strerror(errno));
+			return luaL_error(L, "signal.discard: %s", cqs_strerror(errno));
 	}
 
 	lua_pushboolean(L, 1);
@@ -419,7 +416,7 @@ static int ls_block(lua_State *L) {
 	}
 
 	if ((error = cqs_sigmask(SIG_BLOCK, &set, 0)))
-		return luaL_error(L, "signal.block: %s", strerror(error));
+		return luaL_error(L, "signal.block: %s", cqs_strerror(error));
 
 	lua_pushboolean(L, 1);
 
@@ -438,7 +435,7 @@ static int ls_unblock(lua_State *L) {
 	}
 
 	if ((error = cqs_sigmask(SIG_UNBLOCK, &set, 0)))
-		return luaL_error(L, "signal.unblock: %s", strerror(error));
+		return luaL_error(L, "signal.unblock: %s", cqs_strerror(error));
 
 	lua_pushboolean(L, 1);
 

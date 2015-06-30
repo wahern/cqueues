@@ -23,19 +23,17 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
-#include <limits.h>	/* UINT_MAX */
-#include <stddef.h>	/* offsetof */
-#include <stdlib.h>	/* free(3) */
-#include <stdio.h>	/* tmpfile(3) fclose(3) */
-#include <string.h>	/* memset(3) strerror(3) strcmp(3) */
-
+#include <limits.h> /* UINT_MAX */
+#include <stddef.h> /* offsetof */
+#include <stdlib.h> /* free(3) */
+#include <stdio.h>  /* tmpfile(3) fclose(3) */
+#include <string.h> /* memset(3) strcmp(3) */
 #include <errno.h>
 
 #include <sys/types.h>
-#include <sys/socket.h>	/* AF_INET AF_INET6 */
-#include <netinet/in.h>	/* struct sockaddr_in struct sockaddr_in6 */
-
-#include <arpa/inet.h>	/* INET_ADDSTRLEN INET6_ADDRSTRLEN inet_ntop(3) */
+#include <sys/socket.h> /* AF_INET AF_INET6 */
+#include <netinet/in.h> /* struct sockaddr_in struct sockaddr_in6 */
+#include <arpa/inet.h>  /* INET_ADDSTRLEN INET6_ADDRSTRLEN inet_ntop(3) */
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -165,7 +163,7 @@ static void rr_push(lua_State *L, struct dns_rr *any, struct dns_packet *P) {
 		dns_any_init(&rr->data, datasiz);
 
 		if ((error = dns_any_parse(&rr->data, any, P)))
-			luaL_error(L, "dns.rr.parse: %s", dns_strerror(error));
+			luaL_error(L, "dns.rr.parse: %s", cqs_strerror(error));
 	}
 
 	luaL_setmetatable(L, rr_tname(any));
@@ -995,7 +993,7 @@ static int pkt_next(lua_State *L) {
 	int error = 0;
 
 	if (!dns_rr_grep(&rr, 1, rr_i, P, &error))
-		return (error)? luaL_error(L, "dns.packet:grep: %s", dns_strerror(error)) : 0;
+		return (error)? luaL_error(L, "dns.packet:grep: %s", cqs_strerror(error)) : 0;
 
 	rr_push(L, &rr, P);
 
@@ -1061,7 +1059,7 @@ static int pkt__tostring(lua_State *L) {
 	FILE *fp;
 
 	if (!(fp = tmpfile()))
-		return luaL_error(L, "tmpfile: %s", strerror(errno));
+		return luaL_error(L, "tmpfile: %s", cqs_strerror(errno));
 
 	dns_p_dump(P, fp);
 
@@ -1285,7 +1283,7 @@ static int resconf_setns(lua_State *L) {
 
 		if ((ns = luaL_optstring(L, -1, 0))) {
 			if ((error = dns_resconf_pton(&resconf->nameserver[i], ns)))
-				return luaL_error(L, "%s: %s", ns, dns_strerror(error));
+				return luaL_error(L, "%s: %s", ns, cqs_strerror(error));
 		} else {
 			memset(&resconf->nameserver[i], 0, sizeof resconf->nameserver[i]);
 			resconf->nameserver[i].ss_family = AF_UNSPEC;
@@ -1484,7 +1482,7 @@ static int resconf_setiface(lua_State *L) {
 	int error;
 
 	if ((error = dns_resconf_pton(&resconf->iface, ip)))
-		return luaL_error(L, "%s: %s", ip, dns_strerror(error));
+		return luaL_error(L, "%s: %s", ip, cqs_strerror(error));
 
 	return lua_pushboolean(L, 1), 1;
 } /* resconf_setiface */
@@ -1575,7 +1573,7 @@ static int resconf__tostring(lua_State *L) {
 	FILE *fp;
 
 	if (!(fp = tmpfile()))
-		return luaL_error(L, "tmpfile: %s", strerror(errno));
+		return luaL_error(L, "tmpfile: %s", cqs_strerror(errno));
 
 	dns_resconf_dump(resconf, fp);
 
@@ -1757,7 +1755,7 @@ static int hosts_insert(lua_State *L) {
 
 	return lua_pushboolean(L, 1), 1;
 error:
-	return luaL_error(L, "%s: %s", ip, dns_strerror(error));
+	return luaL_error(L, "%s: %s", ip, cqs_strerror(error));
 } /* hosts_insert() */
 
 
@@ -1769,7 +1767,7 @@ static int hosts__tostring(lua_State *L) {
 	FILE *fp;
 
 	if (!(fp = tmpfile()))
-		return luaL_error(L, "tmpfile: %s", strerror(errno));
+		return luaL_error(L, "tmpfile: %s", cqs_strerror(errno));
 
 	dns_hosts_dump(hosts, fp);
 
@@ -1927,7 +1925,7 @@ static int hints_insert(lua_State *L) {
 	}
 
 	if (error)
-		return luaL_error(L, "%s: %s", zone, dns_strerror(error));
+		return luaL_error(L, "%s: %s", zone, cqs_strerror(error));
 
 	return lua_pushboolean(L, 1), 1;
 } /* hints_insert() */
@@ -1989,7 +1987,7 @@ static int hints__tostring(lua_State *L) {
 	FILE *fp;
 
 	if (!(fp = tmpfile()))
-		return luaL_error(L, "tmpfile: %s", strerror(errno));
+		return luaL_error(L, "tmpfile: %s", cqs_strerror(errno));
 
 	dns_hints_dump(hints, fp);
 
