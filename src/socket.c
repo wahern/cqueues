@@ -309,8 +309,8 @@ static size_t iov_trimcrlf(struct iovec *iov, _Bool chomp) {
 #define LSO_PUSHBACK  0x40
 
 #define LSO_INITMODE  (LSO_LINEBUF|LSO_TEXT|LSO_AUTOFLUSH|LSO_PUSHBACK)
-#define LSO_RDMASK(m) ((m) & ~LSO_ALLBUF)
-#define LSO_WRMASK(m) (m)
+#define LSO_RDMASK    (~(LSO_ALLBUF|LSO_AUTOFLUSH))
+#define LSO_WRMASK    (~LSO_PUSHBACK)
 
 /*
  * A placeholder until we make it optional. Some Microsoft services have
@@ -379,8 +379,8 @@ struct luasocket {
 
 
 static struct luasocket lso_initializer = {
-	.ibuf = { .mode = LSO_RDMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
-	.obuf = { .mode = LSO_WRMASK(LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
+	.ibuf = { .mode = (LSO_RDMASK & LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
+	.obuf = { .mode = (LSO_WRMASK & LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
 	.type = AF_UNSPEC,
 	.type = SOCK_STREAM,
 	.onerror = LUA_NOREF,
@@ -708,7 +708,7 @@ static int lso_imode(const char *str, int init) {
 } /* lso_imode() */
 
 
-static void lso_pushmode(lua_State *L, int mode, _Bool libc) {
+static void lso_pushmode(lua_State *L, int mode, int mask, _Bool libc) {
 	if (libc) {
 		if (mode & LSO_NOBUF)
 			lua_pushstring(L, "no");
@@ -719,27 +719,31 @@ static void lso_pushmode(lua_State *L, int mode, _Bool libc) {
 		else
 			lua_pushnil(L); /* XXX: shouldn't happen */
 	} else {
-		char flag[8];
+		char flag[8], *p = flag;
 
 		if (mode & LSO_TEXT)
-			flag[0] = 't';
+			*p++ = 't';
 		else if (mode & LSO_BINARY)
-			flag[0] = 'b';
+			*p++ = 'b';
 		else
-			flag[0] = '-';
+			*p++ = '-';
 
 		if (mode & LSO_NOBUF)
-			flag[1] = 'n';
+			*p++ = 'n';
 		else if (mode & LSO_LINEBUF)
-			flag[1] = 'l';
+			*p++ = 'l';
 		else if (mode & LSO_FULLBUF)
-			flag[1] = 'f';
+			*p++ = 'f';
 		else
-			flag[1] = '-';
+			*p++ = '-';
 
-		flag[2] = (mode & LSO_AUTOFLUSH)? 'a' : 'A';
+		if (mask & LSO_AUTOFLUSH)
+			*p++ = (mode & LSO_AUTOFLUSH)? 'a' : 'A';
 
-		lua_pushlstring(L, flag, 3);
+		if (mask & LSO_PUSHBACK)
+			*p++ = (mode & LSO_PUSHBACK)? 'p' : 'P';
+
+		lua_pushlstring(L, flag, p - flag);
 	}
 } /* lso_pushmode() */
 
@@ -1317,7 +1321,7 @@ static int lso_checkvbuf(struct lua_State *L, int index) {
 
 
 static lso_nargs_t lso_setvbuf_(struct lua_State *L, struct luasocket *S, int modeidx, int bufidx) {
-	lso_pushmode(L, S->obuf.mode, 1);
+	lso_pushmode(L, S->obuf.mode, LSO_WRMASK, 1);
 	lua_pushnumber(L, S->obuf.bufsiz);
 
 	S->obuf.mode = lso_checkvbuf(L, modeidx) | (S->obuf.mode & ~LSO_ALLBUF);
@@ -1344,14 +1348,14 @@ static lso_nargs_t lso_setvbuf3(struct lua_State *L) {
 
 
 static lso_nargs_t lso_setmode_(struct lua_State *L, struct luasocket *S, int ridx, int widx) {
-	lso_pushmode(L, S->ibuf.mode, 0);
-	lso_pushmode(L, S->obuf.mode, 0);
+	lso_pushmode(L, S->ibuf.mode, LSO_RDMASK, 0);
+	lso_pushmode(L, S->obuf.mode, LSO_WRMASK, 0);
 
 	if (!lua_isnil(L, ridx))
-		S->ibuf.mode = LSO_RDMASK(lso_imode(luaL_checkstring(L, ridx), LSO_INITMODE));
+		S->ibuf.mode = LSO_RDMASK & lso_imode(luaL_checkstring(L, ridx), LSO_INITMODE);
 
 	if (!lua_isnil(L, widx))
-		S->obuf.mode = LSO_WRMASK(lso_imode(luaL_checkstring(L, widx), LSO_INITMODE));
+		S->obuf.mode = LSO_WRMASK & lso_imode(luaL_checkstring(L, widx), LSO_INITMODE);
 
 	return 2;
 } /* lso_setmode_() */

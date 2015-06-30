@@ -565,13 +565,17 @@ Sets the the input and output buffering and translation modes, which mirror C's 
 
 A mode is specified as a string containing one or more of the following flags
 
-\begin{ctabular}{c | p{6in}}
-flag & description \\\hline
-t & text mode; input or output undergoes LF/CRLF translation \\
-b & binary mode; no LF/CRLF translation \\
-n & no output buffering; output buffer is always flushed completely after every write operation \\
-l & line buffered output; output buffer is flushed up to and including the last LF after every write operation  \\
-f & fully buffered output; all buffer-sized blocks are flushed after every write operation (see \fn{socket:setbufsiz} and \fn{socket:setvbuf}) \\
+\begin{ctabular}{c | c | p{5in}}
+flag & default & description \\\hline
+t & default & text mode---input or output undergoes LF/CRLF translation \\
+b &         & binary mode---no LF/CRLF translation \\
+n &         & no output buffering---output buffer is always flushed completely after every write operation \\
+l & default & line buffered output---output buffer is flushed up to and including the last LF after every write operation  \\
+f &         & fully buffered output---all buffer-sized blocks are flushed after every write operation (see \fn{socket:setbufsiz} and \fn{socket:setvbuf}) \\
+a & default & enable autoflush---every read operation attempts to flush the output buffer as-if an explicit unbuffered flush were performed with a 0-second timeout; when initiating SSL/TLS, all pending data is fully flushed before proceeding with negotiation \\
+A &         & disable autoflush \\
+p & default & enable pushback---when initiating SSL/TLS, any data in the input buffer is virtually pushed back to the socket so that it will be processed as part of the SSL/TLS handshake \\
+P &         & disable pushback \\
 \end{ctabular}
 
 Returns the previous input and output modes as fixed-sized strings. At present the first character is one of ``t'' or ``b'', and the second character one of ``n'', ``l'', ``f'', or ``-'' (for in the input mode).
