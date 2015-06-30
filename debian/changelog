@@ -1,3 +1,14 @@
+liblua-cqueues (20150629-0) unstable; urgency=low
+
+  * Add autoflush support, enabled by default, which automatically flushes
+    the output buffer during reads and when initiating TLS.
+  * Add pushback support, enabled by default, which pushes data in the input
+    bufer pack to the socket layer so it's read as part of the TLS
+    handshake.
+  * Ignore EOPNOTSUPP when trying to reset SO_REUSEPORT.
+
+ -- William Ahern <william@25thandClement.com>  Tue, 30 Jun 2015 12:04:16 -0700
+
 liblua-cqueues (20150616-0) unstable; urgency=low
 
   * Add support for POLLPRI.
