@@ -11,16 +11,16 @@ check(cqueues.new():wrap(function ()
 	local so, ok, why, error
 
 	so, why, error = fileresult(socket.connect("nothing.nothing", 80))
+	info("socket.connect -> %s error:%d (%s)", tostring(so), error or 0, tostring(why))
+	check(so, "failed to create socket: %s", tostring(why))
 
-	if error == errno.EAGAIN then
-		ok, why, error = fileresult(so:connect(10))
-	end
+	so:onerror(function (so, op, why, lvl) return why end)
 
-	check(error ~= errno.ENOENT, "socket.connect shouldn't return ENOENT anymore")
-
-	-- Until we can expose DNS_ENONAME, just check we didn't get a
-	-- system error.
-	check(not error or error < 0, why)
+	ok, why, error = fileresult(so:connect(10))
+	info("socket:connect -> %s error:%d (%s)", tostring(ok), error or 0, tostring(why))
+	check(not ok and error and error ~= 0, "socket:connect shouldn't have succeeded")
+	check(error ~= errno.ENOENT, "socket:connect shouldn't return ENOENT anymore")
+	check(error < 0, "socket:connect should have returned DNS_ENONAME but got %d (%s)", error, tostring(why))
 end):loop())
 
 say"OK"
