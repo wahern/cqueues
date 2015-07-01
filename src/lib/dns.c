@@ -94,16 +94,20 @@
 
 #if __GNUC__
 #define DNS_NOTUSED __attribute__((unused))
+#define DNS_NORETURN __attribute__((noreturn))
 #else
 #define DNS_NOTUSED
+#define DNS_NORETURN
 #endif
 
 #if __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
 #elif DNS_GNUC_PREREQ(4, 6)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
 
 
@@ -6556,25 +6560,24 @@ error:
  * FIXME: Only groks A glue, not AAAA glue.
  */
 static int dns_res_nameserv_cmp(struct dns_rr *a, struct dns_rr *b, struct dns_rr_i *i, struct dns_packet *P) {
-	_Bool glued[2]	= { 0 };
+	_Bool glued[2] = { 0 };
+	struct dns_rr x = { 0 }, y = { 0 };
 	struct dns_ns ns;
-	struct dns_rr x, y;
 	int cmp, error;
 
 	if (!(error = dns_ns_parse(&ns, a, P)))
-		if (!(glued[0] = !!dns_rr_grep(&x, 1, dns_rr_i_new(P, .section = (DNS_S_ALL & ~DNS_S_QD), .name = ns.host, .type = DNS_T_A), P, &error)))
-			x.dn.p	= 0;
+		glued[0] = !!dns_rr_grep(&x, 1, dns_rr_i_new(P, .section = (DNS_S_ALL & ~DNS_S_QD), .name = ns.host, .type = DNS_T_A), P, &error);
 
 	if (!(error = dns_ns_parse(&ns, b, P)))
-		if (!(glued[1] = !!dns_rr_grep(&y, 1, dns_rr_i_new(P, .section = (DNS_S_ALL & ~DNS_S_QD), .name = ns.host, .type = DNS_T_A), P, &error)))
-			y.dn.p	= 0;
+		glued[1] = !!dns_rr_grep(&y, 1, dns_rr_i_new(P, .section = (DNS_S_ALL & ~DNS_S_QD), .name = ns.host, .type = DNS_T_A), P, &error);
 
-	if ((cmp = glued[1] - glued[0]))
+	if ((cmp = glued[1] - glued[0])) {
 		return cmp;
-	else if ((cmp = (dns_rr_offset(&y) < i->args[0]) - (dns_rr_offset(&x) < i->args[0])))
+	} else if ((cmp = (dns_rr_offset(&y) < i->args[0]) - (dns_rr_offset(&x) < i->args[0]))) {
 		return cmp;
-	else
+	} else {
 		return dns_rr_i_shuffle(a, b, i, P);
+	}
 } /* dns_res_nameserv_cmp() */
 
 
@@ -8040,7 +8043,7 @@ void hexdump(const unsigned char *src, size_t len, FILE *fp) {
 } /* hexdump() */
 
 
-static void panic(const char *fmt, ...) {
+DNS_NORETURN static void panic(const char *fmt, ...) {
 	va_list ap;
 
 	va_start(ap, fmt);

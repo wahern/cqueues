@@ -2363,8 +2363,10 @@ static BIO_METHOD bio_methods = {
 static BIO *so_newbio(struct socket *so, int *error) {
 	BIO *bio;
 
-	if (!(bio = BIO_new(&bio_methods)))
+	if (!(bio = BIO_new(&bio_methods))) {
 		*error = SO_EOPENSSL;
+		return NULL;
+	}
 
 	bio->init = 1;
 	bio->ptr = so;
