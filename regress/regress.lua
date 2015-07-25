@@ -149,4 +149,53 @@ function regress.genkey(type)
 	return key, crt
 end -- regress.genkey
 
+
+local function getsubtable(t, name, ...)
+	name = name or false -- cannot be nil
+
+	if not t[name] then
+		t[name] = {}
+	end
+
+	if select('#', ...) > 0 then
+		return getsubtable(t[name], ...)
+	else
+		return t[name]
+	end
+end -- getsubtable
+
+function regress.newsslctx(protocol, accept, keytype)
+	local context = regress.require"openssl.ssl.context"
+	local ctx = context.new(protocol, accept)
+
+	if keytype or keytype == nil then
+		local key, crt = regress.genkey(keytype)
+
+		ctx:setCertificate(crt)
+		ctx:setPrivateKey(key)
+	end
+
+	return ctx
+end -- require.newsslctx
+
+local ctxcache = {}
+
+function regress.getsslctx(protocol, accept, keytype)
+	local keycache = getsubtable(ctxcache, protocol, accept)
+
+	if keytype == nil then
+		keytype = "RSA"
+	end
+
+	local ctx = keycache[keytype]
+
+	if not ctx then
+		ctx = regress.newsslctx(protocol, accept, keytype)
+		keycache[keytype] = ctx
+	end
+
+	return ctx
+end -- regress.getsslctx
+
+
 return regress
