@@ -28,9 +28,8 @@ local loader = function(loader, ...)
 		end
 
 		while not ready() do
-			local curtime = cqueues.monotime()
-
 			if deadline then
+				local curtime = cqueues.monotime()
 				if curtime >= deadline then
 					return nil
 				else
