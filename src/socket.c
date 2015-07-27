@@ -23,7 +23,7 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
-#include <stddef.h>	/* NULL size_t */
+#include <stddef.h>	/* NULL offsetof size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* strtol(3) */
 #include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) */
@@ -1110,6 +1110,8 @@ lso_error_t cqs_socket_fdopen(lua_State *L, int fd, const struct so_options *_op
 	struct sockaddr_storage ss;
 	struct luasocket *S;
 	int family = AF_UNSPEC, type = SOCK_STREAM, error;
+
+	memset(&ss, 0, sizeof ss);
 
 	if (0 == getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss })) {
 		family = ss.ss_family;
@@ -2681,7 +2683,7 @@ error:
 } /* lso_accept() */
 
 
-static lso_nargs_t lso_pushname(lua_State *L, struct sockaddr_storage *ss) {
+static lso_nargs_t lso_pushname(lua_State *L, struct sockaddr_storage *ss, socklen_t salen) {
 	switch (ss->ss_family) {
 	case AF_INET:
 		/* FALL THROUGH */
@@ -2693,7 +2695,24 @@ static lso_nargs_t lso_pushname(lua_State *L, struct sockaddr_storage *ss) {
 		return 3;
 	case AF_UNIX:
 		lua_pushinteger(L, ss->ss_family);
-		lua_pushstring(L, sa_ntoa(ss));
+
+		/* support nameless sockets and Linux's abstract namespace */
+		if (salen > offsetof(struct sockaddr_un, sun_path)) {
+			struct sockaddr_un *sun = (struct sockaddr_un *)ss;
+			char *pe = (char *)sun + SO_MIN(sizeof *sun, salen);
+			size_t plen;
+
+			while (pe > sun->sun_path && pe[-1] == '\0')
+				--pe;
+
+			if ((plen = (pe - sun->sun_path)) > 0) {
+				lua_pushlstring(L, sun->sun_path, plen);
+			} else {
+				lua_pushnil(L);
+			}
+		} else {
+			lua_pushnil(L);
+		}
 
 		return 2;
 	default:
@@ -2707,16 +2726,19 @@ static lso_nargs_t lso_pushname(lua_State *L, struct sockaddr_storage *ss) {
 static lso_nargs_t lso_peername(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	struct sockaddr_storage ss;
+	socklen_t salen = sizeof ss;
 	int error;
 
-	if ((error = so_remoteaddr(S->socket, &ss, &(socklen_t){ sizeof ss }))) {
+	memset(&ss, 0, sizeof ss);
+
+	if ((error = so_remoteaddr(S->socket, &ss, &salen))) {
 		lua_pushnil(L);
 		lua_pushinteger(L, error);
 
 		return 2;
 	}
 
-	return lso_pushname(L, &ss);
+	return lso_pushname(L, &ss, salen);
 } /* lso_peername() */
 
 
@@ -2761,16 +2783,19 @@ static lso_nargs_t lso_peerpid(lua_State *L) {
 static lso_nargs_t lso_localname(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	struct sockaddr_storage ss;
+	socklen_t salen = sizeof ss;
 	int error;
 
-	if ((error = so_localaddr(S->socket, &ss, &(socklen_t){ sizeof ss }))) {
+	memset(&ss, 0, sizeof ss);
+
+	if ((error = so_localaddr(S->socket, &ss, &salen))) {
 		lua_pushnil(L);
 		lua_pushinteger(L, error);
 
 		return 2;
 	}
 
-	return lso_pushname(L, &ss);
+	return lso_pushname(L, &ss, salen);
 } /* lso_localname() */
 
 

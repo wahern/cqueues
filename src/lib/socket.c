@@ -582,6 +582,8 @@ void *sa_egress(void *lcl, size_t lim, sockaddr_arg_t rmt, int *_error) {
 	if (0 != connect(udp->fd, (struct sockaddr *)&ss, sa_len(&ss)))
 		goto syerr;
 
+	memset(&ss, 0, sizeof ss);
+
 	if (0 != getsockname(udp->fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss }))
 		goto syerr;
 
@@ -1406,6 +1408,8 @@ static int so_starttls_(struct socket *so) {
 		if (S_ISSOCK(so->mode) && so->type == SOCK_DGRAM) {
 			struct sockaddr_storage peer;
 			BIO *bio;
+
+			memset(&peer, 0, sizeof peer);
 
 			if (0 != getpeername(so->fd, (struct sockaddr *)&peer, &(socklen_t){ sizeof peer })) {
 				error = errno;
