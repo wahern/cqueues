@@ -1604,7 +1604,7 @@ static cqs_error_t wakecb_wakeup(struct wakecb *cb) {
 #define object_pcall(L, I, T, index, field, ...) object_pcall((L), (I), (T), (index), (field), ((int[]){ __VA_ARGS__ }), countof(((int[]){ __VA_ARGS__ })))
 
 NONNULL(1, 2, 5)
-static cqs_status_t (object_pcall)(lua_State *L, struct callinfo *I, struct thread *T, int index, const char *field, int rtype[], int n, ...) {
+static cqs_status_t (object_pcall)(lua_State *L, struct callinfo *I, struct thread *T, int index, const char *field, int rtype[], int n) {
 	int type, i, status;
 
 	index = lua_absindex(L, index);
@@ -2269,7 +2269,7 @@ static int cqueue_checkfd(lua_State *L, struct callinfo *I, int index) {
 		fd = luaL_optint(L, -1, -1);
 		lua_pop(L, 1);
 	} else {
-		fd = luaL_optint(L, -1, -1);
+		fd = luaL_optint(L, index, -1);
 	}
 
 	return fd;
@@ -2278,10 +2278,11 @@ static int cqueue_checkfd(lua_State *L, struct callinfo *I, int index) {
 
 static int cqueue_cancel(lua_State *L) {
 	struct callinfo I;
+	int top = lua_gettop(L);
 	struct cqueue *Q = cqueue_enter(L, &I, 1);
 	int index, fd;
 
-	for (index = 2; index <= lua_gettop(L); index++)
+	for (index = 2; index <= top; index++)
 		cqueue_cancelfd(Q, cqueue_checkfd(L, &I, index));
 
 	return 0;
