@@ -30,7 +30,7 @@ require"regress".export".*"
 check(package.searchpath, "package.searchpath not defined")
 
 local file, why = package.searchpath("_openssl", package.cpath)
-check(file, "%s", why)
+check(file, "module _openssl required")
 local reinit = check(package.loadlib(file, "luaopen__openssl_compat"))
 
 local function ticklebug()
