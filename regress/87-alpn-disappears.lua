@@ -52,6 +52,7 @@ check(main:wrap(function ()
 	local cli_ctx, srv_ctx
 
 	cli_ctx = getsslctx("TLSv1", false, false)
+	check(cli_ctx.setAlpnProtos, "ALPN support not available")
 	cli_ctx:setAlpnProtos{ "http2.0", "http" }
 
 	srv_ctx = getsslctx("TLSv1", true)
