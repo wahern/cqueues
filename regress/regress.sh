@@ -83,8 +83,8 @@ if [ "${0##*/}" = "regress.sh" ]; then
 	case "${1:-build}" in
 	build)
 		LUA_API="$(runlua -e "print(_VERSION:match'%d.%d')")"
-
-		(cd "${SRCDIR}" && make -s install${LUA_API} \
+		unset MAKEFLAGS
+		(cd "${SRCDIR}" && make -s "install${LUA_API}" \
 			lua51path="${lua51path}" lua51cpath="${lua51cpath}" \
 			lua52path="${lua52path}" lua52cpath="${lua52cpath}" \
 			lua53path="${lua53path}" lua53cpath="${lua53cpath}")
@@ -103,7 +103,7 @@ else
 			lua53path="${lua53path}" lua53cpath="${lua53cpath}")
 	fi
 
-	if [ ! -d "${SRCDIR}/regress/.local/lib/5.3" ]; then
+	if [ ! -d "${SRCDIR}/regress/.local/lib/5.3" ] || ! runlua -e 'require"_cqueues"' >/dev/null 2>&1; then
 		export RUNLUA_R="${RUNLUA_R:=5.1-5.2}"
 	fi
 fi
