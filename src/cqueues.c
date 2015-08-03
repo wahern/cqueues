@@ -1325,7 +1325,6 @@ static void err_checktype(lua_State *L, int index, int type) {
 
 static const char *err_pushstring(lua_State *L, struct callinfo *I) {
 	if (I->error.string) {
-		err_checktype(L, I->error.string, LUA_TSTRING);
 		lua_pushvalue(L, I->error.string);
 	} else {
 		lua_pushstring(L, "no error message");
