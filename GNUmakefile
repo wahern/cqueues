@@ -128,6 +128,7 @@ endif
 # P R O J E C T  R U L E S
 #
 include $(d)/src/GNUmakefile
+include $(d)/regress/GNUmakefile
 
 
 #
