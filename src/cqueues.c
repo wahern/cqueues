@@ -1323,7 +1323,7 @@ static void err_checktype(lua_State *L, int index, int type) {
 		err_corrupt(L, index, lua_typename(L, type));
 } /* err_checktype() */
 
-static const char *err_pushstring(lua_State *L, struct callinfo *I) {
+static const char *err_pushvalue(lua_State *L, struct callinfo *I) {
 	if (I->error.string) {
 		lua_pushvalue(L, I->error.string);
 	} else {
@@ -1331,14 +1331,14 @@ static const char *err_pushstring(lua_State *L, struct callinfo *I) {
 	}
 
 	return lua_tostring(L, -1);
-} /* err_pushstring() */
+} /* err_pushvalue() */
 
 static cqs_nargs_t err_pushinfo(lua_State *L, struct callinfo *I) {
 	int nargs = 0;
 
 	luaL_checkstack(L, 5, NULL);
 
-	err_pushstring(L, I);
+	err_pushvalue(L, I);
 	nargs = 1;
 
 	if (I->error.code) {
@@ -1371,7 +1371,7 @@ static cqs_nargs_t err_pushinfo(lua_State *L, struct callinfo *I) {
 } /* err_pushinfo() */
 
 static void err_error(lua_State *L, struct callinfo *I) {
-	err_pushstring(L, I);
+	err_pushvalue(L, I);
 	lua_error(L);
 } /* err_error() */
 
