@@ -1527,15 +1527,22 @@ static struct fileno *fileno_get(struct cqueue *Q, int fd, int *error) {
 } /* fileno_get() */
 
 
-static void fileno_signal(struct cqueue *Q, struct fileno *fileno, short events) {
+static cqs_error_t fileno_signal(struct cqueue *Q, struct fileno *fileno, short events) {
 	struct event *event;
+	int error = 0, _error;
 
 	LIST_FOREACH(event, &fileno->events, fle) {
+		/* XXX: If POLLPRI should we always mark as pending? */
 		if (event->events & events)
 			event->pending = 1;
 
 		thread_move(event->thread, &Q->thread.pending);
+
+		if ((_error = cqueue_tryalert(Q)))
+			error = _error;
 	}
+
+	return error;
 } /* fileno_signal() */
 
 
@@ -2249,13 +2256,17 @@ static int cqueue_count(lua_State *L) {
 
 static cqs_error_t cqueue_cancelfd(struct cqueue *Q, int fd) {
 	struct fileno *fileno;
+	int error = 0, _error;
 
 	if (!(fileno = fileno_find(Q, fd)))
 		return 0;
 
-	fileno_signal(Q, fileno, POLLIN|POLLOUT|POLLPRI);
+	if ((_error = fileno_signal(Q, fileno, POLLIN|POLLOUT|POLLPRI)))
+		error = _error;
+	if ((_error = fileno_ctl(Q, fileno, 0)))
+		error = _error;
 
-	return fileno_ctl(Q, fileno, 0);
+	return error;
 } /* cqueue_cancelfd() */
 
 
