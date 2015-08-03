@@ -1195,7 +1195,7 @@ struct callinfo {
 	cqs_index_t registry; /* stack index of ephemeron registry table */
 
 	struct {
-		cqs_index_t string;
+		cqs_index_t value;
 		int code;
 		cqs_index_t thread;
 		cqs_index_t object;
@@ -1220,7 +1220,7 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 	lua_replace(L, -2);
 	I->registry = lua_absindex(L, -1);
 
-	I->error.string = 0;
+	I->error.value = 0;
 	I->error.code = 0;
 	I->error.thread = 0;
 	I->error.object = 0;
@@ -1253,7 +1253,7 @@ static void cqueue_unref(lua_State *L, struct callinfo *I, auxref_t *ref) {
 
 static void err_setvfstring(lua_State *L, struct callinfo *I, const char *fmt, va_list ap) {
 	lua_pushvfstring(L, fmt, ap);
-	I->error.string = lua_gettop(L);
+	I->error.value = lua_gettop(L);
 } /* err_setvfstring() */
 
 static void err_setfstring(lua_State *L, struct callinfo *I, const char *fmt, ...) {
@@ -1267,7 +1267,7 @@ static void err_setfstring(lua_State *L, struct callinfo *I, const char *fmt, ..
 static void err_setcode(lua_State *L, struct callinfo *I, int code) {
 	I->error.code = code;
 
-	if (!I->error.string)
+	if (!I->error.value)
 		err_setfstring(L, I, "%s", cqs_strerror(code));
 } /* err_setcode() */
 
@@ -1311,7 +1311,7 @@ static void err_setinfo(lua_State *L, struct callinfo *I, int code, struct threa
 } /* err_setinfo() */
 
 static _Bool err_onstack(lua_State *L NOTUSED, struct callinfo *I) {
-	return I->error.string || I->error.thread || I->error.object;
+	return I->error.value || I->error.thread || I->error.object;
 } /* err_onstack() */
 
 static void err_corrupt(lua_State *L, int index, const char *type) {
@@ -1324,8 +1324,8 @@ static void err_checktype(lua_State *L, int index, int type) {
 } /* err_checktype() */
 
 static const char *err_pushvalue(lua_State *L, struct callinfo *I) {
-	if (I->error.string) {
-		lua_pushvalue(L, I->error.string);
+	if (I->error.value) {
+		lua_pushvalue(L, I->error.value);
 	} else {
 		lua_pushstring(L, "no error message");
 	}
@@ -2040,7 +2040,7 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 			goto defunct;
 
 		lua_xmove(T->L, L, 1); /* move error message */
-		I->error.string = lua_gettop(L);
+		I->error.value = lua_gettop(L);
 		err_setthread(L, I, T);
 defunct:
 		thread_del(L, Q, I, T);
