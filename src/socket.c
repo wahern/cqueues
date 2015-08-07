@@ -425,7 +425,6 @@ static void lso_pushsize(struct lua_State *L, size_t size) {
 static int lso_tofileno(lua_State *L, int index) {
 	struct luasocket *so;
 	luaL_Stream *fh;
-	int fd;
 
 	if (lua_isnumber(L, index)) {
 		return lua_tointeger(L, index);
@@ -1085,7 +1084,6 @@ error:
 static lso_nargs_t lso_checktls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	SSL **ssl;
-	int error;
 
 	ssl = lua_newuserdata(L, sizeof *ssl);
 
@@ -1151,7 +1149,6 @@ error:
 
 static lso_nargs_t lso_dup(lua_State *L) {
 	struct so_options opts;
-	struct luasocket *S;
 	int ofd, fd = -1, error;
 
 	if (lua_istable(L, 1)) {
@@ -1204,7 +1201,6 @@ error:
  */
 static lso_nargs_t lso_fdopen(lua_State *L) {
 	struct so_options opts;
-	struct luasocket *S;
 	int fd, error;
 
 	if (lua_istable(L, 1)) {
@@ -1692,9 +1688,7 @@ static lso_error_t lso_getline(struct luasocket *S, struct iovec *iov) {
 
 
 static lso_error_t lso_getheader(struct luasocket *S, struct iovec *iov) {
-	char *p, *pe;
 	size_t eoh;
-	_Bool eof;
 	int error;
 
 	fifo_slice(&S->ibuf.fifo, iov, 0, S->ibuf.maxline);
@@ -1729,7 +1723,6 @@ error:
 
 static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, int *eom, const char *eob, size_t eoblen, int mode) {
 	size_t bufsiz, maxbuf, n;
-	const char *p, *pe;
 	int error;
 
 	bufsiz = (mode & LSO_TEXT)? MAX(S->ibuf.bufsiz, S->ibuf.maxline) : S->ibuf.bufsiz;
@@ -1754,8 +1747,6 @@ static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, int *eom,
 		iov->iov_len = n - eoblen; /* n >= eoblen */
 
 		*eom = 1;
-
-		return 0;
 	} else if (iov->iov_len >= maxbuf) {
 		/*
 		 * Because maxbuf is >= bufsiz + 2 + eoblen we can be sure
@@ -1780,12 +1771,9 @@ static lso_error_t lso_getbody(struct luasocket *S, struct iovec *iov, int *eom,
 			 * trimmed a \r here.
 			 */
 		}
-
-		return 0;
 	}
 
-error:
-	return lso_asserterror(error);
+	return 0;
 } /* lso_getbody() */
 
 
@@ -2349,8 +2337,6 @@ static lso_nargs_t lso_sendfd3(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	const void *src;
 	size_t len;
-	struct luasocket *so;
-	luaL_Stream *fh;
 	int fd, error;
 
 	if ((error = lso_prepsnd(L, S)))
@@ -2662,7 +2648,6 @@ static lso_nargs_t lso_eof(lua_State *L) {
 
 static lso_nargs_t lso_accept(lua_State *L) {
 	struct luasocket *A = luaL_checkudata(L, 1, LSO_CLASS);
-	struct luasocket *S;
 	struct so_options opts;
 	int fd, error;
 
