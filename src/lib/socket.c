@@ -1888,8 +1888,6 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	so->fd = fd;
 
 	return so;
-syerr:
-	error = errno;
 error:
 	so_close(so);
 
