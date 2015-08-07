@@ -540,8 +540,10 @@ Wait for socket binding to succeed. You do not need to wait before proceeding to
 
 Socket binding may not occur immediately if you provided a host address that required DNS resolution over the network. This is uncommon for listening sockets but supported nonetheless; the symmetry simplifies internal code. Also, socket object instantiation with \fn{socket.listen} and \fn{socket.connect} only return errors regarding user data object construction; address lookup and binding errors are detected later, when initiated by subsequent method calls.
 
-\subsubsection[\fn{socket:accept}]{\fn{socket:accept([timeout])}}
+\subsubsection[\fn{socket:accept}]{\fn{socket:accept([options] [, timeout])}}
 Wait for and return an incoming client socket on a listening object.
+
+Optionally takes a table of named arguments. See also \fn{socket.connect\{\}}.
 
 \subsubsection[\fn{socket:clients}]{\fn{socket:clients([timeout])}}
 Iterator over \method{socket:accept}: \texttt{for con in srv:clients() do ... end}.
