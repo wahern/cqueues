@@ -33,7 +33,7 @@
 #include <time.h>   /* time(2) */
 
 #include <sys/types.h>   /* socklen_t mode_t in_port_t */
-#include <sys/stat.h>    /* fchmod(2) fstat(2) */
+#include <sys/stat.h>    /* fchmod(2) fstat(2) S_IFSOCK S_ISSOCK */
 #include <sys/select.h>  /* FD_ZERO FD_SET fd_set select(2) */
 #include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 #if defined(AF_UNIX)
@@ -660,7 +660,7 @@ static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *pr
 
 
 static int so_opts2flags(const struct so_options *, int *);
-static int so_type2mask(int, int, int);
+static int so_type2mask(mode_t, int, int, int);
 
 int so_socket(int domain, int type, const struct so_options *opts, int *_error) {
 	int error, fd, flags, mask, need;
@@ -674,7 +674,7 @@ int so_socket(int domain, int type, const struct so_options *opts, int *_error) 
 #endif
 
 	flags = so_opts2flags(opts, &mask);
-	mask &= so_type2mask(domain, type, 0);
+	mask &= so_type2mask(S_IFSOCK, domain, type, 0);
 	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
 
 	if ((error = so_setfl(fd, flags, mask, need)))
@@ -935,21 +935,25 @@ static int so_opts2flags(const struct so_options *opts, int *mask) {
 } /* so_opts2flags() */
 
 
-static int so_type2mask(int family, int type, int protocol) {
-	int mask = ~0;
+static int so_type2mask(mode_t mode, int family, int type, int protocol) {
+	int mask = SO_F_CLOEXEC|SO_F_NONBLOCK|SO_F_NOSIGPIPE;
 
-	if (!protocol) {
-		if (family == AF_INET || family == AF_INET6) {
-			protocol = (type == SOCK_STREAM)? IPPROTO_TCP : IPPROTO_UDP;
+	if (S_ISSOCK(mode)) {
+		mask |= SO_F_REUSEADDR|SO_F_REUSEPORT|SO_F_NODELAY|SO_F_NOPUSH|SO_F_OOBINLINE;
+
+		if (!protocol) {
+			if (family == AF_INET || family == AF_INET6) {
+				protocol = (type == SOCK_STREAM)? IPPROTO_TCP : IPPROTO_UDP;
+			}
 		}
-	}
 
-	if (family != AF_INET6) {
-		mask &= ~SO_F_V6ONLY;
-	}
+		if (family != AF_INET6) {
+			mask &= ~SO_F_V6ONLY;
+		}
 
-	if (protocol != IPPROTO_TCP) {
-		mask &= ~(SO_F_NODELAY|SO_F_NOPUSH);
+		if (protocol != IPPROTO_TCP) {
+			mask &= ~(SO_F_NODELAY|SO_F_NOPUSH);
+		}
 	}
 
 	return mask;
@@ -1880,7 +1884,7 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 		goto error;
 
 	flags = so_opts2flags(opts, &mask);
-	mask &= so_type2mask(so->domain, so->type, so->protocol);
+	mask &= so_type2mask(so->mode, so->domain, so->type, so->protocol);
 	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
 
 	if ((error = so_rstfl(fd, &so->flags, flags, mask, need)))
