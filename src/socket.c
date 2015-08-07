@@ -2666,12 +2666,18 @@ static lso_nargs_t lso_accept(lua_State *L) {
 	struct so_options opts;
 	int fd, error;
 
+	if (lua_istable(L, 2)) {
+		opts = lso_checkopts(L, 2);
+	} else {
+		opts = *so_opts();
+	}
+
 	so_clear(A->socket);
 
 	if (-1 == (fd = so_accept(A->socket, 0, 0, &error)))
 		goto error;
 
-	if ((error = cqs_socket_fdopen(L, fd, so_opts())))
+	if ((error = cqs_socket_fdopen(L, fd, &opts)))
 		goto error;
 
 	return 1;
