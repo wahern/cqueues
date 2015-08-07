@@ -106,4 +106,11 @@ else
 	if [ ! -d "${SRCDIR}/regress/.local/lib/5.3" ] || ! runlua -e 'require"_cqueues"' >/dev/null 2>&1; then
 		export RUNLUA_R="${RUNLUA_R:=5.1-5.2}"
 	fi
+
+	case "$(uname -s)" in
+	OpenBSD)
+		: ${RUNLUA_T:=1}
+		export RUNLUA_T
+		;;
+	esac
 fi

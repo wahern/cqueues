@@ -28,9 +28,16 @@ local function openssl_version(path)
 		fh:close()
 	end
 
-	local M, m, p = ln:match("(%d+)%.(%d+)%.(%d+)")
+	local M, m, p
 
-	if p then
+	if ln:match"LibreSSL" then
+		p, M, m = 0, ln:match("(%d+)%.(%d+)")
+	else
+		M, m, p = ln:match("(%d+)%.(%d+)%.(%d+)")
+
+	end
+
+	if M then
 		return (tonumber(M) * 268435456) + (tonumber(m) * 1048576) + (tonumber(p) * 4096)
 	end
 end
