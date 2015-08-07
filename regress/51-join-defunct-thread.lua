@@ -9,11 +9,21 @@ require"regress".export".*"
 check(jit, "LuaJIT required")
 check(errno.EOWNERDEAD, "EOWNERDEAD not defined")
 
-local thr = assert(thread.start(function ()
+local thr, con = assert(thread.start(function (con)
 	local errno = require"cqueues.errno"
 	local ffi  = require"ffi"
 
 	require"regress".export".*"
+
+	--
+	-- NOTE: On musl-libc the parent process deadlocks on flockfile as
+	-- apparently the thread dies when writing to stderr. Log to our
+	-- communications socket instead, which doesn't hold any locks.
+	--
+	local function info(...)
+		con:write(string.format(...), "\n")
+		con:flush()
+	end
 
 	info"calling prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT)"
 
@@ -41,10 +51,26 @@ local thr = assert(thread.start(function ()
 	info"pthread_exit call failed: thread still running"
 end))
 
-local ok, why, code = auxlib.fileresult(thr:join(5))
+local main = check(cqueues.new())
 
-check(not ok, "thread unexpectedly joined (%s)", why or "no error")
-check(code == errno.EOWNERDEAD or code == errno.ETIMEDOUT, "unexpected error: %s", why)
-check(code == errno.EOWNERDEAD, "robust mutex strategy not supported on this system")
+-- read thread's log lines from pcall because socket:read will throw an
+-- error when the socket is closed asynchronously below.
+check(main:wrap(pcall, function ()
+	for ln in con:lines() do
+		info("%s", ln)
+	end
+end))
+
+check(main:wrap(function ()
+	local ok, why, code = auxlib.fileresult(thr:join(5))
+
+	check(not ok, "thread unexpectedly joined (%s)", why or "no error")
+	check(code == errno.EOWNERDEAD or code == errno.ETIMEDOUT, "unexpected error: %s", why)
+	check(code == errno.EOWNERDEAD, "robust mutex strategy not supported on this system")
+
+	con:close()
+end))
+
+check(main:loop())
 
 say"OK"
