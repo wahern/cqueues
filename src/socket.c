@@ -1161,7 +1161,7 @@ static lso_nargs_t lso_dup(lua_State *L) {
 		goto badfd;
 
 #if defined F_DUPFD_CLOEXEC
-	if (-1 == (fd = fcntl(F_DUPFD_CLOEXEC, ofd)))
+	if (-1 == (fd = fcntl(ofd, F_DUPFD_CLOEXEC, 0)))
 		goto syerr;
 #else
 	if (-1 == (fd = dup(ofd)))
