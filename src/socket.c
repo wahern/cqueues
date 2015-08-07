@@ -366,7 +366,6 @@ struct luasocket {
 		size_t maxerrs;
 	} obuf;
 
-	int family;
 	int type;
 	struct socket *socket;
 
@@ -381,7 +380,6 @@ struct luasocket {
 static struct luasocket lso_initializer = {
 	.ibuf = { .mode = (LSO_RDMASK & LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
 	.obuf = { .mode = (LSO_WRMASK & LSO_INITMODE), .maxline = LSO_MAXLINE, .bufsiz = LSO_BUFSIZ, .maxerrs = LSO_MAXERRS },
-	.type = AF_UNSPEC,
 	.type = SOCK_STREAM,
 	.onerror = LUA_NOREF,
 	.timeout = LSO_NAN,
@@ -760,13 +758,12 @@ static struct luasocket *lso_prototype(lua_State *L) {
 } /* lso_prototype() */
 
 
-static struct luasocket *lso_newsocket(lua_State *L, int family, int type) {
+static struct luasocket *lso_newsocket(lua_State *L, int type) {
 	struct luasocket *S;
 
 	S = lua_newuserdata(L, sizeof *S);
 	*S = *lso_prototype(L);
 
-	S->family = family;
 	S->type = type;
 
 	fifo_init(&S->ibuf.fifo);
@@ -900,7 +897,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
-	S = lso_newsocket(L, family, type);
+	S = lso_newsocket(L, type);
 
 	opts.fd_close.arg = S;
 	opts.fd_close.cb = &lso_closefd;
@@ -988,7 +985,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
-	S = lso_newsocket(L, family, type);
+	S = lso_newsocket(L, type);
 
 	opts.fd_close.arg = S;
 	opts.fd_close.cb = &lso_closefd;
@@ -1107,18 +1104,10 @@ static lso_nargs_t lso_checktls(lua_State *L) {
 
 lso_error_t cqs_socket_fdopen(lua_State *L, int fd, const struct so_options *_opts) {
 	struct so_options opts = *((_opts)? _opts : so_opts());
-	struct sockaddr_storage ss;
 	struct luasocket *S;
-	int family = AF_UNSPEC, type = SOCK_STREAM, error;
+	int type = SOCK_STREAM, error;
 
-	memset(&ss, 0, sizeof ss);
-
-	if (0 == getsockname(fd, (struct sockaddr *)&ss, &(socklen_t){ sizeof ss })) {
-		family = ss.ss_family;
-
-		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type }))
-			goto syerr;
-	} else {
+	if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &(socklen_t){ sizeof type })) {
 		switch (errno) {
 		case ENOTSOCK:
 		case EOPNOTSUPP:
@@ -1128,7 +1117,7 @@ lso_error_t cqs_socket_fdopen(lua_State *L, int fd, const struct so_options *_op
 		}
 	}
 
-	S = lso_newsocket(L, family, type);
+	S = lso_newsocket(L, type);
 
 	if ((error = lso_prepsocket(S)))
 		goto error;
@@ -1258,8 +1247,8 @@ static lso_nargs_t lso_pair(lua_State *L) {
 		type = luaL_optinteger(L, 1, SOCK_STREAM);
 	}
 
-	a = lso_newsocket(L, AF_UNIX, type);
-	b = lso_newsocket(L, AF_UNIX, type);
+	a = lso_newsocket(L, type);
+	b = lso_newsocket(L, type);
 
 #if defined SOCK_CLOEXEC
 	if (0 != socketpair(AF_UNIX, type|SOCK_CLOEXEC, PF_UNSPEC, fd))
