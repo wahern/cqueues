@@ -494,6 +494,7 @@ static int kpoll_init(struct kpoll *kp) {
 
 #if HAVE_EPOLL
 #if defined EPOLL_CLOEXEC
+	(void)error;
 	if (-1 == (kp->fd = epoll_create1(EPOLL_CLOEXEC)))
 		return errno;
 #else
