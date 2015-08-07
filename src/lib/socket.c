@@ -1294,7 +1294,6 @@ error:
 
 
 static int so_socket_(struct socket *so) {
-	struct stat st;
 	int error;
 
 	if (!so->host)

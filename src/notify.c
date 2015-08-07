@@ -200,7 +200,6 @@ static int ln_strflag(lua_State *L) {
 
 static int ln_nxtflag(lua_State *L) {
 	int flags = (int)lua_tointeger(L, lua_upvalueindex(1));
-	const char *name;
 	int flag;
 
 	if (ffs(flags)) {

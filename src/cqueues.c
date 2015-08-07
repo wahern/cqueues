@@ -2291,7 +2291,7 @@ static int cqueue_cancel(lua_State *L) {
 	struct callinfo I;
 	int top = lua_gettop(L);
 	struct cqueue *Q = cqueue_enter(L, &I, 1);
-	int index, fd;
+	int index;
 
 	for (index = 2; index <= top; index++)
 		cqueue_cancelfd(Q, cqueue_checkfd(L, &I, index));
