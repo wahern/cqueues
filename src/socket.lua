@@ -212,10 +212,15 @@ end)
 --
 -- Yielding socket:accept
 --
-local _accept; _accept = socket.interpose("accept", function(self, timeout)
-	local timeout = timeout or self:timeout()
+local _accept; _accept = socket.interpose("accept", function(self, opts, timeout)
+	-- :accept used to take just a timeout as argument
+	if type(opts) == "number" then
+		timeout, opts = opts, nil
+	else
+		timeout = timeout or self:timeout()
+	end
 	local deadline = timeout and (monotime() + timeout)
-	local con, why = _accept(self)
+	local con, why = _accept(self, opts)
 
 	while not con do
 		if why == EAGAIN then
@@ -226,7 +231,7 @@ local _accept; _accept = socket.interpose("accept", function(self, timeout)
 			return nil, oops(self, "accept", why)
 		end
 
-		con, why = _accept(self)
+		con, why = _accept(self, opts)
 	end
 
 	return con
@@ -236,8 +241,8 @@ end)
 --
 -- Add socket:clients
 --
-socket.interpose("clients", function(self, timeout)
-	return function() return self:accept(timeout) end
+socket.interpose("clients", function(self, opts, timeout)
+	return function() return self:accept(opts, timeout) end
 end)
 
 
