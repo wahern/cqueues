@@ -107,7 +107,7 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-static int setcloexec(int fd) {
+inline static int setcloexec(int fd) {
 	if (-1 == fcntl(fd, F_SETFD, FD_CLOEXEC))
 		return errno;
 
