@@ -53,7 +53,7 @@ local function logname(so)
 	if af == AF_INET or af == AF_INET6 then
 		return format("%s.%s", addr, port)
 	elseif af == AF_UNIX and #addr > 0 then
-		return format("unix:%s", addr)
+		return format("unix:%s", addr or "unnamed")
 	end
 end -- logname
 
