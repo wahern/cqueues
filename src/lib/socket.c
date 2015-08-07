@@ -2279,7 +2279,6 @@ static int bio_write(BIO *bio, const char *src, int len) {
 	assert(len >= 0);
 
 	BIO_clear_retry_flags(bio);
-	so->bio.error;
 
 	if ((count = so_syswrite(so, src, len, &so->bio.error)))
 		return (int)count;
