@@ -26,7 +26,7 @@
 #include <stddef.h>	/* NULL offsetof size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* strtol(3) */
-#include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) */
+#include <string.h>	/* memset(3) memchr(3) memcpy(3) memmem(3) memrchr(3) */
 #include <math.h>	/* NAN */
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
@@ -2137,12 +2137,30 @@ error:
 
 static lso_nargs_t lso_unget2(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
-	const void *src;
-	size_t len;
+	const char *src, *new_base;
+	size_t len, found;
 	struct iovec iov;
-	int error;
+	int mode, error;
 
 	src = luaL_checklstring(L, 2, &len);
+	mode = S->ibuf.mode;
+
+	if (mode & LSO_TEXT) {
+		/* insert \r before each \n */
+		while ((new_base = memrchr(src, '\n', len))) {
+			found = len - (new_base - src); /* number of bytes found including \n */
+
+			if ((error = fifo_grow(&S->ibuf.fifo, found+1)))
+				goto error;
+
+			fifo_rewind(&S->ibuf.fifo, found+1);
+			fifo_slice(&S->ibuf.fifo, &iov, 0, found+1);
+			memcpy(iov.iov_base+1, new_base, found);
+			((char*)iov.iov_base)[0] = '\r';
+
+			len = new_base - src;
+		}
+	}
 
 	if ((error = fifo_grow(&S->ibuf.fifo, len)))
 		goto error;
