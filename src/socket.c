@@ -2143,7 +2143,7 @@ static lso_nargs_t lso_unget2(lua_State *L) {
 	int mode, error;
 
 	src = luaL_checklstring(L, 2, &len);
-	mode = S->ibuf.mode;
+	mode = lso_imode(luaL_optstring(L, 3, ""), S->ibuf.mode);
 
 	if (mode & LSO_TEXT) {
 		/* insert \r before each \n */
