@@ -246,7 +246,91 @@ Last updated 2014-07-01.
 
 ---------------------------------------------------------------------------
 
-## APPENDIX
+### `getsockname` and `getpeername` on `AF_UNIX` socket
+
+The socket address returned for both named and unnamed AF_UNIX sockets
+differs among systems. Applications must be sure to check the returned
+socket address length as it won't always match the length of the associated
+socket address structure, and in some cases might be 0.
+
+NOTE:
+  - An rlen of 0 did not mean that the syscall failed. No syscalls failed in
+    the generation of this dataset.
+  - For socketpair the first descriptor was used to query the behavior.
+
+```
+system       | fd         | syscall     | rlen | .sa_family | .sun_path
+=================================================================================
+AIX 7.1      | listen     | getsockname | 1025 | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 1025 | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 16   | AF_UNIX    | empty
+             | connect    | getsockname | 0    | unset      | -
+             | connect    | getpeername | 1025 | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 0    | unset      | -
+             | socketpair | getpeername | 16   | AF_UNIX    | empty
+---------------------------------------------------------------------------------
+Solaris 11.2 | listen     | getsockname | 110  | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 110  | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 16   | AF_UNIX    | empty
+             | connect    | getsockname | 0    | unset      | -
+             | connect    | getpeername | 110  | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 16   | AF_UNIX    | empty
+             | socketpair | getpeername | 0    | unset      | -
+---------------------------------------------------------------------------------
+Linux 3.16   | listen     | getsockname | 13   | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 13   | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 2    | AF_UNIX    | unset
+             | connect    | getsockname | 2    | AF_UNIX    | unset
+             | connect    | getpeername | 13   | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 2    | AF_UNIX    | unset
+             | socketpair | getpeername | 2    | AF_UNIX    | unset
+---------------------------------------------------------------------------------
+FreeBSD 10.1 | listen     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 16   | AF_UNIX    | empty
+             | connect    | getsockname | 16   | AF_UNIX    | empty
+             | connect    | getpeername | 106  | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 16   | AF_UNIX    | empty
+             | socketpair | getpeername | 16   | AF_UNIX    | empty
+---------------------------------------------------------------------------------
+NetBSD 6.1.5 | listen     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 106  | AF_UNIX    | empty
+             | connect    | getsockname | 106  | AF_UNIX    | empty
+             | connect    | getpeername | 106  | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 106  | AF_UNIX    | empty
+             | socketpair | getpeername | 106  | AF_UNIX    | empty
+---------------------------------------------------------------------------------
+OpenBSD 5.6  | listen     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 16   | AF_UNIX    | empty
+             | connect    | getsockname | 16   | AF_UNIX    | empty
+             | connect    | getpeername | 106  | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 16   | AF_UNIX    | empty
+             | socketpair | getpeername | 16   | AF_UNIX    | empty
+---------------------------------------------------------------------------------
+Minix 3.3    | listen     | getsockname | 106  | AF_UNIX    | set    (/tmp/getname.012688aa/named.sock)
+             | accept     | getsockname | 106  | AF_UNIX    | set    (/tmp/getname.012688aa/named.sock)
+             | accept     | getpeername | 106  | AF_UNIX    | set    (/tmp/getname.012688aa/named.sock)
+             | connect    | getsockname | 106  | AF_UNIX    | set    (/tmp/getname.012688aa/named.sock)
+             | connect    | getpeername | 106  | AF_UNIX    | set    (/tmp/getname.012688aa/named.sock)
+             | socketpair | getsockname | 106  | AF_UNIX    | set    (X)
+             | socketpair | getpeername | 106  | AF_UNIX    | set    (X)
+---------------------------------------------------------------------------------
+OS X 10.10.5 | listen     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getsockname | 106  | AF_UNIX    | set    (named.sock)
+             | accept     | getpeername | 16   | AF_UNIX    | empty
+             | connect    | getsockname | 16   | AF_UNIX    | empty
+             | connect    | getpeername | 106  | AF_UNIX    | set    (named.sock)
+             | socketpair | getsockname | 16   | AF_UNIX    | empty
+             | socketpair | getpeername | 16   | AF_UNIX    | empty
+```
+
+Last updated 2015-08-10.
+
+---------------------------------------------------------------------------
+
+### APPENDIX
 
 	// fchmod and AF_UNIX socket permission checking
 	// Last updated 2012-09-15
@@ -385,5 +469,220 @@ Last updated 2014-07-01.
 
 		return 0;
 	}
+
+---------------------------------------------------------------------------
+
+	// getsockname and getpeername on AF_UNIX socket
+	#include <stddef.h>
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <string.h>
+	#include <errno.h>
+	#include <sys/types.h>
+	#include <sys/socket.h>
+	#include <sys/un.h>
+	#include <sys/stat.h>
+	#include <unistd.h>
+	#include <fcntl.h>
+
+	#undef sun
+
+	#define SAY_(file, func, line, fmt, ...) \
+	        fprintf(stderr, "%s:%d: " fmt "%s", __func__, __LINE__, __VA_ARGS__)
+	#define SAY(...) SAY_(__FILE__, __func__, __LINE__, __VA_ARGS__, "\n")
+	#define HAI SAY("hai")
+
+	#define panic(...) do { SAY(__VA_ARGS__); exit(EXIT_FAILURE); } while (0)
+	#define panic_m_(fmt, ...) panic(fmt ": %s", __VA_ARGS__)
+	#define panic_m(...) panic_m_(__VA_ARGS__, strerror(errno))
+
+	static struct {
+		char root[128], name[128];
+	} tmp = {
+		.root = "/tmp/getname.XXXXXXXX",
+		.name = "named.sock",
+	};
+
+	static void rmtmpdir(void) {
+		unlink(tmp.name);
+
+		if (0 != chdir(".."))
+			panic_m("chdir ..");
+
+		if (0 != rmdir(tmp.root))
+			panic_m("rmdir %s", tmp.root);
+	} /* rmtmpdir() */
+
+	static void mktmpdir(void) {
+		if (!mktemp(tmp.root))
+			panic_m("mktemp");
+
+		if (0 != mkdir(tmp.root, 0700))
+			panic_m("%s", tmp.root);
+
+		atexit(&rmtmpdir);
+
+		if (0 != chdir(tmp.root))
+			panic_m("chdir %s", tmp.root);
+	} /* mktmpdir() */
+
+	struct sockname {
+		int flags;
+
+		const char *type;
+		const char *call;
+
+		union {
+			struct sockaddr sa;
+			struct sockaddr_un sun;
+			struct sockaddr_storage ss;
+		} sa;
+		socklen_t salen;
+
+		struct {
+			_Bool isset;
+			int type;
+			const char *text;
+		} family;
+
+		struct {
+			_Bool defined;
+			_Bool isset;
+			_Bool empty;
+			const char *text;
+		} path;
+	}; /* struct sockname */
+
+	#define GETNAME_LISTENFD     0x01
+	#define GETNAME_ACCEPTFD     0x02
+	#define GETNAME_CONNECTFD    0x04
+	#define GETNAME_SOCKETPAIRFD 0x08
+	#define GETNAME_SOCKNAME     0x10
+	#define GETNAME_PEERNAME     0x20
+
+	static struct sockname getname(int fd, int flags) {
+		struct sockname name;
+		int ret;
+
+		memset(&name, 0, sizeof name);
+		name.flags = flags;
+		name.type = (flags & GETNAME_CONNECTFD)? "connect" : (flags & GETNAME_ACCEPTFD)? "accept" : (flags & GETNAME_LISTENFD)? "listen" : "socketpair";
+		name.call = (flags & GETNAME_PEERNAME)? "getpeername" : "getsockname";
+		name.family.type = AF_UNSPEC;
+		name.family.text = "unset";
+		name.path.text = "-";
+
+		name.salen = sizeof name.sa;
+
+		if (flags & GETNAME_PEERNAME) {
+			ret = getpeername(fd, (struct sockaddr *)&name.sa, &name.salen);
+		} else {
+			ret = getsockname(fd, (struct sockaddr *)&name.sa, &name.salen);
+		}
+
+		if (0 != ret)
+			panic_m("%s", (flags & GETNAME_PEERNAME)? "getpeername" : "getsockname");
+
+		if (name.salen >= offsetof(struct sockaddr_un, sun_family) + sizeof (name.sa.sun.sun_family)) {
+			name.family.isset = 1;
+			name.family.type = name.sa.sun.sun_family;
+
+			switch (name.family.type) {
+			case AF_UNSPEC:
+				name.family.text = "AF_UNSPEC";
+				break;
+			case AF_UNIX:
+				name.family.text = "AF_UNIX";
+				break;
+			default:
+				name.family.text = "?";
+				break;
+			}
+		}
+
+		if (name.family.type == AF_UNIX) {
+			name.path.defined = 1;
+
+			if (name.salen > offsetof(struct sockaddr_un, sun_path)) {
+				name.path.isset = 1;
+				name.path.empty = 0 == strnlen(name.sa.sun.sun_path, sizeof name.sa.sun.sun_path);
+				name.path.text = (name.path.empty)? "empty" : "set";
+			} else {
+				name.path.text = "unset";
+			}
+		}
+
+		return name;
+	} /* getname() */
+
+	static void printname(struct sockname name) {
+		printf("%-10s | %s | %-4d | %-9s | %-6s", name.type, name.call, (int)name.salen, name.family.text, name.path.text);
+		if (name.path.isset && !name.path.empty)
+			printf(" (%s)", name.sa.sun.sun_path);
+		putchar('\n');
+	} /* printname() */
+
+	int main(void) {
+		struct sockaddr_un sun, none;
+		int listen_fd = -1, accept_fd = -1, connect_fd = -1, pair_fd[2] = { -1, -1 };
+		int flags, i;
+		struct sockname name[7];
+
+		mktmpdir();
+
+		if (-1 == (listen_fd = socket(AF_UNIX, SOCK_STREAM, PF_UNSPEC)))
+			panic_m("socket");
+		memset(&sun, 0, sizeof sun);
+		sun.sun_family = AF_UNIX;
+		strncpy(sun.sun_path, tmp.name, sizeof sun.sun_path);
+		if (0 != bind(listen_fd, (struct sockaddr *)&sun, sizeof sun))
+			panic_m("bind %s", tmp.name);
+		if (0 != listen(listen_fd, SOMAXCONN))
+			panic_m("listen");
+		name[0] = getname(listen_fd, GETNAME_LISTENFD|GETNAME_SOCKNAME);
+
+		if (-1 == (connect_fd = socket(AF_UNIX, SOCK_STREAM, PF_UNSPEC)))
+			panic_m("socket");
+		if (-1 == (flags = fcntl(connect_fd, F_GETFL)))
+			panic_m("fcntl");
+		if (0 != fcntl(connect_fd, F_SETFL, flags|O_NONBLOCK))
+			panic_m("fcntl");
+		memset(&sun, 0, sizeof sun);
+		sun.sun_family = AF_UNIX;
+		strncpy(sun.sun_path, tmp.name, sizeof sun.sun_path);
+		(void)connect(connect_fd, (struct sockaddr *)&sun, sizeof sun);
+
+		/* Minix segfaults when passing NULL */
+		memset(&none, 0, sizeof none);
+		if (-1 == (accept_fd = accept(listen_fd, (struct sockaddr *)&none, &(socklen_t){ sizeof none })))
+			panic_m("accept");
+
+		/*
+		 * Minix requires that we connect asynchronously. All other systems
+		 * completed the test with a synchrous connect followed by
+		 * synchronous accept
+		 */
+		while (0 != connect(connect_fd, (struct sockaddr *)&sun, sizeof sun)) {
+			if (errno == EALREADY || errno == EISCONN)
+				break;
+			if (errno != EINPROGRESS)
+				panic_m("connect %s", tmp.name);
+		}
+
+		name[1] = getname(accept_fd, GETNAME_ACCEPTFD|GETNAME_SOCKNAME);
+		name[2] = getname(accept_fd, GETNAME_ACCEPTFD|GETNAME_PEERNAME);
+		name[3] = getname(connect_fd, GETNAME_CONNECTFD|GETNAME_SOCKNAME);
+		name[4] = getname(connect_fd, GETNAME_CONNECTFD|GETNAME_PEERNAME);
+
+		if (0 != socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, pair_fd))
+			panic_m("socketpair");
+
+		name[5] = getname(pair_fd[0], GETNAME_SOCKETPAIRFD|GETNAME_SOCKNAME);
+		name[6] = getname(pair_fd[0], GETNAME_SOCKETPAIRFD|GETNAME_PEERNAME);
+
+		for (i = 0; i < (int)(sizeof name / sizeof *name); i++)
+			printname(name[i]);
+		return 0;
+	} /* main() */
 
 ---------------------------------------------------------------------------
