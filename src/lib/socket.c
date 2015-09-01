@@ -2275,7 +2275,14 @@ static int bio_read(BIO *bio, char *dst, int lim) {
 	if (bio_nonfatal(so->bio.error))
 		BIO_set_retry_read(bio);
 
-	return (so->bio.error == EPIPE)? 0 : -1;
+	if (so->bio.error == EPIPE) {
+		return 0;
+	} else {
+		/* see note about SSL_ERROR_SYSCALL at bio_write */
+		errno = so->bio.error;
+
+		return -1;
+	}
 } /* bio_read() */
 
 static int bio_write(BIO *bio, const char *src, int len) {
@@ -2286,13 +2293,19 @@ static int bio_write(BIO *bio, const char *src, int len) {
 	assert(len >= 0);
 
 	BIO_clear_retry_flags(bio);
-	so->bio.error;
+	so->bio.error = 0;
 
 	if ((count = so_syswrite(so, src, len, &so->bio.error)))
 		return (int)count;
 
 	if (bio_nonfatal(so->bio.error))
 		BIO_set_retry_write(bio);
+
+	/*
+	 * SSL_get_error will return SSL_ERROR_SYSCALL, expecting errno to
+	 * be set.
+	 */
+	errno = so->bio.error;
 
 	return -1;
 } /* bio_write() */
