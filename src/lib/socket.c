@@ -2275,14 +2275,10 @@ static int bio_read(BIO *bio, char *dst, int lim) {
 	if (bio_nonfatal(so->bio.error))
 		BIO_set_retry_read(bio);
 
-	if (so->bio.error == EPIPE) {
-		return 0;
-	} else {
-		/* see note about SSL_ERROR_SYSCALL at bio_write */
-		errno = so->bio.error;
+	/* see note about SSL_ERROR_SYSCALL at bio_write */
+	errno = so->bio.error;
 
-		return -1;
-	}
+	return (so->bio.error == EPIPE)? 0 : -1;
 } /* bio_read() */
 
 static int bio_write(BIO *bio, const char *src, int len) {
