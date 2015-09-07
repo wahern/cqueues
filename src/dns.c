@@ -1303,7 +1303,7 @@ static int resconf_getsearch(lua_State *L) {
 
 	for (unsigned i = 0; i < countof(resconf->search) && *resconf->search[i]; i++) {
 		lua_pushstring(L, resconf->search[i]);
-		lua_rawseti(L, -1, i + 1);
+		lua_rawseti(L, -2, i + 1);
 	}
 
 	return 1;
@@ -1353,7 +1353,7 @@ static int resconf_getlookup(lua_State *L) {
 			continue;
 		}
 
-		lua_rawseti(L, -1, i + 1);
+		lua_rawseti(L, -2, i + 1);
 	}
 
 	return 1;
