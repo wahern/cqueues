@@ -7,7 +7,7 @@ liblua-cqueues (20150907-0) unstable; urgency=low
   * Fix to socket.fdopen for regular files. Report and fix from daurnimator.
   * Allow non-string error objects to be returned from cqueues:step, et al.
     Fix from daurnimator.
-  * Set contoller alert on cancellation to ensure any controller polling on
+  * Set controller alert on cancellation to ensure any controller polling on
     that controller wakes up. Report by daurnimator.
   * Enhance accept to take an options argument. Fix from daurnimator.
   * Fix wrong order of parameters to fcntl in socket.dup.
