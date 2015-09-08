@@ -186,7 +186,8 @@ static void so_dump(const unsigned char *src, size_t len, FILE *fp) {
 
 
 static void so_trace(enum so_trace event, int fd, const struct addrinfo *host, ...) {
-	struct sockaddr_storage saddr;
+	struct sockaddr_storage saddr = {0};
+	socklen_t saddr_len = sizeof saddr;
 	char addr[64], who[256];
 	in_port_t port;
 	va_list ap;
@@ -207,8 +208,8 @@ static void so_trace(enum so_trace event, int fd, const struct addrinfo *host, .
 			snprintf(who, sizeof who, "%.96s/[%s]:%hu", host->ai_canonname, addr, ntohs(port));
 		else
 			snprintf(who, sizeof who, "[%s]:%hu", addr, ntohs(port));
-	} else if (fd != -1 && 0 == getpeername(fd, (struct sockaddr *)&saddr, &(socklen_t){ sizeof saddr })) {
-		sa_ntop(addr, sizeof addr, &saddr, NULL, &error);
+	} else if (fd != -1 && 0 == getpeername(fd, (struct sockaddr *)&saddr, &saddr_len)) {
+		sa_ntop(addr, saddr_len, &saddr, NULL, &error);
 		port = *sa_port(&saddr, SA_PORT_NONE, NULL);
 
 		snprintf(who, sizeof who, "[%s]:%hu", addr, ntohs(port));
