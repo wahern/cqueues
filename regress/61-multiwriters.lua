@@ -70,7 +70,9 @@ local function test(bufsiz)
 	local interleaved = false
 
 	loop:wrap(function ()
-		for buf in rd:lines(1024 * 1024) do
+		while true do
+			local buf = rd:read(1024 * 1024)
+			if buf == nil then break end
 			local ch = string.sub(buf, 1, 1)
 			local uniform = not buf:match(string.format("[^%s]", ch))
 
