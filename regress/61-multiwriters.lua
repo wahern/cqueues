@@ -78,7 +78,7 @@ local function test(bufsiz)
 
 			interleaved = interleaved or not uniform
 
-			info("read %d bytes (interleaved:%s)", #buf, not uniform)
+			info("read %d bytes (interleaved:%s)", #buf, tostring(not uniform))
 		end
 	end)
 
