@@ -973,6 +973,9 @@ static int cond__gc(lua_State *L) {
 static int cond_wait(lua_State *L) {
 	cond_checkself(L, 1);
 
+	lua_pushlightuserdata(L, CQUEUE__POLL);
+	lua_insert(L, 1);
+
 	return lua_yield(L, lua_gettop(L));
 } /* cond_wait() */
 
