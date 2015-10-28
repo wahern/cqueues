@@ -1068,8 +1068,7 @@ int luaopen__cqueues_condition(lua_State *L) {
 
 #define CQUEUE_CLASS "Continuation Queue"
 
-#define CQUEUE__POLL ((void *)&cqueue__poll)
-static const char cqueue__poll[] = "poll magic"; // signals multilevel yield
+const char *cqueue__poll = "poll magic"; // signals multilevel yield
 
 typedef int auxref_t;
 
