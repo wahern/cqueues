@@ -33,14 +33,8 @@ local loader = function(loader, ...)
 	local poller
 
 	function core.poll(...)
-		local yes, main = running()
-
-		if yes then
-			if main then
-				return yield(...)
-			else
-				return yield(_POLL, ...)
-			end
+		if running() then
+			return yield(_POLL, ...)
 		else
 			local tuple
 
