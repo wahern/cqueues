@@ -2012,30 +2012,27 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 
 	switch (status) {
 	case LUA_YIELD:
-		for (index = 1; index <= lua_gettop(T->L); index++) {
-			switch (lua_type(T->L, index)) {
-			case LUA_TNIL:
-				continue;
-			case LUA_TLIGHTUSERDATA:
-				/* ignore _POLL magic value */
-				if (lua_topointer(T->L, index) == CQUEUE__POLL)
+		if (lua_islightuserdata(T->L, 1) && lua_topointer(T->L, 1) == CQUEUE__POLL) {
+			for (index = 2; index <= lua_gettop(T->L); index++) {
+				switch (lua_type(T->L, index)) {
+				case LUA_TNIL:
 					continue;
-
-				/* FALL THROUGH */
-			default:
-				if (LUA_OK != (status = event_add(L, Q, I, T, index)))
-					goto defunct;
+				default:
+					if (LUA_OK != (status = event_add(L, Q, I, T, index)))
+						goto defunct;
+				}
 			}
+
+			if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
+				goto defunct;
+
+			timer_add(Q, &T->timer, thread_timeout(T));
+
+			if (!TAILQ_EMPTY(&T->events) || isfinite(T->timer.timeout))
+				thread_move(T, &Q->thread.polling);
+		} else {
+			luaL_error(L, "NYI: re-yielding");
 		}
-
-		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
-			goto defunct;
-
-		timer_add(Q, &T->timer, thread_timeout(T));
-
-		if (!TAILQ_EMPTY(&T->events) || isfinite(T->timer.timeout))
-			thread_move(T, &Q->thread.polling);
-
 		break;
 	case LUA_OK:
 		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
