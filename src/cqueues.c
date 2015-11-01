@@ -2147,26 +2147,48 @@ static double cqueue_timeout_(struct cqueue *Q) {
 } /* cqueue_timeout_() */
 
 
-static int cqueue_step_cont(lua_State *L, int status, lua_KContext ctx) {
+#if LUA_VERSION_NUM >= 502
+#if LUA_VERSION_NUM == 502
+static int cqueue_step_cont(lua_State *L) {
+#else
+static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx) {
+#endif
 	int nargs = lua_gettop(L);
-	struct thread *T = (struct thread*)ctx;
+	struct thread *T;
 	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cqueue *Q = cqueue_checkself(L, 1);
 
 	I.self = 1;
 	I.registry = 3;
 
+#if LUA_VERSION_NUM == 502
+	T = lua_touserdata(L, 4);
+	/* copy arguments onto resumed stack */
+	lua_xmove(L, T->L, nargs-4);
+	lua_pop(L, 1);
+#else
+	T = (struct thread*)ctx;
 	/* copy arguments onto resumed stack */
 	lua_xmove(L, T->L, nargs-3);
+#endif
 
 	switch(cqueue_process(L, Q, &I, &T)) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
+#if LUA_VERSION_NUM >= 503
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(T->L);
 			lua_xmove(T->L, L, nargs);
 			return lua_yieldk(L, nargs, (intptr_t)T, cqueue_step_cont);
+#elif LUA_VERSION_NUM == 502
+			/* keep thread pointer on lua stack */
+			lua_pushlightuserdata(L, T);
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(T->L);
+			lua_xmove(T->L, L, nargs);
+			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+#endif
 		default:
 			goto oops;
 		}
@@ -2178,6 +2200,7 @@ oops:
 	lua_pushboolean(L, 0);
 	return 1 + err_pushinfo(L, &I);
 } /* yield_cont() */
+#endif
 
 
 static int cqueue_step(lua_State *L) {
@@ -2209,10 +2232,21 @@ static int cqueue_step(lua_State *L) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
+#if LUA_VERSION_NUM >= 503
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(T->L);
 			lua_xmove(T->L, L, nargs);
 			return lua_yieldk(L, nargs, (intptr_t)T, cqueue_step_cont);
+#elif LUA_VERSION_NUM == 502
+			/* keep thread pointer on lua stack */
+			lua_pushlightuserdata(L, T);
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(T->L);
+			lua_xmove(T->L, L, nargs);
+			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+#else
+			return luaL_error(L, "cannot yield over C function in Lua 5.1");
+#endif
 		default:
 			goto oops;
 		}
