@@ -1142,6 +1142,8 @@ struct cqueue {
 
 	auxref_t registry; /* ephemeron table global registry index */
 
+	struct thread *yielded_thread;
+
 	struct {
 		LLRB_HEAD(table, fileno) table;
 		LIST_HEAD(, fileno) polling, outstanding, inactive;
@@ -1383,6 +1385,8 @@ static void cqueue_preinit(struct cqueue *Q) {
 
 	kpoll_preinit(&Q->kp);
 
+	Q->yielded_thread = NULL;
+
 	Q->registry = LUA_NOREF;
 
 	pool_init(&Q->pool.wakecb, sizeof (struct wakecb));
@@ -1441,6 +1445,8 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	void *next;
 
 	cstack_del(Q);
+
+	Q->yielded_thread = NULL;
 
 	while ((thread = LIST_FIRST(&Q->thread.polling))) {
 		thread_del(L, Q, I, thread);
@@ -2172,10 +2178,13 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx) 
 	lua_xmove(L, T->L, nargs-3);
 #endif
 
+	Q->yielded_thread = NULL;
+
 	switch(cqueue_process(L, Q, &I, &T)) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
+			Q->yielded_thread = T;
 #if LUA_VERSION_NUM >= 503
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(T->L);
@@ -2215,6 +2224,10 @@ static int cqueue_step(lua_State *L) {
 
 	Q = cqueue_enter(L, &I, 1);
 
+	if (Q->yielded_thread) {
+		return luaL_error(L, "cannot step yielded cqueue");
+	}
+
 	if (Q->thread.count) {
 		if (LIST_EMPTY(&Q->thread.pending)) {
 			timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
@@ -2232,6 +2245,7 @@ static int cqueue_step(lua_State *L) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
+			Q->yielded_thread = T;
 #if LUA_VERSION_NUM >= 503
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(T->L);
