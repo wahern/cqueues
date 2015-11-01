@@ -1973,7 +1973,8 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 	int otop = lua_gettop(L), nargs, status, index;
 	struct event *event;
 
-	if (lua_status(T->L) == LUA_YIELD) {
+	status = lua_status(T->L);
+	if (status == LUA_YIELD && lua_islightuserdata(T->L, 1) && lua_topointer(T->L, 1) == CQUEUE__POLL) {
 		/*
 		 * Preserve any previously yielded objects on another stack
 		 * until we can call cqueue_update() because when
@@ -1998,8 +1999,11 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 			event_del(Q, event);
 		}
 	} else {
-		nargs = lua_gettop(T->L) - 1;
-		assert(nargs >= 0);
+		nargs = lua_gettop(T->L);
+		if (status != LUA_YIELD) {
+			nargs -= 1;
+			assert(nargs >= 0);
+		}
 	}
 
 	timer_del(Q, &T->timer);
