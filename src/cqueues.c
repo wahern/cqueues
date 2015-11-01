@@ -2154,8 +2154,17 @@ static double cqueue_timeout_(struct cqueue *Q) {
 
 
 static void cqueue_resume_cont(lua_State *L, struct cqueue *Q, int nargs) {
+	int index;
 	struct thread *T = Q->yielded_thread;
-	if (!T) luaL_error(L, "cqueue not yielded");
+	if (!T) {
+		luaL_error(L, "cqueue not yielded");
+		NOTREACHED;
+	}
+	index = lua_gettop(L)-nargs+1;
+	if (lua_islightuserdata(L, index) && lua_touserdata(T->L, index) == CQUEUE__POLL) {
+		luaL_error(L, "cannot resume a coroutine passing internal cqueues._POLL value as first parameter");
+		NOTREACHED;
+	}
 	/* move arguments onto resumed stack */
 	lua_xmove(L, T->L, nargs);
 	Q->yielded_thread = NULL;
