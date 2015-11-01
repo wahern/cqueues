@@ -76,7 +76,24 @@ local loader = function(loader, ...)
 		else
 			return step(self, timeout)
 		end
-	end) -- core:step
+	end)
+	--
+	-- Lua 5.1 doesn't allow continuations in C
+	-- so we have to emulate them in lua.
+	--
+	if _VERSION == "Lua 5.1" then
+		local function checkstep(self, ok, ...)
+			if ok == "yielded" then
+				self:set_resume(coroutine.yield(...))
+				return self:step(0)
+			else
+				return ok, ...
+			end
+		end
+		local step_; step_ = core.interpose("step", function (self, timeout)
+			return checkstep(self, step_(self, timeout))
+		end)
+	end -- core:step
 
 	--
 	-- core:loop

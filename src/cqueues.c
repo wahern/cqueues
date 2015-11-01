@@ -2153,6 +2153,15 @@ static double cqueue_timeout_(struct cqueue *Q) {
 } /* cqueue_timeout_() */
 
 
+static void cqueue_resume_cont(lua_State *L, struct cqueue *Q, int nargs) {
+	struct thread *T = Q->yielded_thread;
+	if (!T) luaL_error(L, "cqueue not yielded");
+	/* move arguments onto resumed stack */
+	lua_xmove(L, T->L, nargs);
+	Q->yielded_thread = NULL;
+} /* cqueue_resume_cont() */
+
+
 #if LUA_VERSION_NUM >= 502
 #if LUA_VERSION_NUM == 502
 static int cqueue_step_cont(lua_State *L) {
@@ -2167,10 +2176,7 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 	I.self = 1;
 	I.registry = 3;
 
-	T = Q->yielded_thread;
-	/* move arguments onto resumed stack */
-	lua_xmove(L, T->L, nargs-3);
-	Q->yielded_thread = NULL;
+	cqueue_resume_cont(L, Q, nargs-3);
 
 	switch(cqueue_process(L, Q, &I, &T)) {
 		case LUA_OK:
@@ -2192,6 +2198,14 @@ oops:
 	lua_pushboolean(L, 0);
 	return 1 + err_pushinfo(L, &I);
 } /* yield_cont() */
+#else
+static int cqueue_set_resume(lua_State *L) {
+	struct cqueue *Q = cqueue_checkself(L, 1);
+
+	cqueue_resume_cont(L, Q, lua_gettop(L)-1);
+
+	return 0;
+} /* cqueue_set_resume() */
 #endif
 
 
@@ -2235,7 +2249,11 @@ static int cqueue_step(lua_State *L) {
 			lua_xmove(T->L, L, nargs);
 			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
 #else
-			return luaL_error(L, "cannot yield over C function in Lua 5.1");
+			lua_pushliteral(L, "yielded");
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(T->L);
+			lua_xmove(T->L, L, nargs);
+			return nargs+1;
 #endif
 		default:
 			goto oops;
@@ -2769,6 +2787,9 @@ static int cstack_running(lua_State *L) {
 
 static const luaL_Reg cqueue_methods[] = {
 	{ "step",    &cqueue_step },
+#if LUA_VERSION_NUM < 502
+	{ "set_resume", &cqueue_set_resume },
+#endif
 	{ "attach",  &cqueue_attach },
 	{ "wrap",    &cqueue_wrap },
 	{ "empty",   &cqueue_empty },
