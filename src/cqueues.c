@@ -1970,7 +1970,7 @@ static _Bool auxL_xcopy(lua_State *from, lua_State *to, int count) {
 
 
 static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int otop = lua_gettop(L), nargs, status, index;
+	int otop = lua_gettop(L), nargs, status, tmp_status, index;
 	struct event *event;
 
 	status = lua_status(T->L);
@@ -2035,7 +2035,12 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 			if (!TAILQ_EMPTY(&T->events) || isfinite(T->timer.timeout))
 				thread_move(T, &Q->thread.polling);
 		} else {
-			luaL_error(L, "NYI: re-yielding");
+			if (LUA_OK != (tmp_status = cqueue_update(L, Q, I, T))) {
+				status = tmp_status;
+				goto defunct;
+			}
+
+			break;
 		}
 		break;
 	case LUA_OK:
@@ -2071,7 +2076,7 @@ nospace:
 } /* cqueue_resume() */
 
 
-static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread **current_thread) {
 	int onalert = 0;
 	kpoll_event_t *ke;
 	struct fileno *fileno;
@@ -2115,8 +2120,10 @@ static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callin
 	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
 		nxt = LIST_NEXT(T, le);
 
-		if (LUA_OK != (status = cqueue_resume(L, Q, I, T)))
+		if (LUA_OK != (status = cqueue_resume(L, Q, I, T))) {
+			if (current_thread) *current_thread = T;
 			return status;
+		}
 	}
 
 	if (onalert) {
@@ -2139,11 +2146,47 @@ static double cqueue_timeout_(struct cqueue *Q) {
 	return (islessequal(timer->timeout, curtime))? 0.0 : timer->timeout - curtime;
 } /* cqueue_timeout_() */
 
+
+static int cqueue_step_cont(lua_State *L, int status, lua_KContext ctx) {
+	int nargs = lua_gettop(L);
+	struct thread *T = (struct thread*)ctx;
+	struct callinfo I = CALLINFO_INITIALIZER;
+	struct cqueue *Q = cqueue_checkself(L, 1);
+
+	I.self = 1;
+	I.registry = 3;
+
+	/* copy arguments onto resumed stack */
+	lua_xmove(L, T->L, nargs-3);
+
+	switch(cqueue_process(L, Q, &I, &T)) {
+		case LUA_OK:
+			break;
+		case LUA_YIELD:
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(T->L);
+			lua_xmove(T->L, L, nargs);
+			return lua_yieldk(L, nargs, (intptr_t)T, cqueue_step_cont);
+		default:
+			goto oops;
+		}
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+oops:
+	lua_pushboolean(L, 0);
+	return 1 + err_pushinfo(L, &I);
+} /* yield_cont() */
+
+
 static int cqueue_step(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
+	struct thread *T;
 	double timeout;
 	int error;
+	int nargs;
 
 	lua_settop(L, 2);
 
@@ -2162,8 +2205,17 @@ static int cqueue_step(lua_State *L) {
 			goto oops;
 		}
 
-		if (LUA_OK != cqueue_process(L, Q, &I))
+		switch(cqueue_process(L, Q, &I, &T)) {
+		case LUA_OK:
+			break;
+		case LUA_YIELD:
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(T->L);
+			lua_xmove(T->L, L, nargs);
+			return lua_yieldk(L, nargs, (intptr_t)T, cqueue_step_cont);
+		default:
 			goto oops;
+		}
 	}
 
 	lua_pushboolean(L, 1);
