@@ -1190,7 +1190,7 @@ static void cstack_push(struct cstack *, struct stackinfo *);
 static void cstack_pop(struct cstack *);
 static _Bool cstack_isrunning(const struct cstack *, const struct cqueue *);
 
-#define CALLINFO_INITIALIZER { 0 }
+#define CALLINFO_INITIALIZER { 0, 0, { 0, 0, 0, 0, -1 } }
 
 struct callinfo {
 	cqs_index_t self; /* stack index of cqueue object */
