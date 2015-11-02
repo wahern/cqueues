@@ -84,8 +84,7 @@ local loader = function(loader, ...)
 	if _VERSION == "Lua 5.1" then
 		local function checkstep(self, ok, ...)
 			if ok == "yielded" then
-				self:set_resume(coroutine.yield(...))
-				return self:step(0)
+				return checkstep(self, self:step_resume(coroutine.yield(...)))
 			else
 				return ok, ...
 			end

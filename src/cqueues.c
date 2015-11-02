@@ -2182,8 +2182,7 @@ static void cqueue_resume_cont(lua_State *L, struct cqueue *Q, int nargs) {
 } /* cqueue_resume_cont() */
 
 
-#if LUA_VERSION_NUM >= 502
-#if LUA_VERSION_NUM == 502
+#if LUA_VERSION_NUM <= 502
 static int cqueue_step_cont(lua_State *L) {
 #else
 static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx NOTUSED) {
@@ -2192,21 +2191,34 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 	struct thread *T;
 	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cqueue *Q = cqueue_checkself(L, 1);
+#if LUA_VERSION_NUM >= 502
+	cqueue_resume_cont(L, Q, nargs-3);
 
 	I.self = 1;
 	I.registry = 3;
+#else
+	cqueue_resume_cont(L, Q, nargs-1);
 
-	cqueue_resume_cont(L, Q, nargs-3);
+	cqueue_enter(L, &I, 1);
+#endif
 
-	switch(cqueue_process(L, Q, &I, &T)) {
+	switch(cqueue_process_pending(L, Q, &I, &T)) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
 			Q->yielded_thread = T;
+#if LUA_VERSION_NUM >= 502
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(T->L);
 			lua_xmove(T->L, L, nargs);
 			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+#else
+			lua_pushliteral(L, "yielded");
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(T->L);
+			lua_xmove(T->L, L, nargs);
+			return nargs+1;
+#endif
 		default:
 			goto oops;
 		}
@@ -2218,15 +2230,6 @@ oops:
 	lua_pushboolean(L, 0);
 	return 1 + err_pushinfo(L, &I);
 } /* yield_cont() */
-#else
-static int cqueue_set_resume(lua_State *L) {
-	struct cqueue *Q = cqueue_checkself(L, 1);
-
-	cqueue_resume_cont(L, Q, lua_gettop(L)-1);
-
-	return 0;
-} /* cqueue_set_resume() */
-#endif
 
 
 static int cqueue_step(lua_State *L) {
@@ -2808,7 +2811,7 @@ static int cstack_running(lua_State *L) {
 static const luaL_Reg cqueue_methods[] = {
 	{ "step",    &cqueue_step },
 #if LUA_VERSION_NUM < 502
-	{ "set_resume", &cqueue_set_resume },
+	{ "step_resume", &cqueue_step_cont },
 #endif
 	{ "attach",  &cqueue_attach },
 	{ "wrap",    &cqueue_wrap },
