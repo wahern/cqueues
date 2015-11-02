@@ -2242,7 +2242,7 @@ static int cqueue_step(lua_State *L) {
 	Q = cqueue_enter(L, &I, 1);
 
 	if (Q->thread.current) {
-		return luaL_error(L, "cannot step yielded cqueue");
+		return luaL_error(L, "cannot step live cqueue");
 	}
 
 	if (Q->thread.count) {
