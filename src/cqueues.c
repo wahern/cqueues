@@ -2081,13 +2081,29 @@ nospace:
 	goto defunct;
 } /* cqueue_resume() */
 
+static cqs_status_t cqueue_process_pending(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread **current_thread) {
+	cqs_status_t status;
+	struct thread *T, *nxt;
+
+	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
+		nxt = LIST_NEXT(T, le);
+
+		if (LUA_OK != (status = cqueue_resume(L, Q, I, T))) {
+			if (current_thread) *current_thread = T;
+			return status;
+		}
+	}
+
+	return LUA_OK;
+} /* cqueue_process_pending() */
+
 
 static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread **current_thread) {
 	int onalert = 0;
 	kpoll_event_t *ke;
 	struct fileno *fileno;
 	struct event *event;
-	struct thread *T, *nxt;
+	struct thread *T;
 	struct timer *timer;
 	double curtime;
 	short events;
@@ -2123,13 +2139,8 @@ static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callin
 		thread_move(T, &Q->thread.pending);
 	}
 
-	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
-		nxt = LIST_NEXT(T, le);
-
-		if (LUA_OK != (status = cqueue_resume(L, Q, I, T))) {
-			if (current_thread) *current_thread = T;
-			return status;
-		}
+	if (LUA_OK != (status = cqueue_process_pending(L, Q, I, current_thread))) {
+		return status;
 	}
 
 	if (onalert) {
