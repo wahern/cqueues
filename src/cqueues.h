@@ -245,18 +245,16 @@ static inline int cqs_regcount(const luaL_Reg *l) {
 static inline void cqs_newmetatable(lua_State *L, const char *name, const luaL_Reg *methods, const luaL_Reg *metamethods, int nup) {
 	int i;
 
-	if (luaL_newmetatable(L, name)) {
-		for (i = 0; i < nup; i++) /* copy upvalues */
-			lua_pushvalue(L, -nup - 1);
-		luaL_setfuncs(L, metamethods, nup);
+	luaL_newmetatable(L, name);
+	for (i = 0; i < nup; i++) /* copy upvalues */
+		lua_pushvalue(L, -nup - 1);
+	luaL_setfuncs(L, metamethods, nup);
 
-		lua_createtable(L, 0, cqs_regcount(methods));
-		for (i = 0; i < nup; i++) /* copy upvalues */
-			lua_pushvalue(L, -nup - 2);
-		luaL_setfuncs(L, methods, nup);
-		lua_setfield(L, -2, "__index");
-	}
-
+	lua_createtable(L, 0, cqs_regcount(methods));
+	for (i = 0; i < nup; i++) /* copy upvalues */
+		lua_pushvalue(L, -nup - 2);
+	luaL_setfuncs(L, methods, nup);
+	lua_setfield(L, -2, "__index");
 
 	for (i = 0; i < nup; i++) /* remove the upvalues */
 		lua_remove(L, -2);
