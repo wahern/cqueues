@@ -1917,7 +1917,7 @@ static int hints_insert(lua_State *L) {
 	if (!lua_isnone(L, 3) && lua_isuserdata(L, 3)) {
 		dns_hints_insert_resconf(hints, zone, resconf_check(L, 3), &error);
 	} else {
-		const char *ns = luaL_checkstring(L, 3);
+		ns = luaL_checkstring(L, 3);
 		struct sockaddr_storage any;
 
 		if (!(error = dns_resconf_pton(&any, ns)))

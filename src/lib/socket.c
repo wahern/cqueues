@@ -1299,7 +1299,6 @@ error:
 
 
 static int so_socket_(struct socket *so) {
-	struct stat st;
 	int error;
 
 	if (!so->host)
@@ -1894,8 +1893,6 @@ struct socket *so_fdopen(int fd, const struct so_options *opts, int *error_) {
 	so->fd = fd;
 
 	return so;
-syerr:
-	error = errno;
 error:
 	so_close(so);
 
