@@ -741,7 +741,10 @@ Returns boolean values representing whether EOF has been received on the input c
 Note that \fn{socket:shutdown} does not change the state of these values. They are set only upon receiving the condition after I/O is attempted.
 
 \subsubsection[\fn{socket:peername}]{\fn{socket:peername()}}
-Returns one, two, or three values. On success, returns three values for AF\_INET and AF\_INET6 sockets---the address family number, IP address string, and IP port. For AF\_UNIX sockets, returns the address family and file path. If the socket is not yet connected, returns the address family AF\_UNSPEC, usually numeric 0.
+Returns one, two, or three values.
+On success, returns three values for AF\_INET and AF\_INET6 sockets---the address family number, IP address string, and IP port.
+For AF\_UNIX sockets, returns the address family and either the file path or nil (e.g. for an unnamed socket).
+If the socket is not yet connected, returns the address family AF\_UNSPEC, usually numeric 0.
 
 On failure returns nil and a numeric error code.
 
