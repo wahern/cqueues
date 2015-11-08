@@ -107,7 +107,7 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-static int setcloexec(int fd) {
+inline static int setcloexec(int fd) {
 	if (-1 == fcntl(fd, F_SETFD, FD_CLOEXEC))
 		return errno;
 
@@ -494,6 +494,7 @@ static int kpoll_init(struct kpoll *kp) {
 
 #if HAVE_EPOLL
 #if defined EPOLL_CLOEXEC
+	(void)error;
 	if (-1 == (kp->fd = epoll_create1(EPOLL_CLOEXEC)))
 		return errno;
 #else
@@ -2406,7 +2407,7 @@ static int cqueue_cancel(lua_State *L) {
 	struct callinfo I;
 	int top = lua_gettop(L);
 	struct cqueue *Q = cqueue_enter(L, &I, 1);
-	int index, fd;
+	int index;
 
 	for (index = 2; index <= top; index++)
 		cqueue_cancelfd(Q, cqueue_checkfd(L, &I, index));

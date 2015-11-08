@@ -549,7 +549,7 @@ static inline cqs_error_t cqs_addzu(size_t *r, size_t a, size_t b) {
 #include <stropts.h>
 #endif
 
-static void cqs_debugfd(int fd) {
+NOTUSED static void cqs_debugfd(int fd) {
 	struct stat st;
 	char descr[64] = "";
 	int pending = -1;
