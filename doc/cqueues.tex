@@ -682,6 +682,14 @@ For MIME entities the next line should begin with the boundary text.
 
 Like \method{socket:read}, but only takes a single format instead of a list of formats, and permits specifying an input mode and timeout. $mode$ should be in the format described at \method{socket:setmode}. $mode$ and $timeout$ are used only for the current read operation; they do not change the default mode and timeout for the socket.
 
+\subsubsection[\fn{socket:lines}]{\fn{socket:lines(...)}}
+
+Returns an iterator function over \method{socket:read}.
+
+\subsubsection[\fn{socket:xlines}]{\fn{socket:xlines([format][, mode][, timeout])}}
+
+Returns an iterator function over \method{socket:xread}.
+
 \subsubsection[\fn{socket:write}]{\fn{socket:write(...)}}
 Same as Lua \fn{file:write}.
 
