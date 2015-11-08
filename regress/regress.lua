@@ -57,7 +57,7 @@ end -- say
 function regress.panic(...)
 	emitinfo()
 	emitln(...)
-	os.exit(false)
+	os.exit(1)
 end -- panic
 
 function regress.info(...)

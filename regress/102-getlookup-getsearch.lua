@@ -21,7 +21,7 @@ for i,dn in ipairs(resconf:getsearch()) do
 end
 
 for i,how in ipairs(resconf:getlookup()) do
-	info("lookup[%d]: %s", i, dn)
+	info("lookup[%d]: %s", i, how)
 end
 
 say("OK")
