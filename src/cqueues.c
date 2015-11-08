@@ -973,6 +973,9 @@ static int cond__gc(lua_State *L) {
 static int cond_wait(lua_State *L) {
 	cond_checkself(L, 1);
 
+	lua_pushlightuserdata(L, CQUEUE__POLL);
+	lua_insert(L, 1);
+
 	return lua_yield(L, lua_gettop(L));
 } /* cond_wait() */
 
@@ -1068,8 +1071,7 @@ int luaopen__cqueues_condition(lua_State *L) {
 
 #define CQUEUE_CLASS "Continuation Queue"
 
-#define CQUEUE__POLL ((void *)&cqueue__poll)
-static const char cqueue__poll[] = "poll magic"; // signals multilevel yield
+const char *cqueue__poll = "poll magic"; // signals multilevel yield
 
 typedef int auxref_t;
 
@@ -1151,6 +1153,7 @@ struct cqueue {
 
 	struct {
 		LIST_HEAD(threads, thread) polling, pending;
+		struct thread *current;
 		unsigned count;
 	} thread;
 
@@ -1188,7 +1191,7 @@ static void cstack_push(struct cstack *, struct stackinfo *);
 static void cstack_pop(struct cstack *);
 static _Bool cstack_isrunning(const struct cstack *, const struct cqueue *);
 
-#define CALLINFO_INITIALIZER { 0 }
+#define CALLINFO_INITIALIZER { 0, 0, { 0, 0, 0, 0, -1 } }
 
 struct callinfo {
 	cqs_index_t self; /* stack index of cqueue object */
@@ -1381,6 +1384,8 @@ static void cqueue_preinit(struct cqueue *Q) {
 
 	kpoll_preinit(&Q->kp);
 
+	Q->thread.current = NULL;
+
 	Q->registry = LUA_NOREF;
 
 	pool_init(&Q->pool.wakecb, sizeof (struct wakecb));
@@ -1439,6 +1444,8 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	void *next;
 
 	cstack_del(Q);
+
+	Q->thread.current = NULL;
 
 	while ((thread = LIST_FIRST(&Q->thread.polling))) {
 		thread_del(L, Q, I, thread);
@@ -1968,10 +1975,11 @@ static _Bool auxL_xcopy(lua_State *from, lua_State *to, int count) {
 
 
 static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int otop = lua_gettop(L), nargs, status, index;
+	int otop = lua_gettop(L), nargs, status, tmp_status, index;
 	struct event *event;
 
-	if (lua_status(T->L) == LUA_YIELD) {
+	status = lua_status(T->L);
+	if (status == LUA_YIELD && lua_islightuserdata(T->L, 1) && lua_topointer(T->L, 1) == CQUEUE__POLL) {
 		/*
 		 * Preserve any previously yielded objects on another stack
 		 * until we can call cqueue_update() because when
@@ -1996,8 +2004,11 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 			event_del(Q, event);
 		}
 	} else {
-		nargs = lua_gettop(T->L) - 1;
-		assert(nargs >= 0);
+		nargs = lua_gettop(T->L);
+		if (status != LUA_YIELD) {
+			nargs -= 1;
+			assert(nargs >= 0);
+		}
 	}
 
 	timer_del(Q, &T->timer);
@@ -2010,30 +2021,32 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 
 	switch (status) {
 	case LUA_YIELD:
-		for (index = 1; index <= lua_gettop(T->L); index++) {
-			switch (lua_type(T->L, index)) {
-			case LUA_TNIL:
-				continue;
-			case LUA_TLIGHTUSERDATA:
-				/* ignore _POLL magic value */
-				if (lua_topointer(T->L, index) == CQUEUE__POLL)
+		if (lua_islightuserdata(T->L, 1) && lua_topointer(T->L, 1) == CQUEUE__POLL) {
+			for (index = 2; index <= lua_gettop(T->L); index++) {
+				switch (lua_type(T->L, index)) {
+				case LUA_TNIL:
 					continue;
-
-				/* FALL THROUGH */
-			default:
-				if (LUA_OK != (status = event_add(L, Q, I, T, index)))
-					goto defunct;
+				default:
+					if (LUA_OK != (status = event_add(L, Q, I, T, index)))
+						goto defunct;
+				}
 			}
+
+			if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
+				goto defunct;
+
+			timer_add(Q, &T->timer, thread_timeout(T));
+
+			if (!TAILQ_EMPTY(&T->events) || isfinite(T->timer.timeout))
+				thread_move(T, &Q->thread.polling);
+		} else {
+			if (LUA_OK != (tmp_status = cqueue_update(L, Q, I, T))) {
+				status = tmp_status;
+				goto defunct;
+			}
+
+			break;
 		}
-
-		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
-			goto defunct;
-
-		timer_add(Q, &T->timer, thread_timeout(T));
-
-		if (!TAILQ_EMPTY(&T->events) || isfinite(T->timer.timeout))
-			thread_move(T, &Q->thread.polling);
-
 		break;
 	case LUA_OK:
 		if (LUA_OK != (status = cqueue_update(L, Q, I, T)))
@@ -2068,12 +2081,28 @@ nospace:
 } /* cqueue_resume() */
 
 
+static cqs_status_t cqueue_process_threads(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+	cqs_status_t status;
+	struct thread *nxt;
+
+	for (; Q->thread.current; Q->thread.current = nxt) {
+		nxt = LIST_NEXT(Q->thread.current, le);
+
+		if (LUA_OK != (status = cqueue_resume(L, Q, I, Q->thread.current))) {
+			return status;
+		}
+	}
+
+	return LUA_OK;
+} /* cqueue_process_threads() */
+
+
 static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	int onalert = 0;
 	kpoll_event_t *ke;
 	struct fileno *fileno;
 	struct event *event;
-	struct thread *T, *nxt;
+	struct thread *T;
 	struct timer *timer;
 	double curtime;
 	short events;
@@ -2109,11 +2138,10 @@ static cqs_status_t cqueue_process(lua_State *L, struct cqueue *Q, struct callin
 		thread_move(T, &Q->thread.pending);
 	}
 
-	for (T = LIST_FIRST(&Q->thread.pending); T; T = nxt) {
-		nxt = LIST_NEXT(T, le);
-
-		if (LUA_OK != (status = cqueue_resume(L, Q, I, T)))
-			return status;
+	assert(NULL == Q->thread.current);
+	Q->thread.current = LIST_FIRST(&Q->thread.pending);
+	if (LUA_OK != (status = cqueue_process_threads(L, Q, I))) {
+		return status;
 	}
 
 	if (onalert) {
@@ -2136,15 +2164,86 @@ static double cqueue_timeout_(struct cqueue *Q) {
 	return (islessequal(timer->timeout, curtime))? 0.0 : timer->timeout - curtime;
 } /* cqueue_timeout_() */
 
+
+static void cqueue_resume_cont(lua_State *L, struct cqueue *Q, int nargs) {
+	int index;
+	struct thread *T = Q->thread.current;
+	if (!T) {
+		luaL_error(L, "cqueue not yielded");
+		NOTREACHED;
+	}
+	index = lua_gettop(L)-nargs+1;
+	if (lua_islightuserdata(L, index) && lua_touserdata(T->L, index) == CQUEUE__POLL) {
+		luaL_error(L, "cannot resume a coroutine passing internal cqueues._POLL value as first parameter");
+		NOTREACHED;
+	}
+	/* move arguments onto resumed stack */
+	lua_xmove(L, T->L, nargs);
+} /* cqueue_resume_cont() */
+
+
+#if LUA_VERSION_NUM <= 502
+static int cqueue_step_cont(lua_State *L) {
+#else
+static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx NOTUSED) {
+#endif
+	int nargs = lua_gettop(L);
+	struct callinfo I = CALLINFO_INITIALIZER;
+	struct cqueue *Q = cqueue_checkself(L, 1);
+#if LUA_VERSION_NUM >= 502
+	cqueue_resume_cont(L, Q, nargs-3);
+
+	I.self = 1;
+	I.registry = 3;
+#else
+	cqueue_resume_cont(L, Q, nargs-1);
+
+	cqueue_enter(L, &I, 1);
+#endif
+
+	switch(cqueue_process_threads(L, Q, &I)) {
+		case LUA_OK:
+			break;
+		case LUA_YIELD:
+#if LUA_VERSION_NUM >= 502
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(Q->thread.current->L);
+			lua_xmove(Q->thread.current->L, L, nargs);
+			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+#else
+			lua_pushliteral(L, "yielded");
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(Q->thread.current->L);
+			lua_xmove(Q->thread.current->L, L, nargs);
+			return nargs+1;
+#endif
+		default:
+			goto oops;
+		}
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+oops:
+	lua_pushboolean(L, 0);
+	return 1 + err_pushinfo(L, &I);
+} /* yield_cont() */
+
+
 static int cqueue_step(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
 	double timeout;
 	int error;
+	int nargs;
 
 	lua_settop(L, 2);
 
 	Q = cqueue_enter(L, &I, 1);
+
+	if (Q->thread.current) {
+		return luaL_error(L, "cannot step live cqueue");
+	}
 
 	if (Q->thread.count) {
 		if (LIST_EMPTY(&Q->thread.pending)) {
@@ -2159,8 +2258,25 @@ static int cqueue_step(lua_State *L) {
 			goto oops;
 		}
 
-		if (LUA_OK != cqueue_process(L, Q, &I))
+		switch(cqueue_process(L, Q, &I)) {
+		case LUA_OK:
+			break;
+		case LUA_YIELD:
+#if LUA_VERSION_NUM >= 502
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(Q->thread.current->L);
+			lua_xmove(Q->thread.current->L, L, nargs);
+			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+#else
+			lua_pushliteral(L, "yielded");
+			/* move arguments onto 'main' stack to return them from this yield */
+			nargs = lua_gettop(Q->thread.current->L);
+			lua_xmove(Q->thread.current->L, L, nargs);
+			return nargs+1;
+#endif
+		default:
 			goto oops;
+		}
 	}
 
 	lua_pushboolean(L, 1);
@@ -2690,6 +2806,9 @@ static int cstack_running(lua_State *L) {
 
 static const luaL_Reg cqueue_methods[] = {
 	{ "step",    &cqueue_step },
+#if LUA_VERSION_NUM < 502
+	{ "step_resume", &cqueue_step_cont },
+#endif
 	{ "attach",  &cqueue_attach },
 	{ "wrap",    &cqueue_wrap },
 	{ "empty",   &cqueue_empty },

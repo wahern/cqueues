@@ -33,14 +33,8 @@ local loader = function(loader, ...)
 	local poller
 
 	function core.poll(...)
-		local yes, main = running()
-
-		if yes then
-			if main then
-				return yield(...)
-			else
-				return yield(_POLL, ...)
-			end
+		if running() then
+			return yield(_POLL, ...)
 		else
 			local tuple
 
@@ -82,7 +76,23 @@ local loader = function(loader, ...)
 		else
 			return step(self, timeout)
 		end
-	end) -- core:step
+	end)
+	--
+	-- Lua 5.1 doesn't allow continuations in C
+	-- so we have to emulate them in lua.
+	--
+	if _VERSION == "Lua 5.1" then
+		local function checkstep(self, ok, ...)
+			if ok == "yielded" then
+				return checkstep(self, self:step_resume(coroutine.yield(...)))
+			else
+				return ok, ...
+			end
+		end
+		local step_; step_ = core.interpose("step", function (self, timeout)
+			return checkstep(self, step_(self, timeout))
+		end)
+	end -- core:step
 
 	--
 	-- core:loop
