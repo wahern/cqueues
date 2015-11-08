@@ -124,6 +124,8 @@
 #define CQS_NOTIFY "CQS Notify"
 #define CQS_CONDITION "CQS Condition"
 
+#define CQUEUE__POLL ((void *)&cqueue__poll)
+const char *cqueue__poll; // signals multilevel yield
 
 cqs_nargs_t luaopen__cqueues(lua_State *);
 
