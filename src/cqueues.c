@@ -2364,7 +2364,7 @@ static int cqueue_empty(lua_State *L) {
 static int cqueue_count(lua_State *L) {
 	struct cqueue *Q = cqueue_checkself(L, 1);
 
-	lua_pushnumber(L, Q->thread.count);
+	lua_pushinteger(L, Q->thread.count);
 
 	return 1;
 } /* cqueue_count() */
@@ -2872,7 +2872,7 @@ int luaopen__cqueues(lua_State *L) {
 	lua_pushliteral(L, CQUEUES_VENDOR);
 	lua_setfield(L, -2, "VENDOR");
 
-	lua_pushnumber(L, CQUEUES_VERSION);
+	lua_pushinteger(L, CQUEUES_VERSION);
 	lua_setfield(L, -2, "VERSION");
 
 #if defined CQUEUES_COMMIT

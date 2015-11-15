@@ -2266,14 +2266,14 @@ static int res_stat(lua_State *L) {
 
 	lua_newtable(L);
 
-	lua_pushnumber(L, st->queries);
+	lua_pushinteger(L, st->queries);
 	lua_setfield(L, -2, "queries");
 
 #define setboth(st, table) do { \
 	lua_newtable(L); \
-	lua_pushnumber(L, (st).count); \
+	lua_pushinteger(L, (st).count); \
 	lua_setfield(L, -2, "count"); \
-	lua_pushnumber(L, (st).bytes); \
+	lua_pushinteger(L, (st).bytes); \
 	lua_setfield(L, -2, "bytes"); \
 	lua_setfield(L, -2, table); \
 } while (0)
@@ -2387,7 +2387,7 @@ static int dnsL_random(lua_State *L) {
 				break;
 		}
 
-		lua_pushnumber(L, r % n);
+		lua_pushinteger(L, r % n);
 	}
 
 	return 1;

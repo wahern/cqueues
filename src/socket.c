@@ -415,7 +415,7 @@ static void lso_pushsize(struct lua_State *L, size_t size) {
 	if (size == LSO_INFSIZ) {
 		lua_pushnumber(L, INFINITY);
 	} else {
-		lua_pushnumber(L, size);
+		lua_pushinteger(L, size);
 	}
 } /* lso_pushsize() */
 
@@ -1309,7 +1309,7 @@ static int lso_checkvbuf(struct lua_State *L, int index) {
 
 static lso_nargs_t lso_setvbuf_(struct lua_State *L, struct luasocket *S, int modeidx, int bufidx) {
 	lso_pushmode(L, S->obuf.mode, LSO_WRMASK, 1);
-	lua_pushnumber(L, S->obuf.bufsiz);
+	lua_pushinteger(L, S->obuf.bufsiz);
 
 	S->obuf.mode = lso_checkvbuf(L, modeidx) | (S->obuf.mode & ~LSO_ALLBUF);
 
@@ -1469,14 +1469,14 @@ static lso_nargs_t lso_setmaxerrs_(struct lua_State *L, struct luasocket *S, int
 	for (; *what; what++) {
 		switch (*what) {
 		case 'r':
-			lua_pushnumber(L, S->ibuf.maxerrs);
+			lua_pushinteger(L, S->ibuf.maxerrs);
 			nret++;
 
 			S->ibuf.maxerrs = luaL_optunsigned(L, index, S->ibuf.maxerrs);
 
 			break;
 		case 'w':
-			lua_pushnumber(L, S->obuf.maxerrs);
+			lua_pushinteger(L, S->obuf.maxerrs);
 			nret++;
 
 			S->obuf.maxerrs = luaL_optunsigned(L, index, S->obuf.maxerrs);
@@ -2202,7 +2202,7 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	int mode, byline, error;
 
 	if ((error = lso_prepsnd(L, S))) {
-		lua_pushnumber(L, 0);
+		lua_pushinteger(L, 0);
 		lua_pushinteger(L, error);
 
 		return 2;
@@ -2266,11 +2266,11 @@ static lso_nargs_t lso_send5(lua_State *L) {
 	if ((error = lso_doflush(S, mode)))
 		goto error;
 
-	lua_pushnumber(L, p - tp);
+	lua_pushinteger(L, p - tp);
 
 	return 1;
 error:
-	lua_pushnumber(L, p - tp);
+	lua_pushinteger(L, p - tp);
 	lua_pushinteger(L, error);
 
 	return 2;
@@ -2476,10 +2476,12 @@ static lso_nargs_t lso_unpack2(lua_State *L) {
 
 	value = fifo_unpack(&S->ibuf.fifo, count);
 
-	if (value != (unsigned long long)(lua_Number)value)
+	if (value == (unsigned long long)(lua_Integer)value)
+		lua_pushinteger(L, (lua_Integer)value);
+	else if (value == (unsigned long long)(lua_Number)value)
+		lua_pushnumber(L, (lua_Number)value);
+	else
 		goto range;
-
-	lua_pushnumber(L, (lua_Number)value);
 
 	return 1;
 range:
@@ -2786,20 +2788,20 @@ static lso_nargs_t lso_stat(lua_State *L) {
 	lua_newtable(L);
 
 	lua_newtable(L);
-	lua_pushnumber(L, st->sent.count);
+	lua_pushinteger(L, st->sent.count);
 	lua_setfield(L, -2, "count");
 	lua_pushboolean(L, st->sent.eof);
 	lua_setfield(L, -2, "eof");
-	lua_pushnumber(L, st->sent.time);
+	lua_pushinteger(L, st->sent.time);
 	lua_setfield(L, -2, "time");
 	lua_setfield(L, -2, "sent");
 
 	lua_newtable(L);
-	lua_pushnumber(L, st->rcvd.count);
+	lua_pushinteger(L, st->rcvd.count);
 	lua_setfield(L, -2, "count");
 	lua_pushboolean(L, st->rcvd.eof);
 	lua_setfield(L, -2, "eof");
-	lua_pushnumber(L, st->rcvd.time);
+	lua_pushinteger(L, st->rcvd.time);
 	lua_setfield(L, -2, "time");
 	lua_setfield(L, -2, "rcvd");
 
@@ -3004,7 +3006,7 @@ static int dbg_iov_eoh(lua_State *L) {
 
 		return 3;
 	} else {
-		lua_pushnumber(L, eoh);
+		lua_pushinteger(L, eoh);
 
 		return 1;
 	}
@@ -3015,7 +3017,7 @@ static int dbg_iov_eob(lua_State *L) {
 	struct iovec haystack = dbg_checkstring(L, 1);
 	struct iovec needle = dbg_checkstring(L, 2);
 
-	lua_pushnumber(L, iov_eob(&haystack, needle.iov_base, needle.iov_len));
+	lua_pushinteger(L, iov_eob(&haystack, needle.iov_base, needle.iov_len));
 
 	return 1;
 } /* dbg_iov_eob() */
@@ -3036,7 +3038,7 @@ static int dbg_iov_eot(lua_State *L) {
 
 		return 3;
 	} else {
-		lua_pushnumber(L, n);
+		lua_pushinteger(L, n);
 
 		return 1;
 	}
