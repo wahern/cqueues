@@ -2203,24 +2203,24 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 #endif
 
 	switch(cqueue_process_threads(L, Q, &I)) {
-		case LUA_OK:
-			break;
-		case LUA_YIELD:
+	case LUA_OK:
+		break;
+	case LUA_YIELD:
 #if LUA_VERSION_NUM >= 502
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return lua_yieldk(L, nargs, 0, cqueue_step_cont);
 #else
-			lua_pushliteral(L, "yielded");
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return nargs+1;
+		lua_pushliteral(L, "yielded");
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return nargs+1;
 #endif
-		default:
-			goto oops;
-		}
+	default:
+		goto oops;
+	}
 
 	lua_pushboolean(L, 1);
 
