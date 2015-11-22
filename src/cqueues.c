@@ -2166,23 +2166,6 @@ static double cqueue_timeout_(struct cqueue *Q) {
 } /* cqueue_timeout_() */
 
 
-static void cqueue_resume_cont(lua_State *L, struct cqueue *Q, int nargs) {
-	int index;
-	struct thread *T = Q->thread.current;
-	if (!T) {
-		luaL_error(L, "cqueue not yielded");
-		NOTREACHED;
-	}
-	index = lua_gettop(L)-nargs+1;
-	if (lua_islightuserdata(L, index) && lua_touserdata(T->L, index) == CQUEUE__POLL) {
-		luaL_error(L, "cannot resume a coroutine passing internal cqueues._POLL value as first parameter");
-		NOTREACHED;
-	}
-	/* move arguments onto resumed stack */
-	lua_xmove(L, T->L, nargs);
-} /* cqueue_resume_cont() */
-
-
 #if LUA_VERSION_NUM <= 502
 static int cqueue_step_cont(lua_State *L) {
 #else
@@ -2191,8 +2174,17 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 	int nargs = lua_gettop(L);
 	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cqueue *Q = cqueue_checkself(L, 1);
-
-	cqueue_resume_cont(L, Q, nargs-1);
+	struct thread *T = Q->thread.current;
+	if (!T) {
+		luaL_error(L, "cqueue not yielded");
+		NOTREACHED;
+	}
+	if (lua_islightuserdata(L, 2) && lua_touserdata(L, 2) == CQUEUE__POLL) {
+		luaL_error(L, "cannot resume a coroutine passing internal cqueues._POLL value as first parameter");
+		NOTREACHED;
+	}
+	/* move arguments onto resumed stack */
+	lua_xmove(L, T->L, nargs-1);
 
 	cqueue_enter(L, &I, 1);
 
