@@ -2191,21 +2191,17 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 	int nargs = lua_gettop(L);
 	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cqueue *Q = cqueue_checkself(L, 1);
-#if LUA_VERSION_NUM >= 502
-	cqueue_resume_cont(L, Q, nargs-3);
 
-	I.self = 1;
-	I.registry = 3;
-#else
 	cqueue_resume_cont(L, Q, nargs-1);
 
 	cqueue_enter(L, &I, 1);
-#endif
 
 	switch(cqueue_process_threads(L, Q, &I)) {
 	case LUA_OK:
 		break;
 	case LUA_YIELD:
+		/* clear everything off the stack except for cqueue object; `I` now invalid */
+		lua_settop(L, 1);
 #if LUA_VERSION_NUM >= 502
 		/* move arguments onto 'main' stack to return them from this yield */
 		nargs = lua_gettop(Q->thread.current->L);
@@ -2263,6 +2259,8 @@ static int cqueue_step(lua_State *L) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
+			/* clear everything off the stack except for cqueue object; `I` now invalid */
+			lua_settop(L, 1);
 #if LUA_VERSION_NUM >= 502
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(Q->thread.current->L);
