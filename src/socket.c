@@ -1623,7 +1623,7 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 		if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
 			fifo_update(&S->ibuf.fifo, count);
 
-			if (S->type == SOCK_DGRAM) {
+			if (S->type == SOCK_DGRAM || S->type == SOCK_SEQPACKET) {
 				S->ibuf.eom = 1;
 
 				return 0;
