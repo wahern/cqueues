@@ -31,7 +31,7 @@
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
-#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_DGRAM SOCK_STREAM PF_UNSPEC socketpair(2) */
+#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_STREAM SOCK_SEQPACKET SOCK_DGRAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 #include <unistd.h>	/* dup(2) */
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
@@ -2938,12 +2938,13 @@ static luaL_Reg lso_globals[] = {
 
 lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 	static const struct cqs_macro macros[] = {
-		{ "AF_UNSPEC",   AF_UNSPEC },
-		{ "AF_INET",     AF_INET },
-		{ "AF_INET6",    AF_INET6 },
-		{ "AF_UNIX",     AF_UNIX },
-		{ "SOCK_STREAM", SOCK_STREAM },
-		{ "SOCK_DGRAM",  SOCK_DGRAM },
+		{ "AF_UNSPEC",      AF_UNSPEC },
+		{ "AF_INET",        AF_INET },
+		{ "AF_INET6",       AF_INET6 },
+		{ "AF_UNIX",        AF_UNIX },
+		{ "SOCK_STREAM",    SOCK_STREAM },
+		{ "SOCK_SEQPACKET", SOCK_SEQPACKET },
+		{ "SOCK_DGRAM",     SOCK_DGRAM },
 	};
 
 	cqs_pushnils(L, LSO_UPVALUES); /* initial upvalues */
