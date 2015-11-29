@@ -666,17 +666,25 @@ static int so_type2mask(mode_t, int, int, int);
 int so_socket(int domain, int type, const struct so_options *opts, int *_error) {
 	int error, fd, flags, mask, need;
 
-#if defined SOCK_CLOEXEC
-	if (-1 == (fd = socket(domain, type|SOCK_CLOEXEC, 0)))
-		goto syerr;
-#else
-	if (-1 == (fd = socket(domain, type, 0)))
-		goto syerr;
-#endif
-
 	flags = so_opts2flags(opts, &mask);
 	mask &= so_type2mask(S_IFSOCK, domain, type, 0);
 	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
+
+#if defined SOCK_NONBLOCK
+	if (flags & SO_F_NONBLOCK) {
+		type |= SOCK_NONBLOCK;
+	}
+	mask &= ~SO_F_NONBLOCK;
+#endif
+#if defined SOCK_CLOEXEC
+	if (flags & SO_F_CLOEXEC) {
+		type |= SOCK_CLOEXEC;
+	}
+	mask &= ~SO_F_CLOEXEC;
+#endif
+
+	if (-1 == (fd = socket(domain, type, 0)))
+		goto syerr;
 
 	if ((error = so_setfl(fd, flags, mask, need)))
 		goto error;
