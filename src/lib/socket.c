@@ -35,7 +35,7 @@
 #include <sys/types.h>   /* socklen_t mode_t in_port_t */
 #include <sys/stat.h>    /* fchmod(2) fstat(2) S_IFSOCK S_ISSOCK */
 #include <sys/select.h>  /* FD_ZERO FD_SET fd_set select(2) */
-#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
+#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_EOR MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 #if defined(AF_UNIX)
 #include <sys/un.h>      /* struct sockaddr_un struct unpcbid */
 #endif
@@ -2199,6 +2199,8 @@ static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *e
 		if (so->opts.fd_nosigpipe)
 			flags |= MSG_NOSIGNAL;
 		#endif
+		if (so->type == SOCK_SEQPACKET)
+			flags |= MSG_EOR;
 	}
 #endif
 retry:
