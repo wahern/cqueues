@@ -778,10 +778,14 @@ int so_cloexec(int fd, _Bool cloexec) {
 
 
 int so_nonblock(int fd, _Bool nonblock) {
-	int flags, mask = (nonblock)? ~0 : (~O_NONBLOCK);
+	int flags, newflags;
 
-	if (-1 == (flags = fcntl(fd, F_GETFL))
-	||  -1 == fcntl(fd, F_SETFL, mask & (flags | O_NONBLOCK)))
+	if (-1 == (flags = fcntl(fd, F_GETFL)))
+		return so_syerr();
+
+	newflags = (nonblock ? ~0 : ~O_NONBLOCK) & (flags | O_NONBLOCK);
+
+	if (flags != newflags && (-1 == fcntl(fd, F_SETFL, newflags)))
 		return so_syerr();
 
 	return 0;
@@ -861,11 +865,15 @@ int so_nopush(int fd, _Bool nopush) {
 
 int so_nosigpipe(int fd, _Bool nosigpipe) {
 #if defined O_NOSIGPIPE
-	int flags, mask = (nosigpipe)? ~0 : (~O_NOSIGPIPE);
+	int flags, newflags;
 
-	if (-1 == (flags = fcntl(fd, F_GETFL))
-	||  -1 == fcntl(fd, F_SETFL, mask & (flags | O_NOSIGPIPE)))
-		return errno;
+	if (-1 == (flags = fcntl(fd, F_GETFL)))
+		return so_syerr();
+
+	newflags = (nosigpipe ? ~0 : ~O_NOSIGPIPE) & (flags | O_NOSIGPIPE);
+
+	if (flags != newflags && (-1 == fcntl(fd, F_SETFL, newflags)))
+		return so_syerr();
 
 	return 0;
 #elif defined F_SETNOSIGPIPE
