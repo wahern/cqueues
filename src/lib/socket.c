@@ -2183,6 +2183,7 @@ error:
 
 static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *error) {
 	long count;
+	int flags = 0;
 
 	if (so->st.sent.eof) {
 		*error = EPIPE;
@@ -2190,20 +2191,26 @@ static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *e
 	}
 
 //	so_pipeign(so, 0);
+
+#if _WIN32
+#else
+	if (S_ISSOCK(so->mode)) {
+		#if defined(MSG_NOSIGNAL)
+		if (so->opts.fd_nosigpipe)
+			flags |= MSG_NOSIGNAL;
+		#endif
+	}
+#endif
 retry:
 #if _WIN32
-	count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
+	if (1) {
 #else
-#if defined(MSG_NOSIGNAL)
-	if (S_ISSOCK(so->mode) && so->opts.fd_nosigpipe) {
-		count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
+	if (S_ISSOCK(so->mode)) {
+#endif
+		count = send(so->fd, src, SO_MIN(len, LONG_MAX), flags);
 	} else {
 		count = write(so->fd, src, SO_MIN(len, LONG_MAX));
 	}
-#else
-	count = write(so->fd, src, SO_MIN(len, LONG_MAX));
-#endif
-#endif
 
 	if (count == -1)
 		goto error;
