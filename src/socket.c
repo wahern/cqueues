@@ -1249,13 +1249,14 @@ static lso_nargs_t lso_pair(lua_State *L) {
 	a = lso_newsocket(L, type);
 	b = lso_newsocket(L, type);
 
+#if defined SOCK_NONBLOCK
+	type |= SOCK_NONBLOCK;
+#endif
 #if defined SOCK_CLOEXEC
-	if (0 != socketpair(AF_UNIX, type|SOCK_CLOEXEC, PF_UNSPEC, fd))
-		goto syerr;
-#else
+	type |= SOCK_CLOEXEC;
+#endif
 	if (0 != socketpair(AF_UNIX, type, PF_UNSPEC, fd))
 		goto syerr;
-#endif
 
 	opts.fd_close.arg = a;
 	opts.fd_close.cb = &lso_closefd;
