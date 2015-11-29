@@ -769,7 +769,14 @@ int so_cloexec(int fd, _Bool cloexec) {
 #if _WIN32
 	return 0;
 #else
-	if (-1 == fcntl(fd, F_SETFD, cloexec))
+	int flags, newflags;
+
+	if (-1 == (flags = fcntl(fd, F_GETFD)))
+		return so_syerr();
+
+	newflags = (cloexec ? ~0 : ~FD_CLOEXEC) & (flags | FD_CLOEXEC);
+
+	if (flags != newflags && (-1 == fcntl(fd, F_SETFD, flags)))
 		return so_syerr();
 
 	return 0;
