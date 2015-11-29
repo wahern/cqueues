@@ -1353,6 +1353,10 @@ static int so_socket_(struct socket *so) {
 	if (-1 == (so->fd = so_socket(so->host->ai_family, so->host->ai_socktype, &so->opts, &error)))
 		return error;
 
+	so->mode = S_IFSOCK;
+	so->domain = so->host->ai_family;
+	so->type = so->host->ai_socktype;
+	so->protocol = 0;
 	if ((error = so_ftype(so->fd, &so->mode, &so->domain, &so->type, &so->protocol)))
 		return error;
 
