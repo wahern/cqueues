@@ -623,34 +623,42 @@ static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *pr
 	struct stat st;
 	int error;
 
-	if (0 != fstat(fd, &st))
-		return errno;
 
-	*mode = S_IFMT & st.st_mode;
+	if (*mode == 0) {
+		if (0 != fstat(fd, &st))
+			return errno;
+		*mode = S_IFMT & st.st_mode;
+	}
 
 	if (!S_ISSOCK(*mode))
 		return 0;
 
+	if (*domain == 0) {
 #if defined SO_DOMAIN
-	if (0 != getsockopt(fd, SOL_SOCKET, SO_DOMAIN, domain, &(socklen_t){ sizeof *domain })) {
-		if (errno != ENOPROTOOPT)
-			return errno;
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_DOMAIN, domain, &(socklen_t){ sizeof *domain })) {
+			if (errno != ENOPROTOOPT)
+				return errno;
 
+			if ((error = so_ffamily(fd, domain)))
+				return error;
+		}
+#else
 		if ((error = so_ffamily(fd, domain)))
 			return error;
-	}
-#else
-	if ((error = so_ffamily(fd, domain)))
-		return error;
 #endif
+	}
 
-	if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, type, &(socklen_t){ sizeof *type }))
-		return errno;
+	if (*type == 0) {
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, type, &(socklen_t){ sizeof *type }))
+			return errno;
+	}
 
 #if defined SO_PROTOCOL
-	if (0 != getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){ sizeof *protocol })) {
-		if (errno != ENOPROTOOPT)
-			return errno;
+	if (*protocol == 0) {
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){ sizeof *protocol })) {
+			if (errno != ENOPROTOOPT)
+				return errno;
+		}
 	}
 #else
 	(void)protocol;
