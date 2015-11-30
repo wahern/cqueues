@@ -892,7 +892,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 			port = luaL_checkstring(L, -1);
 		}
 	} else {
-		opts = *so_opts();
+		opts = *so_opts(.sin_reuseaddr = 0);
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
 		family = luaL_optinteger(L, 3, AF_INET);
