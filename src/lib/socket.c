@@ -694,7 +694,8 @@ int so_socket(int domain, int type, const struct so_options *opts, int *_error) 
 	if (-1 == (fd = socket(domain, type, 0)))
 		goto syerr;
 
-	if ((error = so_setfl(fd, flags, mask, need)))
+	/* assumes natural state of socket is all flags off */
+	if ((error = so_setfl(fd, flags, mask&flags, need)))
 		goto error;
 
 	return fd;
