@@ -2166,23 +2166,6 @@ static double cqueue_timeout_(struct cqueue *Q) {
 } /* cqueue_timeout_() */
 
 
-static void cqueue_resume_cont(lua_State *L, struct cqueue *Q, int nargs) {
-	int index;
-	struct thread *T = Q->thread.current;
-	if (!T) {
-		luaL_error(L, "cqueue not yielded");
-		NOTREACHED;
-	}
-	index = lua_gettop(L)-nargs+1;
-	if (lua_islightuserdata(L, index) && lua_touserdata(T->L, index) == CQUEUE__POLL) {
-		luaL_error(L, "cannot resume a coroutine passing internal cqueues._POLL value as first parameter");
-		NOTREACHED;
-	}
-	/* move arguments onto resumed stack */
-	lua_xmove(L, T->L, nargs);
-} /* cqueue_resume_cont() */
-
-
 #if LUA_VERSION_NUM <= 502
 static int cqueue_step_cont(lua_State *L) {
 #else
@@ -2191,36 +2174,41 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 	int nargs = lua_gettop(L);
 	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cqueue *Q = cqueue_checkself(L, 1);
-#if LUA_VERSION_NUM >= 502
-	cqueue_resume_cont(L, Q, nargs-3);
-
-	I.self = 1;
-	I.registry = 3;
-#else
-	cqueue_resume_cont(L, Q, nargs-1);
+	struct thread *T = Q->thread.current;
+	if (!T) {
+		luaL_error(L, "cqueue not yielded");
+		NOTREACHED;
+	}
+	if (lua_islightuserdata(L, 2) && lua_touserdata(L, 2) == CQUEUE__POLL) {
+		luaL_error(L, "cannot resume a coroutine passing internal cqueues._POLL value as first parameter");
+		NOTREACHED;
+	}
+	/* move arguments onto resumed stack */
+	lua_xmove(L, T->L, nargs-1);
 
 	cqueue_enter(L, &I, 1);
-#endif
 
 	switch(cqueue_process_threads(L, Q, &I)) {
-		case LUA_OK:
-			break;
-		case LUA_YIELD:
+	case LUA_OK:
+		break;
+	case LUA_YIELD:
+		/* clear everything off the stack except for cqueue object; `I` now invalid */
+		lua_settop(L, 1);
 #if LUA_VERSION_NUM >= 502
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return lua_yieldk(L, nargs, 0, cqueue_step_cont);
 #else
-			lua_pushliteral(L, "yielded");
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return nargs+1;
+		lua_pushliteral(L, "yielded");
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return nargs+1;
 #endif
-		default:
-			goto oops;
-		}
+	default:
+		goto oops;
+	}
 
 	lua_pushboolean(L, 1);
 
@@ -2263,6 +2251,8 @@ static int cqueue_step(lua_State *L) {
 		case LUA_OK:
 			break;
 		case LUA_YIELD:
+			/* clear everything off the stack except for cqueue object; `I` now invalid */
+			lua_settop(L, 1);
 #if LUA_VERSION_NUM >= 502
 			/* move arguments onto 'main' stack to return them from this yield */
 			nargs = lua_gettop(Q->thread.current->L);
