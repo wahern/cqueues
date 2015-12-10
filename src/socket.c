@@ -597,6 +597,9 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 	if (lso_altfield(L, index, "reuseport", "sin_reuseport"))
 		opts.sin_reuseport = lso_popbool(L);
 
+	if (lso_altfield(L, index, "broadcast", "sin_broadcast"))
+		opts.sin_broadcast = lso_popbool(L);
+
 	if (lso_altfield(L, index, "nodelay", "sin_nodelay"))
 		opts.sin_nodelay = lso_popbool(L);
 
