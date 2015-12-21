@@ -140,6 +140,7 @@ struct so_options {
 
 	_Bool sin_reuseaddr;
 	_Bool sin_reuseport;
+	_Bool sin_broadcast;
 	_Bool sin_nodelay;
 	_Bool sin_nopush;
 	_Bool sin_oobinline;
@@ -449,6 +450,8 @@ int so_reuseaddr(int, _Bool);
 
 int so_reuseport(int, _Bool);
 
+int so_broadcast(int, _Bool);
+
 int so_nodelay(int, _Bool);
 
 int so_nopush(int, _Bool);
@@ -463,11 +466,12 @@ int so_oobinline(int, _Bool);
 #define SO_F_NONBLOCK  0x0002
 #define SO_F_REUSEADDR 0x0004
 #define SO_F_REUSEPORT 0x0008
-#define SO_F_NODELAY   0x0010
-#define SO_F_NOPUSH    0x0020
-#define SO_F_NOSIGPIPE 0x0040
-#define SO_F_V6ONLY    0x0080
-#define SO_F_OOBINLINE 0x0100
+#define SO_F_BROADCAST 0x0010
+#define SO_F_NODELAY   0x0020
+#define SO_F_NOPUSH    0x0040
+#define SO_F_NOSIGPIPE 0x0080
+#define SO_F_V6ONLY    0x0100
+#define SO_F_OOBINLINE 0x0200
 
 int so_getfl(int fd, int which); /* no failure mode */
 
