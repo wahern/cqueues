@@ -2214,6 +2214,7 @@ static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx N
 
 	return 1;
 oops:
+	Q->thread.current = NULL;
 	lua_pushboolean(L, 0);
 	return 1 + err_pushinfo(L, &I);
 } /* yield_cont() */
@@ -2274,6 +2275,7 @@ static int cqueue_step(lua_State *L) {
 
 	return 1;
 oops:
+	Q->thread.current = NULL;
 	lua_pushboolean(L, 0);
 	return 1 + err_pushinfo(L, &I);
 } /* cqueue_step() */
