@@ -946,7 +946,7 @@ static int so_type2mask(mode_t mode, int family, int type, int protocol) {
 	int mask = SO_F_CLOEXEC|SO_F_NONBLOCK|SO_F_NOSIGPIPE;
 
 	if (S_ISSOCK(mode)) {
-		mask |= SO_F_REUSEADDR|SO_F_REUSEPORT|SO_F_BROADCAST|SO_F_NODELAY|SO_F_NOPUSH|SO_F_OOBINLINE;
+		mask |= SO_F_REUSEADDR|SO_F_REUSEPORT|SO_F_OOBINLINE;
 
 		if (!protocol) {
 			if (family == AF_INET || family == AF_INET6) {
@@ -954,16 +954,16 @@ static int so_type2mask(mode_t mode, int family, int type, int protocol) {
 			}
 		}
 
-		if (family != AF_INET6) {
-			mask &= ~SO_F_V6ONLY;
+		if (family == AF_INET6) {
+			mask |= SO_F_V6ONLY;
 		}
 
-		if (type != SOCK_DGRAM) {
-			mask &= ~SO_F_BROADCAST;
+		if (type == SOCK_DGRAM) {
+			mask |= SO_F_BROADCAST;
 		}
 
-		if (protocol != IPPROTO_TCP) {
-			mask &= ~(SO_F_NODELAY|SO_F_NOPUSH);
+		if (protocol == IPPROTO_TCP) {
+			mask |= SO_F_NODELAY|SO_F_NOPUSH;
 		}
 	}
 
