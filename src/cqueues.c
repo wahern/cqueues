@@ -1448,6 +1448,10 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 
 	Q->thread.current = NULL;
 
+	while ((thread = LIST_FIRST(&Q->thread.pending))) {
+		thread_del(L, Q, I, thread);
+	}
+
 	while ((thread = LIST_FIRST(&Q->thread.polling))) {
 		thread_del(L, Q, I, thread);
 	}
