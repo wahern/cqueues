@@ -44,6 +44,40 @@
 
 
 /*
+ * F E A T U R E / E N V I R O N M E N T  M A C R O S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef __NetBSD_Prereq__
+#define __NetBSD_Prereq__(M, m, p) 0
+#endif
+
+#ifndef NETBSD_PREREQ
+#define NETBSD_PREREQ(M, m) (defined __NetBSD_Prereq__ && __NetBSD_Prereq__(M, m, 0))
+#endif
+
+#ifndef FREEBSD_PREREQ
+#define FREEBSD_PREREQ(M, m) (defined __FreeBSD_version && __FreeBSD_version >= ((M) * 100000) + ((m) * 1000))
+#endif
+
+#ifndef GLIBC_PREREQ
+#if defined __GLIBC_PREREQ
+#define GLIBC_PREREQ(M, m) (defined __GLIBC__ && __GLIBC_PREREQ(M, m) && !__UCLIBC__)
+#else
+#define GLIBC_PREREQ(M, m) 0
+#endif
+#endif
+
+#ifndef HAVE_ACCEPT4
+#define HAVE_ACCEPT4 ((__linux && (!defined __GLIBC__ || GLIBC_PREREQ(2, 10))) || FREEBSD_PREREQ(10, 0))
+#endif
+
+#ifndef HAVE_PACCEPT
+#define HAVE_PACCEPT NETBSD_PREREQ(6, 0)
+#endif
+
+
+/*
  * V E R S I O N  I N T E R F A C E S
  *
  * Vendor: Entity for which versions numbers are relevant. (If forking

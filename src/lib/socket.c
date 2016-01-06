@@ -1997,8 +1997,18 @@ int so_accept(struct socket *so, struct sockaddr *saddr, socklen_t *slen, int *e
 	so->events = POLLIN;
 
 retry:
+#if HAVE_ACCEPT4 && defined SOCK_CLOEXEC
+	if (-1 == (fd = accept4(so->fd, saddr, slen, SOCK_CLOEXEC)))
+		goto soerr;
+#elif HAVE_PACCEPT && defined SOCK_CLOEXEC
+	if (-1 == (fd = paccept(so->fd, saddr, slen, NULL, SOCK_CLOEXEC)))
+		goto soerr;
+#else
 	if (-1 == (fd = accept(so->fd, saddr, slen)))
 		goto soerr;
+
+	(void)so_cloexec(fd, 1);
+#endif
 
 	return fd;
 soerr:
