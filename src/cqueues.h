@@ -226,7 +226,7 @@ static inline int cqs_interpose(lua_State *L, const char *mt) {
 static inline void cqs_pushnils(lua_State *L, int n) {
 	int i;
 
-	luaL_checkstack(L, n, NULL);
+	luaL_checkstack(L, n, "too many arguments");
 
 	for (i = 0; i < n; i++)
 		lua_pushnil(L);

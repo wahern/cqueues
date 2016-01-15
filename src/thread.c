@@ -470,7 +470,7 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 		if ((LUA_VERSION_NUM < 502 && info.nups > 0) || info.nups > 1)
 			goto uperr;
 
-		luaL_checkstack(L, 2, NULL);
+		luaL_checkstack(L, 2, "too many arguments");
 
 		/*
 		 * NOTE: Must put luaL_Buffer on a different stack because
@@ -636,7 +636,7 @@ static int ct_start(lua_State *L) {
 	}
 
 	/* we may have added more stack objects above the thread object */
-	luaL_checkstack(L, 2, NULL);
+	luaL_checkstack(L, 2, "too many arguments");
 	lua_pushvalue(L, top + 1);
 
 	if (0 != cqs_socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->tmp.fd, O_NONBLOCK|O_CLOEXEC))

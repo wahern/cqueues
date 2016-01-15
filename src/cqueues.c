@@ -1340,7 +1340,7 @@ static const char *err_pushvalue(lua_State *L, struct callinfo *I) {
 static cqs_nargs_t err_pushinfo(lua_State *L, struct callinfo *I) {
 	int nargs = 0;
 
-	luaL_checkstack(L, 5, NULL);
+	luaL_checkstack(L, 5, "too many arguments");
 
 	err_pushvalue(L, I);
 	nargs = 1;
