@@ -1042,6 +1042,7 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	SSL_CTX **ctx;
+	const SSL_METHOD *method;
 	int error;
 
 	/*
@@ -1052,7 +1053,17 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 	if ((S->todo & LSO_DO_STARTTLS))
 		goto check;
 
-	ctx = luaL_testudata(L, 2, "SSL_CTX*");
+	if ((ctx = luaL_testudata(L, 2, "SSL_CTX*"))) {
+		/*
+		 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
+		 * OpenSSL's internal ssl_undefined_function().
+		 *
+		 * Server methods such as TLSv1_2_server_method(), etc. should have
+		 * their .ssl_connect method set to this value.
+		 */
+		method = SSL_CTX_get_ssl_method(*ctx);
+		S->tls.config.accept = (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect);
+	}
 
 	if (ctx && *ctx && *ctx != S->tls.config.context) {
 		if (S->tls.config.context)

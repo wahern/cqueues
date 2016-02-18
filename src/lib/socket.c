@@ -2090,17 +2090,7 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
-	/*
-	 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
-	 * OpenSSL's internal ssl_undefined_function().
-	 *
-	 * Server methods such as TLSv1_2_server_method(), etc. should have
-	 * their .ssl_connect method set to this value.
-	 */
-	method = SSL_get_ssl_method(so->ssl.ctx);
-
-	if (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect)
-		so->ssl.accept = 1;
+	so->ssl.accept = cfg->accept;
 
 	if (!so->ssl.accept && so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
 		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))

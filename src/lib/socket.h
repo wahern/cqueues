@@ -529,6 +529,8 @@ struct so_starttls {
 	SSL *instance; /* TODO */
 
 	struct iovec pushback;
+
+	_Bool accept;
 }; /* struct so_starttls */
 
 int so_starttls(struct socket *, const struct so_starttls *);
