@@ -51,6 +51,10 @@
 #define HAVE_PORTS (__sun)
 #endif
 
+#if !HAVE_KQUEUE && !HAVE_EPOLL && !HAVE_PORTS
+#error "No polling backend available"
+#endif
+
 #ifndef HAVE_EPOLL_CREATE1
 #define HAVE_EPOLL_CREATE1 (HAVE_EPOLL && __GLIBC_PREREQ(2, 9))
 #endif
