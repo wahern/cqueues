@@ -88,6 +88,10 @@
 #define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
 #endif
 
+#if !HAVE_KQUEUE && !HAVE_EPOLL && !HAVE_PORTS
+#error "No polling backend available"
+#endif
+
 #ifndef HAVE_EVENTFD
 #define HAVE_EVENTFD (__linux && (GLIBC_PREREQ(2, 9) || UCLIBC_PREREQ(0, 9, 33)))
 #endif

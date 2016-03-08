@@ -51,6 +51,10 @@
 #define HAVE_PORTS (__sun)
 #endif
 
+#if !HAVE_KQUEUE && !HAVE_EPOLL && !HAVE_PORTS
+#error "No polling backend available"
+#endif
+
 #ifndef HAVE_EPOLL_CREATE1
 #define HAVE_EPOLL_CREATE1 (HAVE_EPOLL && __GLIBC_PREREQ(2, 9))
 #endif
@@ -63,7 +67,7 @@
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
 #elif HAVE_PORTS
 #include <port.h>	/* PORT_SOURCE_FD port_associate(2) port_disassociate(2) port_getn(2) port_alert(2) */
-#else
+#elif HAVE_KQUEUE
 #include <sys/event.h>	/* EVFILT_READ EVFILT_WRITE EV_SET EV_ADD EV_DELETE struct kevent kqueue(2) kevent(2) */
 #endif
 
@@ -126,7 +130,7 @@ static void closefd(int *fd) {
 typedef struct epoll_event event_t;
 #elif HAVE_PORTS
 typedef port_event_t event_t;
-#else
+#elif HAVE_KQUEUE
 /* NetBSD uses intptr_t while others use void * for .udata */
 #define EV_SETx(ev, a, b, c, d, e, f) EV_SET((ev), (a), (b), (c), (d), (e), ((__typeof__((ev)->udata))(f)))
 
@@ -139,7 +143,7 @@ static inline void *event_udata(const event_t *event) {
 	return event->data.ptr;
 #elif HAVE_PORTS
 	return event->portev_user;
-#else
+#elif HAVE_KQUEUE
 	return (void *)event->udata;
 #endif
 } /* event_udata() */
@@ -150,7 +154,7 @@ static inline short event_pending(const event_t *event) {
 	return event->events;
 #elif HAVE_PORTS
 	return event->portev_events;
-#else
+#elif HAVE_KQUEUE
 	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
 #endif
 } /* event_pending() */
@@ -226,7 +230,7 @@ static int kpoll_ctl(struct kpoll *kp, struct kpollfd *fd, short events) {
 	}
 
 	fd->events = events;
-#else
+#elif HAVE_KQUEUE
 	struct kevent event;
 
 	if (events & POLLIN) {
@@ -357,7 +361,7 @@ static int kpoll_wait(struct kpoll *kp, int timeout) {
 
 	if (0 != port_getn(kp->fd, event, countof(event), &n, ms2ts(timeout)))
 		return (errno == ETIME || errno == EINTR)? 0 : errno;
-#else
+#elif HAVE_KQUEUE
 	int i, n;
 
 	if (-1 == (n = kevent(kp->fd, NULL, 0, event, (int)countof(event), ms2ts(timeout))))
@@ -456,7 +460,7 @@ static int kpoll_init(struct kpoll *kp) {
 		} else
 			goto syerr;
 	}
-#else
+#elif HAVE_KQUEUE
 	if (-1 == (kp->fd = kqueue()))
 		goto syerr;
 #endif
