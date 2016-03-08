@@ -391,7 +391,7 @@ static void *pool_get(struct pool *P, int *_error) {
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
 #elif HAVE_PORTS
 #include <port.h>
-#else
+#elif HAVE_KQUEUE
 #include <sys/event.h>	/* EVFILT_READ EVFILT_WRITE EV_SET EV_ADD EV_DELETE struct kevent kqueue(2) kevent(2) */
 #endif
 
@@ -408,7 +408,7 @@ static void *pool_get(struct pool *P, int *_error) {
 typedef struct epoll_event kpoll_event_t;
 #elif HAVE_PORTS
 typedef port_event_t kpoll_event_t;
-#else
+#elif HAVE_KQUEUE
 /* NetBSD uses intptr_t, others use void *, for .udata */
 #define KP_P2UDATA(p) ((__typeof__(((struct kevent *)0)->udata))(p))
 #define KP_UDATA2P(udata) ((void *)(udata))
@@ -510,7 +510,7 @@ static int kpoll_init(struct kpoll *kp) {
 
 	if ((error = setcloexec(kp->fd)))
 		return error;
-#else
+#elif HAVE_KQUEUE
 	if (-1 == (kp->fd = kqueue()))
 		return errno;
 
@@ -534,7 +534,7 @@ static inline void *kpoll_udata(const kpoll_event_t *event) {
 	return event->data.ptr;
 #elif HAVE_PORTS
 	return event->portev_user;
-#else
+#elif HAVE_KQUEUE
 	return KP_UDATA2P(event->udata);
 #endif
 } /* kpoll_udata() */
@@ -545,7 +545,7 @@ static inline short kpoll_pending(const kpoll_event_t *event) {
 	return event->events;
 #elif HAVE_PORTS
 	return event->portev_events;
-#else
+#elif HAVE_KQUEUE
 	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
 #endif
 } /* kpoll_pending() */
@@ -597,7 +597,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 	*state = events;
 
 	return 0;
-#else
+#elif HAVE_KQUEUE
 	struct kevent event;
 
 	if (*state == events)
@@ -757,7 +757,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	kp->pending.count = n;
 
 	return 0;
-#else
+#elif HAVE_KQUEUE
 	int n;
 
 	if (-1 == (n = kevent(kp->fd, NULL, 0, kp->pending.event, (int)countof(kp->pending.event), f2ts(timeout))))
