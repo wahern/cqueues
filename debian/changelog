@@ -1,3 +1,14 @@
+liblua-cqueues (20160316-0) unstable; urgency=low
+
+  * Allow yielding through cqueues:step. (daurnimator)
+  * Use SSLv23_server_method instead of SSLv3_server_method when guessing
+    the TLS handshake mode--server or client--as many OpenSSL forks have
+    deprecated or removed SSLv3-specific APIs. (daurnimator)
+  * Support SO_BROADCAST. (daurnimator)
+  * Fix v6only flag. (daurnimator)
+
+ -- William Ahern <william@25thandClement.com>  Wed, 16 Mar 2016 18:34:51 -0700
+
 liblua-cqueues (20150907-0) unstable; urgency=low
 
   * Fix bugs with getsockname and getpeername--AF_UNIX sockaddr length
