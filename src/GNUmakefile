@@ -19,7 +19,6 @@ include $(d)/lib/GNUmakefile
 # C O M P I L A T I O N  F L A G S
 #
 OS_$(d) = $(shell $(d)/../mk/vendor.os)
-LUAPATH_$(d) = $(shell env CC="$(CC)" CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(<D)/../mk/luapath -krxm3 -I$(DESTDIR)$(includedir) -I/usr/include -I/usr/local/include -P$(DESTDIR)$(bindir) -P$(bindir) -L$(DESTDIR)$(libdir) -L$(libdir) -v$(1) $(2))
 VENDOR_$(d) = $(or $(CQUEUES_VENDOR),$(shell $(<D)/../mk/changelog author))
 VERSION_$(d) = $(or $(CQUEUES_VERSION),$(shell $(<D)/../mk/changelog version))
 COMMIT_$(d) = $(shell $(<D)/../mk/changelog commit)
@@ -67,10 +66,8 @@ $$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnon
 	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
 
 $$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/compat52.h
-	@test "$(1)" = "$$(call LUAPATH_$$(<D), $(1), version)" \
-	|| (printf "%s\n" 'Unable to find Lua $(1) API headers (CPPFLAGS=$$(strip $$(call LUAPATH_$$(<D), $(1), cppflags) $(CPPFLAGS)))' >&2; false)
 	$$(MKDIR) -p $$(@D)
-	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(call LUAPATH_$$(<D), $(1), cppflags) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
+	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
 
 $$(d)/$(1)/cqueues.o: $$(d)/lib/llrb.h
 
@@ -91,21 +88,16 @@ liblua$(1)-cqueues cqueues$(1) cqueues: $$(d)/$(1)/cqueues.so
 endef # BUILD_$(d)
 
 $(eval $(call BUILD_$(d),5.1))
-
 $(eval $(call BUILD_$(d),5.2))
-
 $(eval $(call BUILD_$(d),5.3))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
 .SECONDARY: all all5.1 all5.2 all5.3
 
 all5.1: liblua5.1-cqueues
-
 all5.2: liblua5.2-cqueues
-
 all5.3: liblua5.3-cqueues
-
-all: all5.1 all5.2
+all: $(foreach API,$(strip $(LUA_APIS)),all$(API))
 
 endif
 
@@ -114,8 +106,6 @@ endif
 # I N S T A L L  &  U N I N S T A L L  R U L E S
 #
 define INSTALL_$(d)
-
-LUAC$(1)_$(d) = $$(or $$(call LUAPATH_$(d), $(1), luac), true)
 
 MODS$(1)_$(d) = \
 	$$(DESTDIR)$(2)/_cqueues.so \
@@ -146,17 +136,17 @@ $$(DESTDIR)$(2)/_cqueues.so: $$(d)/$(1)/cqueues.so
 	cp -p $$< $$@
 
 $$(DESTDIR)$(3)/%.lua: $$(d)/%.lua
-	$$(LUAC$(1)_$(d)) -p $$<
+	$$(LUAC$(subst .,,$(1))) -p $$<
 	$$(MKDIR) -p $$(@D)
 	cp -p $$< $$@
 
 $$(DESTDIR)$(3)/cqueues/%.lua: $$(d)/%.lua
-	$$(LUAC$(1)_$(d)) -p $$<
+	$$(LUAC$(subst .,,$(1))) -p $$<
 	$$(MKDIR) -p $$(@D)
 	cp -p $$< $$@
 
 $$(DESTDIR)$(3)/cqueues/dns/%.lua: $$(d)/dns.%.lua
-	$$(LUAC$(1)_$(d)) -p $$<
+	$$(LUAC$(subst .,,$(1))) -p $$<
 	$$(MKDIR) -p $$(@D)
 	cp -p $$< $$@
 
@@ -170,31 +160,24 @@ liblua$(1)-cqueues-uninstall cqueues$(1)-uninstall:
 endef # INSTALL_$(d)
 
 $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
-
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
-
 $(eval $(call INSTALL_$(d),5.3,$$(lua53cpath),$$(lua53path)))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
+
 .SECONDARY: install5.1 install5.2 install5.3 install
 
 install5.1: liblua5.1-cqueues-install
-
 install5.2: liblua5.2-cqueues-install
-
 install5.3: liblua5.3-cqueues-install
-
-install: install5.1 install5.2
+install: $(foreach API,$(strip $(LUA_APIS)),install$(API))
 
 .PHONY: uninstall5.1 uninstall5.2 uninstall5.3 uninstall
 
 uninstall5.1: liblua5.1-cqueues-uninstall
-
 uninstall5.2: liblua5.2-cqueues-uninstall
-
 uninstall5.3: liblua5.3-cqueues-uninstall
-
-uninstall: uninstall5.1 uninstall5.2
+uninstall: $(foreach API,$(strip $(LUA_APIS)),uninstall$(API))
 
 endif
 
@@ -224,16 +207,15 @@ $(d)/help:
 	@echo
 	@echo "src/ targets:"
 	@echo ""
-	@echo "         all - build all binary targets"
-	@echo "     cqueues - invokes cqueues5.1 and cqueues5.2"
-	@echo "  cqueues5.1 - build 5.1/cqueues.so"
-	@echo "  cqueues5.2 - build 5.2/cqueues.so"
-	@echo "  cqueues5.3 - build 5.3/cqueues.so"
-	@echo "     install - invokes install5.1 and install5.2"
+	@echo "         all - build all API targets"
+	@echo "      all5.1 - build 5.1/cqueues.so"
+	@echo "      all5.2 - build 5.2/cqueues.so"
+	@echo "      all5.3 - build 5.3/cqueues.so"
+	@echo "     install - install all API targets"
 	@echo "  install5.1 - install cqueues Lua 5.1 modules"
 	@echo "  install5.2 - install cqueues Lua 5.2 modules"
 	@echo "  install5.3 - install cqueues Lua 5.3 modules"
-	@echo "   uninstall - invokes uninstall5.1 and uninstall5.2"
+	@echo "   uninstall - uninstall all API targets"
 	@echo "uninstall5.1 - uninstall cqueues Lua 5.1 modules"
 	@echo "uninstall5.2 - uninstall cqueues Lua 5.2 modules"
 	@echo "uninstall5.3 - uninstall cqueues Lua 5.3 modules"
@@ -243,6 +225,7 @@ $(d)/help:
 	@echo ""
 	@echo "Some important Make variables:"
 	@echo ""
+	@echo '  LUA_APIS - default Lua APIs to target ($(LUA_APIS))'
 	@echo "    prefix - path to install root ($(value prefix))"
 	@echo ' lua51path - install path for Lua 5.1 modules ($(value lua51path))'
 	@echo 'lua51cpath - install path for Lua 5.1 C modules ($(value lua51cpath))'
@@ -250,6 +233,10 @@ $(d)/help:
 	@echo 'lua52cpath - install path for Lua 5.2 C modules ($(value lua52cpath))'
 	@echo ' lua53path - install path for Lua 5.3 modules ($(value lua53path))'
 	@echo 'lua53cpath - install path for Lua 5.3 C modules ($(value lua53cpath))'
+	@echo ""
+	@echo 'LUA51_CPPFLAGS - cpp flags for Lua 5.1 headers ($(LUA51_CPPFLAGS))'
+	@echo 'LUA52_CPPFLAGS - cpp flags for Lua 5.2 headers ($(LUA52_CPPFLAGS))'
+	@echo 'LUA53_CPPFLAGS - cpp flags for Lua 5.3 headers ($(LUA53_CPPFLAGS))'
 	@echo ""
 	@echo "(NOTE: all the common GNU-style paths are supported, including"
 	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"

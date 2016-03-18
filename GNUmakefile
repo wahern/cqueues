@@ -9,6 +9,20 @@ GUARD_$(d) := 1
 
 all: # default target
 
+#
+# G N U  M A K E  F U N C T I O N S
+#
+KNOWN_APIS = 5.1 5.2 5.3
+
+# template for invoking luapath script
+LUAPATH := $(d)/mk/luapath
+LUAPATH_FN = $(shell env CC='$(subst ',\\',$(CC))' CPPFLAGS='$(subst ',\\',$(CPPFLAGS))' LDFLAGS='$(subst ',\\',$(LDFLAGS))' $(LUAPATH) -krxm3 -I'$(subst ',\\',$(DESTDIR)$(includedir))' -I/usr/include -I/usr/local/include -P'$(subst ',\\',$(DESTDIR)$(bindir))' -P'$(subst ',\\',$(bindir))' -L'$(subst ',\\',$(DESTDIR)$(libdir))' -L'$(subst ',\\',$(libdir))' -v$(1) $(2))
+
+# check whether luapath can locate Lua $(1) headers
+HAVE_API_FN = $(and $(filter $(1),$(call LUAPATH_FN,$(1),version)),$(1)$(info enabling Lua $(1)))
+
+# check whether $(1) in LUA_APIS or $(LUA$(1:.=)_CPPFLAGS) is non-empty
+WITH_API_FN = $$(and $$(or $$(filter $(1),$$(LUA_APIS)),$$(LUA$(subst .,,$(1))_CPPFLAGS)),$(1))
 
 #
 # E N V I R O N M E N T  C O N F I G U R A T I O N
@@ -30,6 +44,7 @@ lua53path ?= $(datadir)/lua/5.3
 AR ?= ar
 RANLIB ?= ranlib
 M4 ?= m4
+MV ?= mv
 RM ?= rm
 CP ?= cp
 RMDIR ?= rmdir
@@ -37,36 +52,32 @@ MKDIR ?= mkdir
 CHMOD ?= chmod
 INSTALL ?= install
 INSTALL_DATA ?= $(INSTALL) -m 644
+TOUCH ?= touch
+TEE ?= tee
+TEE_A ?= $(TEE) -a
+
+# see Lua Autodetection, below
 
 .PHONY: $(d)/config
 
+PRINT_$(d) = printf "%s = %s\n" '$(1)' '$(subst ',\\',$(2))' | $(TEE_A) '$(3)'
+
+LAZY_$(d) = \
+	prefix includedir libdir datadir bindir \
+	lua51cpath lua51path lua52cpath lua52path lua53cpath lua53path \
+	CC CPPFLAGS CFLAGS LDFLAGS SOFLAGS AR RANLIB M4 MV RM CP \
+	RMDIR MKDIR CHMOD INSTALL INSTALL_DATA TOUCH TEE TEE_A
+
+NONLAZY_$(d) = \
+	LUA_APIS \
+	$(foreach API,$(KNOWN_APIS),LUAC$(subst .,,$(API))) \
+	$(foreach API,$(KNOWN_APIS),$(and $(call WITH_API_FN,$(API)),LUA$(subst .,,$(API))_CPPFLAGS))
+
 $(d)/config:
-	printf 'prefix ?= $(value prefix)'"\n" >| $(@D)/.config
-	printf 'includedir ?= $(value includedir)'"\n" >> $(@D)/.config
-	printf 'libdir ?= $(value libdir)'"\n" >> $(@D)/.config
-	printf 'datadir ?= $(value datadir)'"\n" >> $(@D)/.config
-	printf 'bindir ?= $(value bindir)'"\n" >> $(@D)/.config
-	printf 'lua51cpath ?= $(value lua51cpath)'"\n" >> $(@D)/.config
-	printf 'lua51path ?= $(value lua51path)'"\n" >> $(@D)/.config
-	printf 'lua52cpath ?= $(value lua52cpath)'"\n" >> $(@D)/.config
-	printf 'lua52path ?= $(value lua52path)'"\n" >> $(@D)/.config
-	printf 'lua53cpath ?= $(value lua53cpath)'"\n" >> $(@D)/.config
-	printf 'lua53path ?= $(value lua53path)'"\n" >> $(@D)/.config
-	printf 'CC ?= $(CC)'"\n" >> $(@D)/.config
-	printf 'CPPFLAGS ?= $(value CPPFLAGS)'"\n" >> $(@D)/.config
-	printf 'CFLAGS ?= $(value CFLAGS)'"\n" >> $(@D)/.config
-	printf 'LDFLAGS ?= $(value LDFLAGS)'"\n" >> $(@D)/.config
-	printf 'SOFLAGS ?= $(value SOFLAGS)'"\n" >> $(@D)/.config
-	printf 'AR ?= $(value AR)'"\n" >> $(@D)/.config
-	printf 'RANLIB ?= $(value RANLIB)'"\n" >> $(@D)/.config
-	printf 'M4 ?= $(value M4)'"\n" >> $(@D)/.config
-	printf 'RM ?= $(value RM)'"\n" >> $(@D)/.config
-	printf 'CP ?= $(value CP)'"\n" >> $(@D)/.config
-	printf 'RMDIR ?= $(value RMDIR)'"\n" >> $(@D)/.config
-	printf 'MKDIR ?= $(value MKDIR)'"\n" >> $(@D)/.config
-	printf 'CHMOD ?= $(value CHMOD)'"\n" >> $(@D)/.config
-	printf 'INSTALL ?= $(value INSTALL)'"\n" >> $(@D)/.config
-	printf 'INSTALL_DATA ?= $(value INSTALL_DATA)'"\n" >> $(@D)/.config
+	$(TOUCH) $(@D)/.config.tmp
+	@$(foreach V,$(LAZY_$(@D)), $(call PRINT_$(@D),$(V),$(value $(V)),$(@D)/.config.tmp);)
+	@$(foreach V,$(NONLAZY_$(@D)), $(call PRINT_$(@D),$(V),$($(V)),$(@D)/.config.tmp);)
+	$(MV) $(@D)/.config.tmp $(@D)/.config
 
 # add local targets if building from inside project tree
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
@@ -75,6 +86,43 @@ ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))"
 config configure: $(d)/config
 endif
 
+
+#
+# L U A  A U T O D E T E C T I O N
+#
+
+# set LUA_APIS if empty or "?"
+ifeq ($(or $(strip $(LUA_APIS)),?),?)
+override LUA_APIS := $(call HAVE_API_FN,5.1) $(call HAVE_API_FN,5.2) $(call HAVE_API_FN,5.3)
+endif
+
+define LUAXY_template
+
+# set luaXYcpath if empty or "?"
+ifeq ($$(or $$(strip $$(lua$(subst .,,$(1))cpath)),?),?)
+override lua$(subst .,,$(1))cpath := $$(or $$(call LUAPATH_FN,$(1),cdir),$$(libdir)/lua/$(1))
+endif
+
+# set luaXYpath if empty or "?"
+ifeq ($$(or $$(strip $$(lua$(subst .,,$(1))path)),?),?)
+override lua$(subst .,,$(1))path = $$(or $$(call LUAPATH_FN,$(1),ldir),$$(datadir)/lua/$(1))
+endif
+
+# set LUAXY_CPPFLAGS if undefined or "?" (NB: can be empty if path already in $(CPPFLAGS))
+ifeq ($$(and $$(findstring undefined,$$(origin LUA$(subst .,,$(1))_CPPFLAGS)),?),?)
+override LUA$(subst .,,$(1))_CPPFLAGS = $$(and $$(call WITH_API_FN,$(1)),$$(call LUAPATH_FN,$(1),cppflags))
+endif
+
+# set LUAXYC if empty or "?"
+ifeq ($$(or $$(strip $$(LUAC$(subst .,,$(1)))),?),?)
+override LUAC$(subst .,,$(1)) = $$(or $$(call LUAPATH_FN,$(1),luac),true)
+endif
+
+endef # LUAXY_template
+
+$(eval $(call LUAXY_template,5.1))
+$(eval $(call LUAXY_template,5.2))
+$(eval $(call LUAXY_template,5.3))
 
 #
 # S H A R E D  C O M P I L A T I O N  F L A G S
