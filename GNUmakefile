@@ -125,7 +125,7 @@ $(eval $(call LUAXY_template,5.2))
 $(eval $(call LUAXY_template,5.3))
 
 #
-# S H A R E D  C O M P I L A T I O N  F L A G S
+# A U T O D E T E C T  C O M P I L A T I O N  F L A G S
 #
 cc-option ?= $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
              > /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi;)
@@ -133,43 +133,106 @@ cc-option ?= $(shell if $(CC) $(1) -S -o /dev/null -xc /dev/null \
 VENDOR_OS_$(d) := $(shell $(d)/mk/vendor.os)
 VENDOR_CC_$(d) := $(shell env CC="$(CC)" $(d)/mk/vendor.cc)
 
+#
+# ALL_CPPFLAGS
+#
+ifeq ($(origin ALL_CPPFLAGS), undefined)
+
 ifneq ($(VENDOR_OS_$(d)), OpenBSD)
-CPPFLAGS_$(d) += -D_REENTRANT -D_THREAD_SAFE -D_GNU_SOURCE
+ALL_CPPFLAGS += -D_REENTRANT -D_THREAD_SAFE -D_GNU_SOURCE
 endif
 
 ifeq ($(VENDOR_OS_$(d)), SunOS)
-CPPFLAGS_$(d) += -Usun -D_XPG4_2 -D__EXTENSIONS__
+ALL_CPPFLAGS += -Usun -D_XPG4_2 -D__EXTENSIONS__
 endif
 
+ALL_CPPFLAGS += $(CPPFLAGS)
+
+endif # ALL_CPPFLAGS
+
+#
+# ALL_CFLAGS
+#
+ifeq ($(origin ALL_CFLAGS), undefined)
+
 ifeq ($(VENDOR_CC_$(d)), gcc)
-CFLAGS_$(d) += -O2 -std=gnu99 -fPIC
-CFLAGS_$(d) += -g -Wall -Wextra $(call cc-option, -Wno-missing-field-initializers) $(call cc-option, -Wno-override-init) -Wno-unused
+ALL_CFLAGS += -O2 -std=gnu99 -fPIC
+ALL_CFLAGS += -g -Wall -Wextra $(call cc-option, -Wno-missing-field-initializers) $(call cc-option, -Wno-override-init) -Wno-unused
 endif
 
 ifeq ($(VENDOR_CC_$(d)), clang)
-CFLAGS_$(d) += -O2 -std=gnu99 -fPIC
-CFLAGS_$(d) += -g -Wall -Wextra -Wno-missing-field-initializers -Wno-initializer-overrides -Wno-unused -Wno-dollar-in-identifier-extension
+ALL_CFLAGS += -O2 -std=gnu99 -fPIC
+ALL_CFLAGS += -g -Wall -Wextra -Wno-missing-field-initializers -Wno-initializer-overrides -Wno-unused -Wno-dollar-in-identifier-extension
 endif
 
 ifeq ($(VENDOR_CC_$(d)), sunpro)
-CFLAGS_$(d) += -xcode=pic13
-CFLAGS_$(d) += -g
+ALL_CFLAGS += -xcode=pic13
+ALL_CFLAGS += -g
 #
 # Solaris Studio supports anonymous unions just fine; but it complains
 # incessantly about them.
 #
-CFLAGS_$(d) += -erroff=E_ANONYMOUS_UNION_DECL
+ALL_CFLAGS += -erroff=E_ANONYMOUS_UNION_DECL
 endif
 
 ifeq ($(VENDOR_OS_$(d)), Darwin)
-CFLAGS_$(d) += -Wno-deprecated-declarations
+ALL_CFLAGS += -Wno-deprecated-declarations
 endif
 
+ALL_CFLAGS += $(CFLAGS)
+
+endif # ALL_CFLAGS
+
+#
+# ALL_SOFLAGS
+#
+ifeq ($(origin ALL_SOFLAGS), undefined)
+
 ifeq ($(VENDOR_OS_$(d)), Darwin)
-SOFLAGS_$(d) += -bundle -undefined dynamic_lookup
+ALL_SOFLAGS += -bundle -undefined dynamic_lookup
 else
-SOFLAGS_$(d) += -shared
+ALL_SOFLAGS += -shared
 endif
+
+ALL_SOFLAGS += $(SOFLAGS)
+
+endif # ALL_SOFLAGS
+
+#
+# ALL_LDFLAGS
+#
+ifeq ($(origin ALL_LDFLAGS), undefined)
+
+ALL_LDFLAGS += -L$(DESTDIR)$(libdir) -L$(libdir)
+ALL_LDFLAGS += $(LDFLAGS)
+
+endif # ALL_LDFLAGS
+
+#
+# ALL_LIBS
+#
+ifeq ($(origin ALL_LIBS), undefined)
+
+# put $(LIBS) first as they're more likely to be higher-level dependencies
+ALL_LIBS += $(LIBS)
+ALL_LIBS += -lssl -lcrypto -lpthread
+
+# NetBSD, FreeBSD, OpenBSD (and presumably descendants) lack any libdl;
+# dlopen, et al are part of libc.
+ifneq ($(patsubst %BSD,BSD,$(VENDOR_OS_$(d))), BSD)
+ALL_LIBS += -ldl
+endif
+
+# This only seems to be necessary on Linux. Darwin and OpenBSD lack a librt.
+# On OpenBSD clock_gettime is part of libc. Others have librt, but linking
+# it in is unnecessary.
+ifeq ($(VENDOR_OS_$(d)), Linux)
+ALL_LIBS += -lrt
+endif
+
+ALL_LIBS += -lm
+
+endif # ALL_LIBS
 
 
 #

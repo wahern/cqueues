@@ -18,23 +18,22 @@ include $(d)/../../GNUmakefile
 #
 OS_$(d) := $(shell $(d)/../../mk/vendor.os)
 
-CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..)) -DSOCKET_DEBUG
-CFLAGS_$(d) = $(CFLAGS_$(abspath $(@D)/../..))
-LDFLAGS_$(d) = $(LDFLAGS_$(abspath $(@D)/../..))
-SOFLAGS_$(d) = $(SOFLAGS_$(abspath $(@D)/../..))
+CPPFLAGS_$(d) = $(ALL_CPPFLAGS) -DSOCKET_DEBUG
+CFLAGS_$(d) = $(ALL_CFLAGS)
 
+ifeq ($(findstring DNS_RANDOM,$(CPPFLAGS_$(d))),)
 ifeq ($(OS_$(d)), $(filter $(OS_$(d)), OpenBSD NetBSD FreeBSD Darwin))
 CPPFLAGS_$(d) += -DDNS_RANDOM=arc4random
 else
 CPPFLAGS_$(d) += -DDNS_RANDOM=RAND_bytes
 endif
-
+endif
 
 #
 # C O M P I L I A T I O N   R U L E S
 #
 $(d)/%.o: $(d)/%.c $(d)/%.h
-	$(CC) $(CFLAGS_$(@D)) $(CFLAGS) $(CPPFLAGS_$(@D)) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS_$(@D)) $(CPPFLAGS_$(@D)) -c -o $@ $<
 
 $(d)/libnonlua.a: $(d)/socket.o $(d)/dns.o $(d)/notify.o
 	$(AR) cr $@ $^

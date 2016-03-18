@@ -18,37 +18,19 @@ include $(d)/lib/GNUmakefile
 #
 # C O M P I L A T I O N  F L A G S
 #
-OS_$(d) = $(shell $(d)/../mk/vendor.os)
 VENDOR_$(d) = $(or $(CQUEUES_VENDOR),$(shell $(<D)/../mk/changelog author))
 VERSION_$(d) = $(or $(CQUEUES_VERSION),$(shell $(<D)/../mk/changelog version))
 COMMIT_$(d) = $(shell $(<D)/../mk/changelog commit)
 
-CPPFLAGS_$(d) = $(CPPFLAGS_$(abspath $(@D)/../..)) -DLUA_COMPAT_APIINTCASTS
-CFLAGS_$(d) = $(CFLAGS_$(abspath $(@D)/../..))
-LDFLAGS_$(d) = $(LDFLAGS_$(abspath $(@D)/../..))
-SOFLAGS_$(d) = $(SOFLAGS_$(abspath $(@D)/../..))
+CPPFLAGS_$(d) = -DLUA_COMPAT_APIINTCASTS $(ALL_CPPFLAGS)
+CFLAGS_$(d) = $(ALL_CFLAGS)
+SOFLAGS_$(d) = $(ALL_SOFLAGS)
+LDFLAGS_$(d) = $(ALL_LDFLAGS)
+LIBS_$(d) = $(ALL_LIBS)
 
 CPPFLAGS_$(d) += $(and $(VENDOR_$(<D)),-DCQUEUES_VENDOR='"$(VENDOR_$(<D))"')
 CPPFLAGS_$(d) += $(and $(VERSION_$(<D)),-DCQUEUES_VERSION=$(VERSION_$(<D))L)
 CPPFLAGS_$(d) += $(and $(COMMIT_$(<D)),-DCQUEUES_COMMIT='"$(COMMIT_$(<D))"')
-
-LDFLAGS_$(d) += -L$(DESTDIR)$(libdir) -L$(libdir) -lssl -lcrypto -lpthread
-
-# NetBSD, FreeBSD, OpenBSD (and presumably descendants) lack any libdl;
-# dlopen, et al are part of libc.
-ifneq ($(patsubst %BSD,BSD,$(OS_$(d))), BSD)
-LDFLAGS_$(d) += -ldl
-endif
-
-# This only seems to be necessary on Linux. Darwin and OpenBSD lack a librt.
-# On OpenBSD clock_gettime is part of libc. Others have librt, but linking
-# it in is unnecessary.
-ifeq ($(OS_$(d)), Linux)
-LDFLAGS_$(d) += -lrt
-endif
-
-LDFLAGS_$(d) += -lm
-
 
 #
 # C O M P I L A T I O N  R U L E S
@@ -63,11 +45,11 @@ $(d)/errno.c: $(d)/errno.c.m4
 define BUILD_$(d)
 
 $$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnonlua.a
-	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(SOFLAGS) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS)
+	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LIBS_$$(abspath $$(@D)/..))
 
 $$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/compat52.h
 	$$(MKDIR) -p $$(@D)
-	$$(CC) $$(CFLAGS_$$(<D)) $$(CFLAGS) $$(LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) $$(CPPFLAGS) -c -o $$@ $$<
+	$$(CC) $$(CFLAGS_$$(<D)) $$(LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) -c -o $$@ $$<
 
 $$(d)/$(1)/cqueues.o: $$(d)/lib/llrb.h
 
