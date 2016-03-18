@@ -82,6 +82,9 @@
 # 	hardcode /usr/local/lib/lua/5.1, ordered before the LuaJIT
 # 	installation prefix.
 #
+# * 2015-07-14 - Add recursive glob function implemented in shell code
+# 	and use instead of find(1).
+#
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
 # Copyright (C) 2012-2015 William Ahern
@@ -116,7 +119,7 @@ unset IFS # no field splitting surprises
 unset LUA_PATH || true # interferes search for module install directory
 unset LUA_CPATH || true
 
-MYVERSION=20150119
+MYVERSION=20150714
 MYVENDOR="william@25thandClement.com"
 
 
@@ -129,8 +132,7 @@ LDDIRS=     # -L directories from LDFLAGS
 LIBDIRS=
 BINDIRS=
 RECURSE=no
-MAXDEPTH=   # full command switch, like "-maxdepth 3", if supported
-XDEV=       # do not cross device boundaries; i.e. "-xdev"
+MAXDEPTH=5  # maximum recursion depth
 SHORTEST=   # continue searching until shortest pathname found
 PKGCONFIG=  # path to pkg-config, found by `command -v` when -k option invoked
 GLOB=       # -e GLOB expression for lua, luac, ldir, and cdir
@@ -231,6 +233,31 @@ append() {
 }
 
 #
+# glob PATTERN [MAXDEPTH] [EXEC-COMMAND] [INTERNAL:GLOB-COUNT]
+#
+glob() {
+	glob_N="${4:-0}"
+
+	IFS=
+	set +f
+	for F in ${1}; do
+		[ -e "${F}" ] || continue
+		if eval "${3:-printf '%s\\n'} \"\${F}\""; then
+			glob_N=$((${glob_N} + 1))
+		fi
+	done
+	set -f
+	unset IFS
+
+	if [ "${2-0}" -gt 0 ]; then
+		glob "${1%/*}/*/${1##*/}" "$((${2} - 1))" "${3:-}" "${glob_N}" || :
+	fi
+
+	[ "${glob_N}" -gt 0 ]
+} # glob
+
+
+#
 # evalmacro PATH MACRO [REGEX] [SUBST]
 #
 # 	PATH   Header identifier--#include <PATH>
@@ -267,7 +294,7 @@ testsym() {
 	# and within [A-T].
 	(nm -Pg ${1} 2>>/dev/null || nm -g 2>>/dev/null) \
 	| sed -ne '/ [A-T] /p' \
-	| grep -qE "${2}"
+	| grep -q "${2}"
 }
 
 
@@ -576,13 +603,11 @@ findversion() {
 
 	if [ $# -gt 0 ]; then
 		for D; do
-			for F in $(find "${D}" ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
-				tryluainclude "${F}"
+			glob "${D}/lua.h" "${MAXDEPTH}" tryluainclude || :
 
-				if foundversion; then
-					return 0
-				fi
-			done
+			if foundversion; then
+				return 0
+			fi
 		done
 	fi
 
@@ -594,13 +619,11 @@ findversion() {
 
 	if [ $# -gt 0 ]; then
 		for D; do
-			for F in $(find "${D}/." ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
-				tryluainclude "${F}"
+			glob "${D}/lua.h" "${MAXDEPTH}" tryluainclude || :
 
-				if foundversion; then
-					return 0
-				fi
-			done
+			if foundversion; then
+				return 0
+			fi
 		done
 	fi
 
@@ -612,13 +635,11 @@ findversion() {
 		D="${D%/*}/include"
 
 		if [ -d "${D}" ]; then
-			for F in $(find "${D}" ${MAXDEPTH} ${XDEV} -name lua.h -print 2>>/dev/null); do
-				tryluainclude "${F}"
+			glob "${D}/lua.h" "${MAXDEPTH}" tryluainclude || :
 
-				if foundversion; then
-					return 0
-				fi
-			done
+			if foundversion; then
+				return 0
+			fi
 		fi
 	fi
 
@@ -631,9 +652,10 @@ findversion() {
 # compatible.
 #
 trylib() {
-	if ! testsym "${1}" "lua_newstate"; then
-		return 0
-	fi
+	testsym "${1}" "lua_newstate" || return 1
+
+	# exclude C++
+	[ "${1#*++}" = "${1}" ] || return 1
 
 	V=0
 	J=0
@@ -662,16 +684,20 @@ trylib() {
 	if testsym "${1}" "lua_getfenv"; then
 		V=501
 	elif testsym "${1}" "lua_yieldk"; then
-		V=502
+		if testsym "${1}" "lua_getctx"; then
+			V=502
+		else
+			V=503
+		fi
 	else
-		return 0
+		return 1
 	fi
 
-	[ "$V" -gt 0 -a "$V" -ge "${LIBLUA_VER:-0}" ] || return 0
+	[ "$V" -gt 0 -a "$V" -ge "${LIBLUA_VER:-0}" ] || return 1
 
-	[ "$V" -gt "${LIBLUA_VER:-0}" -o "${#D}" -lt "${#LIBLUA_DIR}" -o \( "${JIT_REQ}" = "yes" -a "${LIBJIT_VER:-0}" -lt "${JIT_MAX}" \) ] || return 0
+	[ "$V" -gt "${LIBLUA_VER:-0}" -o "${#D}" -lt "${#LIBLUA_DIR}" -o \( "${JIT_REQ}" = "yes" -a "${LIBJIT_VER:-0}" -lt "${JIT_MAX}" \) ] || return 1
 
-	[ "$V" -ge "${API_MIN}" -a "$V" -le "${API_MAX}" ] || return 0
+	[ "$V" -ge "${API_MIN}" -a "$V" -le "${API_MAX}" ] || return 1
 
 
 	if [ -n "${JIT_REQ}" ]; then
@@ -681,12 +707,12 @@ trylib() {
 		fi
 
 		if [ "${JIT_REQ}" = "skip" ]; then
-			[ "${J}" -eq 0 ] || return 0
+			[ "${J}" -eq 0 ] || return 1
 		elif [ "${JIT_REQ}" = "yes" ]; then
-			[ "$J" -ge "${LIBJIT_VER:-0}" ] || return 0
-			[ "$J" -gt "${LIBJIT_VER:-0}" -o "${#D}" -lt "${#LIBJIT_DIR}" ] || return 0
-			[ "$J" -ge ${JIT_MIN} ] || return 0
-			[ "$J" -le "${JIT_MAX}" ] || return 0
+			[ "$J" -ge "${LIBJIT_VER:-0}" ] || return 1
+			[ "$J" -gt "${LIBJIT_VER:-0}" -o "${#D}" -lt "${#LIBJIT_DIR}" ] || return 1
+			[ "$J" -ge ${JIT_MIN} ] || return 1
+			[ "$J" -le "${JIT_MAX}" ] || return 1
 
 			LIBJIT_VER="$J"
 			LIBJIT_DIR="$D"
@@ -745,15 +771,17 @@ findlib() {
 
 				#printf -- "I=$I K=$K $findlib_L/lib$findlib_l*.*\n"
 
-				for findlib_R in no ${RECURSE}; do
-					for findlib_lib in $(findpath "lib${findlib_l}*.*" ${findlib_R} "${findlib_L}"); do
-						trylib "${findlib_lib}"
-					done
+				glob "${findlib_L}/lib${findlib_l}*.*" 0 trylib || :
 
-					if foundlib; then
-						return 0
-					fi
-				done
+				if foundlib; then
+					return 0;
+				fi
+
+				glob "${findlib_L}/lib${findlib_l}*.*" ${MAXDEPTH} trylib || :
+
+				if foundlib; then
+					return 0;
+				fi
 
 				K=$(($K + 1))
 			done
@@ -768,39 +796,26 @@ findlib() {
 	unset IFS
 
 	for findlib_D; do
-		for findlib_R in no ${RECURSE}; do
-			for findlib_lib in $(findpath "liblua*.*" ${findlib_R} "${findlib_D}"); do
-				trylib "${findlib_lib}"
-			done
+		glob "${findlib_D}/liblua*.*" "${MAXDEPTH}" trylib || :
+
+		if foundlib; then
+			return 0
+		fi
+	done
+
+	# if we can find the lua interpreter, use it as a reference for
+	# library locations.
+	if findlua; then
+		findlib_D="${LUA_PATH%/*}"
+		findlib_D="${findlib_D%/*}/lib"
+
+		if [ -d "${findlib_D}" ]; then
+			glob "${findlib_D}/liblua*.*" "${MAXDEPTH}" trylib || :
 
 			if foundlib; then
 				return 0
 			fi
-		done
-	done
-}
-
-
-findpath() {
-	NAME="$1"
-	WHERE="$3"
-
-	PRUNE=
-
-	if [ "${2}" = "no" ]; then
-		PRUNE="-name . -o -type d -prune -o"
-	fi
-
-	[ ${#WHERE} -gt 0 ] || return 0
-
-	IFS=:
-	set -- ${WHERE}
-	unset IFS
-
-	if [ $# -gt 0 ]; then
-		for findpath_D; do
-			find "${findpath_D}/." ${MAXDEPTH} ${XDEV} ${PRUNE} -name "${NAME}" -print 2>>/dev/null | sed -e 's/\/\.//'
-		done
+		fi
 	fi
 }
 
@@ -811,6 +826,44 @@ safeperm() {
 }
 
 
+tryluac() {
+	tryluac_F="${1}"
+
+	[ -x "${tryluac_F}" ] && safeperm "${tryluac_F}" || continue
+
+	tryluac_V="$("${tryluac_F}" -v </dev/null 2>&1 | head -n1 | sed -ne 's/^Lua \([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
+	: ${tryluac_V:=0}
+	tryluac_V="$((${tryluac_V%%.*} * 100 + ${tryluac_V##*.} % 100))"
+
+	[ "${tryluac_V}" -gt 0 -a "${tryluac_V}" -ge "${LUAC_VER:-0}" ] || continue
+
+	[ "${tryluac_V}" -gt "${LUAC_VER:-0}" -o "${#tryluac_F}" -lt "${#LUAC_PATH}" ] || continue
+
+	[ "${tryluac_V}" -ge "${API_MIN}" -a "${tryluac_V}" -le "${API_MAX}" ] || continue
+
+	printf "return true" 2>>/dev/null | ${tryluac_F} -p - </dev/null >>/dev/null 2>&1 || continue
+
+	LUAC_PATH="${tryluac_F}"
+	LUAC_VER="${tryluac_V}"
+}
+
+#
+# foundluac
+#
+# true if found the best (maximum) possible version, false otherwise
+#
+foundluac() {
+	if [ "${LUAC_VER:-0}" -lt "${API_MAX}" ]; then
+		return 1
+	fi
+
+	if [ "${SHORTEST}" = "yes" ]; then
+		return 1
+	fi
+
+	return 0
+}
+
 findluac() {
 	if [ $# -eq 0 ]; then
 		IFS=:
@@ -818,36 +871,33 @@ findluac() {
 		unset IFS
 	fi
 
-	while [ $# -gt 0 ]; do
-		for F in $(findpath "${1}" no "${PATH}"; findpath "${1}" "${RECURSE}" "${BINDIRS}"); do
-			[ -x "$F" ] && safeperm "$F" || continue
+	for findluac_G; do
+		IFS=:
+		for findluac_D in ${PATH}; do
+			unset IFS
 
-			V="$("$F" -v </dev/null 2>&1 | head -n1 | sed -ne 's/^Lua \([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
-			: ${V:=0}
-			V="$((${V%%.*} * 100 + ${V##*.} % 100))"
+			glob "${findluac_D}/${findluac_G}" 0 tryluac || :
 
-			[ "${V}" -gt 0 -a "${V}" -ge "${LUAC_VER:-0}" ] || continue
-
-			[ "${V}" -gt "${LUAC_VER:-0}" -o "${#F}" -lt "${#LUAC_PATH}" ] || continue
-
-			[ "${V}" -ge "${API_MIN}" -a "${V}" -le "${API_MAX}" ] || continue
-
-			printf "return true" 2>>/dev/null | ${F} -p - </dev/null >>/dev/null 2>&1 || continue
-
-			LUAC_PATH="$F"
-			LUAC_VER="$V"
-
-			[ "${SHORTEST}" = "yes" -o "${LUAC_VER}" -lt "${API_MAX}" ] || break 2
+			if foundluac; then
+				return 0
+			fi
 		done
 
-		shift
+		IFS=:
+		for findluac_D in ${BINDIRS}; do
+			unset IFS
+
+			glob "${findluac_D}/${findluac_G}" "${MAXDEPTH}" tryluac || :
+
+			if foundluac; then
+				return 0
+			fi
+		done
+
+		unset IFS
 	done
 
-	if [ -n "${LUAC_PATH}" -a -n "${LUAC_VER}" ]; then
-		return 0
-	else
-		return 1
-	fi
+	[ "${LUAC_VER:-0}" -gt 0 ] && [ "${#LUAC_PATH}" -gt 0 ]
 }
 
 
@@ -946,6 +996,54 @@ mmp2num() {
 }
 
 
+trylua() {
+	trylua_F="${1}"
+	[ -x "${trylua_F}" ] && safeperm "${trylua_F}" || return 1
+
+	trylua_V="$("${trylua_F}" -e 'print(string.match(_VERSION, [[[%d.]+]]))' </dev/null 2>>/dev/null | head -n1 | sed -ne 's/^\([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
+	: ${trylua_V:=0}
+	trylua_V="$((${trylua_V%%.*} * 100 + ${trylua_V##*.} % 100))"
+
+	[ "${trylua_V}" -gt 0 -a "${trylua_V}" -ge "${LUA_VER:-0}" ] || return 1
+
+	[ "${trylua_V}" -gt "${LUA_VER:-0}" -o "${#trylua_F}" -lt "${#LUA_PATH}" ] || return 1
+
+	[ "${trylua_V}" -ge "${API_MIN}" -a "${trylua_V}" -le "${API_MAX}" ] || return 1
+
+	if [ -n "${JIT_REQ}" ]; then
+		J="$("${trylua_F}" -v </dev/null 2>&1 | head -n1 | sed -ne 's/^LuaJIT \([0123456789][0123456789]*\.[0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
+		J="$(jit2num ${J:-0})"
+
+		if [ "${JIT_REQ}" = "skip" ]; then
+			[ "${J}" -eq 0 ] || return 1
+		elif [ "${JIT_REQ}" = "yes" ]; then
+			[ "${J}" -gt 0 ] || return 1
+			[ "${J}" -ge "${JIT_MIN}" ] || return 1
+			[ "${J}" -le "${JIT_MAX}" ] || return 1
+		fi
+	fi
+
+	LUA_PATH="${trylua_F}"
+	LUA_VER="${trylua_V}"
+}
+
+#
+# foundlua
+#
+# true if found the best (maximum) possible version, false otherwise
+#
+foundlua() {
+	if [ "${LUA_VER:-0}" -lt "${API_MAX}" ]; then
+		return 1
+	fi
+
+	if [ "${SHORTEST}" = "yes" ]; then
+		return 1
+	fi
+
+	return 0
+}
+
 findlua() {
 	if [ $# -eq 0 ]; then
 		IFS=:
@@ -953,47 +1051,33 @@ findlua() {
 		unset IFS
 	fi
 
-	while [ $# -gt 0 ]; do
-		for F in $(findpath "${1}" no "${PATH}"; findpath "${1}" "${RECURSE}" "${BINDIRS}"); do
-			[ -x "$F" ] && safeperm "$F" || continue
+	for findlua_G; do
+		IFS=:
+		for findlua_D in ${PATH}; do
+			unset IFS
 
-			V="$("$F" -e 'print(string.match(_VERSION, [[[%d.]+]]))' </dev/null 2>>/dev/null | head -n1 | sed -ne 's/^\([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
-			: ${V:=0}
-			V="$((${V%%.*} * 100 + ${V##*.} % 100))"
+			glob "${findlua_D}/${findlua_G}" 0 trylua || :
 
-			[ "${V}" -gt 0 -a "${V}" -ge "${LUA_VER:-0}" ] || continue
-
-			[ "${V}" -gt "${LUA_VER:-0}" -o "${#F}" -lt "${#LUA_PATH}" ] || continue
-
-			[ "${V}" -ge "${API_MIN}" -a "${V}" -le "${API_MAX}" ] || continue
-
-			if [ -n "${JIT_REQ}" ]; then
-				J="$("$F" -v </dev/null 2>&1 | head -n1 | sed -ne 's/^LuaJIT \([0123456789][0123456789]*\.[0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
-				J="$(jit2num ${J:-0})"
-
-				if [ "${JIT_REQ}" = "skip" ]; then
-					[ "${J}" -eq 0 ] || continue
-				elif [ "${JIT_REQ}" = "yes" ]; then
-					[ "${J}" -gt 0 ] || continue
-					[ "${J}" -ge "${JIT_MIN}" ] || continue
-					[ "${J}" -le "${JIT_MAX}" ] || continue
-				fi
+			if foundlua; then
+				return 0
 			fi
-
-			LUA_PATH="$F"
-			LUA_VER="$V"
-
-			[ "${SHORTEST}" = "yes" -o "${LUA_VER}" -lt "${API_MAX}" ] || break 2
 		done
 
-		shift
+		IFS=:
+		for findlua_D in ${BINDIRS}; do
+			unset IFS
+
+			glob "${findlua_D}/${findlua_G}" "${MAXDEPTH}" trylua || :
+
+			if foundlua; then
+				return 0
+			fi
+		done
+
+		unset IFS
 	done
 
-	if [ -n "${LUA_PATH}" -a -n "${LUA_VER}" ]; then
-		return 0
-	else
-		return 1
-	fi
+	[ "${LUA_VER:-0}" -gt 0 ] && [ "${#LUA_PATH}" -gt 0 ]
 }
 
 
@@ -1026,8 +1110,7 @@ usage() {
 	  -e GLOB      glob pattern for finding utilities (lua, luac, etc)
 	  -k           query pkg-config if available
 	  -r           recursively search directories
-	  -m MAXDEPTH  limit recursion to MAXDEPTH (only for GNU and BSD find)
-	  -x           do not cross device mounts when recursing
+	  -m MAXDEPTH  limit recursion to MAXDEPTH
 	  -s           find shortest pathname, otherwise print first best match
 	  -v VERSION   require specific Lua version or range
 	               (e.g. "5.1" or "5.1-5.2")
@@ -1038,8 +1121,10 @@ usage() {
 	  -h           print this usage message
 
 	  cppflags       print derived additional CPPFLAGS necessary
+	  version        print derived Lua API version from cppflags discovery
 	  ldflags        print derived additional LDFLAGS necessary (TODO)
-	  version        print derived Lua API version
+	  libs	         print derived additional LIBS necessary (TODO)
+	  libversion     print derived Lua API version from ldflags/libs discovery
 	  luac           print path to luac utility ($(printf "${GLOB_LUA}" | tr ':' ' '))
 	  lua            print path to lua interpreter ($(printf "${GLOB_LUAC}" | tr ':' ' '))
 	  package.path   print preferred module install path
@@ -1114,20 +1199,22 @@ while getopts I:L:P:d:De:krm:xsv:j:JVh OPT; do
 		RECURSE=yes
 		;;
 	m)
-		if [ -n "${OPTARG##[0123456789]}" ]; then
+		if [ "${#OPTARG}" -eq 0 -o -n "${OPTARG##[0123456789]}" ]; then
 			printf -- "${0##*/}: ${OPTARG}: invalid maxdepth\n" >&2
 			exit 1
 		fi
 
-		if find "${TMPDIR:-/tmp}" -maxdepth ${OPTARG} -prune >>/dev/null 2>&1; then
-			MAXDEPTH="-maxdepth ${OPTARG}"
-		else
-			printf -- "${0##*/}: $(command -v find): -maxdepth unsupported\n" >&2
-		fi
-
+		MAXDEPTH="${OPTARG}"
 		;;
 	x)
-		XDEV="-xdev"
+		#
+		# NOTE: This option was
+		#
+		# 	-x  do not cross device mounts when recursing
+		#
+		# but is currently unsupported as our built-in glob function
+		# does not implement this functionality. Previously this
+		# option caused -xdev to be added to invocations of find(1).
 		;;
 	s)
 		SHORTEST=yes
@@ -1180,7 +1267,10 @@ done
 shift $(($OPTIND - 1))
 
 
-for U in "${CC:-cc}" find grep od rm rmdir sed xargs; do
+[ "${RECURSE}" = "yes" ] || MAXDEPTH=0
+
+
+for U in "${CC:-cc}" grep od rm rmdir sed xargs; do
 	if ! command -v "${U}" >>/dev/null 2>&1; then
 		printf -- "${0##*/}: ${U}: command not found\n" >&2
 	fi
@@ -1241,18 +1331,28 @@ cppflags)
 	[ -z "${API_DIR:-}" ] || printf -- "-I${API_DIR}\n"
 
 	;;
+version)
+	findversion || exit 1
+
+	printf "$(((${API_VER} / 100) % 100)).$((($API_VER) % 100))\n"
+
+	;;
 ldflags)
 	findlib
 
 	[ "${LIBLUA_VER:-0}" -gt 0 ] || exit 1
 
-	printf -- "-L${LIBLUA_DIR} -l${LIBLUA_LIB}\n"
+	if [ "${#LIBLUA_DIR}" -gt 0 ]; then
+		printf -- "-L%s\n" "${LIBLUA_DIR}"
+	fi
 
 	;;
-version)
-	findversion || exit 1
+libs)
+	findlib
 
-	printf "$(((${API_VER} / 100) % 100)).$((($API_VER) % 100))\n"
+	[ "${LIBLUA_VER:-0}" -gt 0 ] || exit 1
+
+	printf -- "-l%s\n" "${LIBLUA_LIB}"
 
 	;;
 libv*)
