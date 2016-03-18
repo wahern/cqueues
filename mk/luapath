@@ -85,6 +85,9 @@
 # * 2015-07-14 - Add recursive glob function implemented in shell code
 # 	and use instead of find(1).
 #
+# * 2016-03-18 - Fix bug in tryluac where a continue statement was used
+# 	instead of return 0.
+#
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
 # Copyright (C) 2012-2015 William Ahern
@@ -119,7 +122,7 @@ unset IFS # no field splitting surprises
 unset LUA_PATH || true # interferes search for module install directory
 unset LUA_CPATH || true
 
-MYVERSION=20150714
+MYVERSION=20160318
 MYVENDOR="william@25thandClement.com"
 
 
@@ -829,19 +832,19 @@ safeperm() {
 tryluac() {
 	tryluac_F="${1}"
 
-	[ -x "${tryluac_F}" ] && safeperm "${tryluac_F}" || continue
+	[ -x "${tryluac_F}" ] && safeperm "${tryluac_F}" || return 0
 
 	tryluac_V="$("${tryluac_F}" -v </dev/null 2>&1 | head -n1 | sed -ne 's/^Lua \([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
 	: ${tryluac_V:=0}
 	tryluac_V="$((${tryluac_V%%.*} * 100 + ${tryluac_V##*.} % 100))"
 
-	[ "${tryluac_V}" -gt 0 -a "${tryluac_V}" -ge "${LUAC_VER:-0}" ] || continue
+	[ "${tryluac_V}" -gt 0 -a "${tryluac_V}" -ge "${LUAC_VER:-0}" ] || return 0
 
-	[ "${tryluac_V}" -gt "${LUAC_VER:-0}" -o "${#tryluac_F}" -lt "${#LUAC_PATH}" ] || continue
+	[ "${tryluac_V}" -gt "${LUAC_VER:-0}" -o "${#tryluac_F}" -lt "${#LUAC_PATH}" ] || return 0
 
-	[ "${tryluac_V}" -ge "${API_MIN}" -a "${tryluac_V}" -le "${API_MAX}" ] || continue
+	[ "${tryluac_V}" -ge "${API_MIN}" -a "${tryluac_V}" -le "${API_MAX}" ] || return 0
 
-	printf "return true" 2>>/dev/null | ${tryluac_F} -p - </dev/null >>/dev/null 2>&1 || continue
+	printf "return true" 2>>/dev/null | ${tryluac_F} -p - </dev/null >>/dev/null 2>&1 || return 0
 
 	LUAC_PATH="${tryluac_F}"
 	LUAC_VER="${tryluac_V}"
