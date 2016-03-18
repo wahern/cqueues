@@ -65,8 +65,10 @@ PRINT_$(d) = printf "%s = %s\n" '$(1)' '$(subst ',\\',$(2))' | $(TEE_A) '$(3)'
 LAZY_$(d) = \
 	prefix includedir libdir datadir bindir \
 	lua51cpath lua51path lua52cpath lua52path lua53cpath lua53path \
-	CC CPPFLAGS CFLAGS LDFLAGS SOFLAGS AR RANLIB M4 MV RM CP \
-	RMDIR MKDIR CHMOD INSTALL INSTALL_DATA TOUCH TEE TEE_A
+	CC ALL_CPPFLAGS CPPFLAGS ALL_CFLAGS CFLAGS ALL_LDFLAGS LDFLAGS \
+	ALL_SOFLAGS SOFLAGS ALL_LIB LIBS \
+	AR RANLIB M4 MV RM CP RMDIR MKDIR CHMOD INSTALL INSTALL_DATA TOUCH \
+	TEE TEE_A
 
 NONLAZY_$(d) = \
 	LUA_APIS \
