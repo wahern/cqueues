@@ -18,7 +18,7 @@ include $(d)/../../GNUmakefile
 #
 OS_$(d) := $(shell $(d)/../../mk/vendor.os)
 
-CPPFLAGS_$(d) = $(ALL_CPPFLAGS) -DSOCKET_DEBUG
+CPPFLAGS_$(d) = $(ALL_CPPFLAGS) -DSOCKET_DEBUG -DHAVE_CONFIG_H
 CFLAGS_$(d) = $(ALL_CFLAGS)
 
 ifeq ($(findstring DNS_RANDOM,$(CPPFLAGS_$(d))),)
@@ -32,7 +32,10 @@ endif
 #
 # C O M P I L I A T I O N   R U L E S
 #
-$(d)/%.o: $(d)/%.c $(d)/%.h
+$(d)/config.h: $(abspath $(d)/../..)/config.h
+	$(CP) $< $@
+
+$(d)/%.o: $(d)/%.c $(d)/%.h $(d)/config.h
 	$(CC) $(CFLAGS_$(@D)) $(CPPFLAGS_$(@D)) -c -o $@ $<
 
 $(d)/libnonlua.a: $(d)/socket.o $(d)/dns.o $(d)/notify.o
@@ -53,7 +56,7 @@ endif # local guard
 .PHONY: $(d)/clean $(d)/clean~ clean clean~
 
 $(d)/clean:
-	rm -fr $(@D)/*.[oa] $(@D)/*.dSYM
+	rm -fr $(@D)/config.h $(@D)/*.[oa] $(@D)/*.dSYM
 
 $(d)/clean~: $(d)/clean
 	rm -fr $(@D)/*~

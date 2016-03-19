@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +42,10 @@
 #include "cqueues.h"
 #include "lib/llrb.h"
 
+
+#ifndef ENABLE_PTHREAD_MUTEX_ROBUST
+#define ENABLE_PTHREAD_MUTEX_ROBUST ((HAVE_DECL_PTHREAD_MUTEX_ROBUST+0) || (HAVE_PTHREAD_MUTEX_ROBUST+0))
+#endif
 
 #if defined EOWNERDEAD
 #define CT_EOWNERDEAD EOWNERDEAD
@@ -69,7 +75,7 @@ struct cthread_lib {
 struct cthread_handle {
 	sig_atomic_t held;
 
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	pthread_mutex_t hold;
 #endif
 }; /* struct cthread_handle */
@@ -124,7 +130,7 @@ static int atpanic_trap(lua_State *L NOTUSED) {
 
 
 static int hdl_init(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	pthread_mutexattr_t attr;
 	int error;
 
@@ -154,7 +160,7 @@ error:
 } /* hdl_init() */
 
 static void hdl_destroy(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	pthread_mutex_destroy(&h->hold);
 #else
 	(void)h;
@@ -164,7 +170,7 @@ static void hdl_destroy(struct cthread_handle *h) {
 } /* hdl_destroy() */
 
 static int hdl_hold(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	int error;
 
 	if ((error = pthread_mutex_lock(&h->hold)))
@@ -176,7 +182,7 @@ static int hdl_hold(struct cthread_handle *h) {
 } /* hdl_hold() */
 
 static _Bool hdl_isheld(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	int error;
 
 	switch ((error = pthread_mutex_trylock(&h->hold))) {

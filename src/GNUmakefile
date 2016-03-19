@@ -42,12 +42,15 @@ $(d)/errno.c: $(d)/errno.c.m4
 	cd $(@D) && $(M4) $< >| $@.tmp
 	mv $@.tmp $@
 
+$(d)/config.h: $(abspath $(d)/..)/config.h
+	$(CP) $< $@
+
 define BUILD_$(d)
 
 $$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnonlua.a
 	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LIBS_$$(abspath $$(@D)/..))
 
-$$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/compat52.h
+$$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/compat52.h $$(d)/config.h
 	$$(MKDIR) -p $$(@D)
 	$$(CC) $$(CFLAGS_$$(<D)) $$(ALL_LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) -c -o $$@ $$<
 
@@ -170,7 +173,7 @@ endif
 .PHONY: $(d)/clean $(d)/clean~ clean clean~
 
 $(d)/clean:
-	rm -rf $(@D)/errno.c $(@D)/errno.c.tmp $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3
+	rm -rf $(@D)/errno.c $(@D)/errno.c.tmp $(@D)/config.h $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3
 
 $(d)/clean~: $(d)/clean
 	rm -f $(@D)/*~

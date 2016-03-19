@@ -38,6 +38,10 @@
 #define _NETBSD_SOURCE
 #endif
 
+#if HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <limits.h>		/* INT_MAX */
 #include <stddef.h>		/* offsetof() */
 #ifdef _WIN32

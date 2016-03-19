@@ -249,6 +249,9 @@ endif # ALL_LIBS
 include $(d)/src/GNUmakefile
 include $(d)/regress/GNUmakefile
 
+$(d)/config.h: $(d)/config.h.guess
+	$(CP) $< $@
+
 
 #
 # C L E A N  R U L E S

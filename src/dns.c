@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <limits.h> /* UINT_MAX */
 #include <stddef.h> /* offsetof */
 #include <stdlib.h> /* free(3) */

@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <limits.h>	/* INT_MAX LONG_MAX */
 #include <float.h>	/* FLT_RADIX */
 #include <stdarg.h>	/* va_list va_start va_end */
@@ -387,15 +389,15 @@ static void *pool_get(struct pool *P, int *_error) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 #include <port.h>
 #else
 #include <sys/event.h>	/* EVFILT_READ EVFILT_WRITE EV_SET EV_ADD EV_DELETE struct kevent kqueue(2) kevent(2) */
 #endif
 
-#if HAVE_EVENTFD
+#if HAVE_SYS_EVENTFD_H
 #include <sys/eventfd.h> /* eventfd(2) */
 #endif
 
@@ -404,9 +406,9 @@ static void *pool_get(struct pool *P, int *_error) {
 
 #define KPOLL_MAXWAIT 32
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 typedef struct epoll_event kpoll_event_t;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 typedef port_event_t kpoll_event_t;
 #else
 /* NetBSD uses intptr_t, others use void *, for .udata */
@@ -447,7 +449,7 @@ static int kpoll_ctl(struct kpoll *, int, short *, short, void *);
 static int alert_rearm(struct kpoll *);
 
 static int alert_init(struct kpoll *kp) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	(void)kp;
 	return 0;
 #elif HAVE_EVENTFD
@@ -472,7 +474,7 @@ static int alert_init(struct kpoll *kp) {
 } /* alert_init() */
 
 static void alert_destroy(struct kpoll *kp) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	(void)kp;
 #else
 	for (size_t i = 0; i < countof(kp->alert.fd); i++)
@@ -481,7 +483,7 @@ static void alert_destroy(struct kpoll *kp) {
 } /* alert_destroy() */
 
 static int alert_rearm(struct kpoll *kp) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	return 0;
 #else
 	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
@@ -492,7 +494,7 @@ static int alert_rearm(struct kpoll *kp) {
 static int kpoll_init(struct kpoll *kp) {
 	int error;
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 #if defined EPOLL_CLOEXEC
 	(void)error;
 	if (-1 == (kp->fd = epoll_create1(EPOLL_CLOEXEC)))
@@ -504,7 +506,7 @@ static int kpoll_init(struct kpoll *kp) {
 	if ((error = setcloexec(kp->fd)))
 		return error;
 #endif
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	if (-1 == (kp->fd = port_create()))
 		return errno;
 
@@ -530,9 +532,9 @@ static void kpoll_destroy(struct kpoll *kp) {
 
 
 static inline void *kpoll_udata(const kpoll_event_t *event) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	return event->data.ptr;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	return event->portev_user;
 #else
 	return KP_UDATA2P(event->udata);
@@ -541,9 +543,9 @@ static inline void *kpoll_udata(const kpoll_event_t *event) {
 
 
 static inline short kpoll_pending(const kpoll_event_t *event) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	return event->events;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	return event->portev_events;
 #else
 	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
@@ -552,7 +554,7 @@ static inline short kpoll_pending(const kpoll_event_t *event) {
 
 
 static inline short kpoll_diff(const kpoll_event_t *event NOTUSED, short ostate NOTUSED) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	/* Solaris Event Ports aren't persistent. */
 	return 0;
 #else
@@ -562,7 +564,7 @@ static inline short kpoll_diff(const kpoll_event_t *event NOTUSED, short ostate 
 
 
 static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void *udata) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	struct epoll_event event;
 	int op;
 
@@ -582,7 +584,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 	*state = events;
 
 	return 0;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	if (*state == events)
 		return 0;
 
@@ -653,7 +655,7 @@ static int kpoll_alert(struct kpoll *kp) {
 	/* initialization may have been delayed */
 	if ((error = alert_init(kp)))
 		return error;
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	if (0 != port_send(kp->fd, POLLIN, &kp->alert)) {
 		if (errno != EBUSY)
 			return errno;
@@ -689,7 +691,7 @@ static int kpoll_alert(struct kpoll *kp) {
 static int kpoll_calm(struct kpoll *kp) {
 	int error;
 
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	/* each PORT_SOURCE_USER event is discrete */
 #elif HAVE_EVENTFD
 	uint64_t n;
@@ -727,7 +729,7 @@ static int kpoll_calm(struct kpoll *kp) {
 
 
 static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	return event->portev_source == PORT_SOURCE_USER;
 #else
 	return kpoll_udata(event) == &kp->alert;
@@ -736,7 +738,7 @@ static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) 
 
 
 static int kpoll_wait(struct kpoll *kp, double timeout) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	int n;
 
 	if (-1 == (n = epoll_wait(kp->fd, kp->pending.event, (int)countof(kp->pending.event), f2ms(timeout))))
@@ -745,7 +747,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	kp->pending.count = n;
 
 	return 0;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	kpoll_event_t *ke;
 	uint_t n = 1;
 

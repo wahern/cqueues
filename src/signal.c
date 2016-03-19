@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <string.h>
 #include <math.h>
 #include <signal.h>
@@ -41,9 +43,9 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 #include <sys/signalfd.h>
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 #include <port.h>
 #else
 #include <sys/time.h>
@@ -70,7 +72,7 @@ static void sfd_preinit(struct signalfd *S) {
 	sigemptyset(&S->polling);
 	sigemptyset(&S->pending);
 
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	S->timeout = 1.1;
 #else
 	S->timeout = NAN;
@@ -79,14 +81,14 @@ static void sfd_preinit(struct signalfd *S) {
 
 
 static int sfd_init(struct signalfd *S) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	if (-1 == (S->fd = signalfd(-1, &S->desired, SFD_NONBLOCK|SFD_CLOEXEC)))
 		return errno;
 
 	S->polling = S->desired;
 
 	return 0;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	return 0;
 #else
 	if (-1 == (S->fd = kqueue()))
@@ -115,7 +117,7 @@ static int sfd_diff(const sigset_t *a, const sigset_t *b) {
 
 
 static int sfd_update(struct signalfd *S) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	if (sfd_diff(&S->desired, &S->polling)) {
 		if (-1 == signalfd(S->fd, &S->desired, 0))
 			return errno;
@@ -124,7 +126,7 @@ static int sfd_update(struct signalfd *S) {
 	}
 
 	return 0;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	return 0;
 #else
 	int signo;
@@ -155,7 +157,7 @@ static int sfd_update(struct signalfd *S) {
 
 
 static int sfd_query(struct signalfd *S) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	struct signalfd_siginfo info;
 	long n;
 
@@ -178,7 +180,7 @@ syerr:
 	}
 
 	return errno;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	int signo;
 
 	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))

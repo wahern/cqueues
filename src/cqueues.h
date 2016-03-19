@@ -76,20 +76,16 @@
 
 #define UCLIBC_PREREQ(M, m, p) (defined __UCLIBC__ && (__UCLIBC_MAJOR__ > M || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ > m) || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ == m && __UCLIBC_SUBLEVEL__ >= p)))
 
-#ifndef HAVE_EPOLL
-#define HAVE_EPOLL (__linux)
+#ifndef ENABLE_EPOLL
+#define ENABLE_EPOLL HAVE_EPOLL_CREATE
 #endif
 
-#ifndef HAVE_PORTS
-#define HAVE_PORTS (__sun)
+#ifndef ENABLE_PORTS
+#define ENABLE_PORTS HAVE_PORT_CREATE
 #endif
 
-#ifndef HAVE_KQUEUE
-#define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
-#endif
-
-#ifndef HAVE_EVENTFD
-#define HAVE_EVENTFD (__linux && (GLIBC_PREREQ(2, 9) || UCLIBC_PREREQ(0, 9, 33)))
+#ifndef ENABLE_KQUEUE
+#define ENABLE_KQUEUE HAVE_KQUEUE
 #endif
 
 #if __GNUC__
@@ -431,14 +427,6 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 #endif
 } /* cqs_socketpair() */
 
-
-#ifndef HAVE_STATIC_ASSERT
-#define HAVE_STATIC_ASSERT (defined static_assert)
-#endif
-
-#ifndef HAVE__STATIC_ASSERT
-#define HAVE__STATIC_ASSERT (GNUC_PREREQ(4, 6) || __has_feature(c_static_assert) || __has_extension(c_static_assert))
-#endif
 
 #if HAVE_STATIC_ASSERT
 #define cqs_static_assert(cond, msg) static_assert(cond, msg)

@@ -23,6 +23,10 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#if HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stddef.h> /* offsetof size_t */
 #include <limits.h> /* INT_MAX LONG_MAX */
 #include <stdlib.h> /* malloc(3) free(3) */
