@@ -1,3 +1,12 @@
+liblua-cqueues (20160318-0) unstable; urgency=low
+
+  * Refactor build framework to make it easier to avoid automatic Lua
+    dependency checks. But also improve automatic Lua detection by
+    automatically selecting the Lua APIs to build against.
+  * Move most system feature detection to config.h from various source files.
+
+ -- William Ahern <william@25thandClement.com>  Fri, 18 Mar 2016 20:17:46 -0700
+
 liblua-cqueues (20160316-0) unstable; urgency=low
 
   * Allow yielding through cqueues:step. (daurnimator)
