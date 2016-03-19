@@ -68,7 +68,7 @@
  *
  * NOTE: Solaris Studio 12.4 supports __has_attribute, but we must enclose
  * it in parentheses because the expansion results in a token sequence that
- * chokes the compiler: __has_attribute(nonnull) becomes 
+ * chokes the compiler: __has_attribute(nonnull) becomes
  * __has_attribute__ (nonnull), with a literal space between the preprocessor
  * identifier and the open parenthesis.
  *
@@ -404,7 +404,7 @@
 
 /*
  * H E A D E R  D E T E C T I O N
- * 
+ *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE_DLFCN_H
@@ -516,7 +516,7 @@
 
 /*
  * T Y P E  D E T E C T I O N
- * 
+ *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE_STRUCT_SOCKADDR_SA_LEN
@@ -588,7 +588,7 @@
 
 /*
  * V A R I A B L E  D E T E C T I O N
- * 
+ *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE___LIBC_ENABLE_SECURE
@@ -606,7 +606,7 @@
 
 /*
  * F U N C T I O N  D E T E C T I O N
- * 
+ *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE_ACCEPT4
