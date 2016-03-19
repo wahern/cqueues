@@ -22,7 +22,7 @@ VENDOR_$(d) = $(or $(CQUEUES_VENDOR),$(shell $(<D)/../mk/changelog author))
 VERSION_$(d) = $(or $(CQUEUES_VERSION),$(shell $(<D)/../mk/changelog version))
 COMMIT_$(d) = $(shell $(<D)/../mk/changelog commit)
 
-CPPFLAGS_$(d) = -DLUA_COMPAT_APIINTCASTS $(ALL_CPPFLAGS)
+CPPFLAGS_$(d) = $(ALL_CPPFLAGS)
 CFLAGS_$(d) = $(ALL_CFLAGS)
 SOFLAGS_$(d) = $(ALL_SOFLAGS)
 LDFLAGS_$(d) = $(ALL_LDFLAGS)
@@ -49,7 +49,7 @@ $$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnon
 
 $$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/compat52.h
 	$$(MKDIR) -p $$(@D)
-	$$(CC) $$(CFLAGS_$$(<D)) $$(LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) -c -o $$@ $$<
+	$$(CC) $$(CFLAGS_$$(<D)) $$(ALL_LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) -c -o $$@ $$<
 
 $$(d)/$(1)/cqueues.o: $$(d)/lib/llrb.h
 

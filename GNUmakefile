@@ -67,6 +67,7 @@ LAZY_$(d) = \
 	lua51cpath lua51path lua52cpath lua52path lua53cpath lua53path \
 	CC ALL_CPPFLAGS CPPFLAGS ALL_CFLAGS CFLAGS ALL_LDFLAGS LDFLAGS \
 	ALL_SOFLAGS SOFLAGS ALL_LIB LIBS \
+	$(foreach API,$(KNOWN_APIS),ALL_LUA$(subst .,,$(API))_CPPFLAGS) \
 	AR RANLIB M4 MV RM CP RMDIR MKDIR CHMOD INSTALL INSTALL_DATA TOUCH \
 	TEE TEE_A
 
@@ -113,6 +114,11 @@ endif
 # set LUAXY_CPPFLAGS if undefined or "?" (NB: can be empty if path already in $(CPPFLAGS))
 ifeq ($$(and $$(findstring undefined,$$(origin LUA$(subst .,,$(1))_CPPFLAGS)),?),?)
 override LUA$(subst .,,$(1))_CPPFLAGS = $$(and $$(call WITH_API_FN,$(1)),$$(call LUAPATH_FN,$(1),cppflags))
+endif
+
+# set ALL_LUAXY_CPPFLAGS if empty or "?"
+ifeq ($$(or $$(strip $$(ALL_LUA$(subst .,,$(1))_CPPFLAGS)),?),?)
+override ALL_LUA$(subst .,,$(1))_CPPFLAGS = -DLUA_COMPAT_APIINTCASTS $$(LUA$(subst .,,$(1))_CPPFLAGS)
 endif
 
 # set LUAXYC if empty or "?"
