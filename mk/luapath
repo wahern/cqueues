@@ -26,10 +26,10 @@
 # Changelog:
 #
 # * 2013-08-02 - Published. Derived from an earlier script, lua.path,
-#   written for the cqueues project.
+# 	written for the cqueues project.
 #
 # * 2013-08-05 - Redirect stdin from /dev/null when probing so we don't
-#   	freeze if a utility tries to read from stdin.
+# 	freeze if a utility tries to read from stdin.
 #
 # 	chdir to a read-only directory by default to try to prevent creation
 # 	of temporary files. These features address the issues of LuaTeX
@@ -88,9 +88,25 @@
 # * 2016-03-18 - Fix bug in tryluac where a continue statement was used
 # 	instead of return 0.
 #
+# * 2016-03-25 - Support ${CC} values with trailing flags, which invoke
+# 	the compiler through env(1), or which otherwise are intended to
+# 	expand as multiple words.
+#
+# 	OpenBSD 5.8 sh does not suppress strict errors within an eval
+# 	invoked from an if condition compound-list. Workaround by changing
+# 	trylua to return 0 on matching failure, like tryluainclude and
+# 	tryluac do.
+#
+# 	Undeprecate ldir and cdir. The names are more intuitive and
+# 	convenient as evidenced by the fact that I keep using them instead
+# 	of package.path and package.cpath. Try to maintain backwards
+# 	compatibility by using a simple heuristic to differentiate lua
+# 	interpreter glob patterns from preferred install directory
+# 	string.match expressions.
+#
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
-# Copyright (C) 2012-2015 William Ahern
+# Copyright (C) 2012-2016 William Ahern
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -122,7 +138,7 @@ unset IFS # no field splitting surprises
 unset LUA_PATH || true # interferes search for module install directory
 unset LUA_CPATH || true
 
-MYVERSION=20160318
+MYVERSION=20160325
 MYVENDOR="william@25thandClement.com"
 
 
@@ -167,6 +183,27 @@ LUAC_VER=
 
 LUA_PATH=
 LUA_VER=
+
+
+#
+# warn FORMAT [...]
+#
+# Print message to original stderr.
+#
+exec 9>&2
+warn() {
+	printf "%s: %.0s${1}\n" "${0##*/}" "$@" >&9
+}
+
+#
+# panic FORMAT [...]
+#
+# Print message to original stderr, then exit with failure.
+#
+panic() {
+	warn "$@"
+	exit 1
+}
 
 
 #
@@ -261,6 +298,21 @@ glob() {
 
 
 #
+# runcc [...]
+#
+# Wrapper for invoking ${CC}. Some build system include flags in ${CC},
+# invoke the compiler through env(1), or employ other hacks.
+#
+# TODO: Optionally handle unescaping of words in a manner similar to how
+# ${CC} would be evaluated from a make rule--typically by being passed
+# through system(3).
+#
+runcc() {
+	(unset IFS; exec ${CC} "$@")
+}
+
+
+#
 # evalmacro PATH MACRO [REGEX] [SUBST]
 #
 # 	PATH   Header identifier--#include <PATH>
@@ -270,7 +322,7 @@ glob() {
 #
 evalmacro() {
 	printf "#include <$1>\n[===[$2]===]\n" \
-	| "${CC:-cc}" ${CPPFLAGS:-} -E - 2>>/dev/null \
+	| runcc ${CPPFLAGS:-} -E - 2>>/dev/null \
 	| sed -ne "
 		s/^.*\\[===\\[ *\\(${3:-.*}\\) *\\]===\\].*$/${4:-\\1}/
 		t Found
@@ -428,7 +480,9 @@ luapc() {
 findinstalldir() {
 	V_DIR=$((${LUA_VER} / 100 % 100)).$((${LUA_VER} % 100))
 
-	if [ "${1}" = "package.cpath" ]; then
+	if [ "${1}" = "package.cpath" -o "${1}" = "cdir" ]; then
+		ARRAY="package.cpath"
+
 		DIR="$(luapc --variable INSTALL_CMOD)"
 		[ -n "${DIR}" ] && set -- "$@" "${DIR}"
 
@@ -448,6 +502,8 @@ findinstalldir() {
 		set -- "$@" "${LUA_PATH}/../../lib/lua/${V_DIR}"
 		set -- "$@" "${LUA_PATH}/../../lib/*/lua/${V_DIR}" # e.g. lib/x86_64-linux-gnu
 	else
+		ARRAY="package.path"
+
 		DIR="$(luapc --variable INSTALL_LMOD)"
 		[ -n "${DIR}" ] && set -- "$@" "${DIR}"
 
@@ -459,7 +515,6 @@ findinstalldir() {
 		set -- "$@" "${LUA_PATH}/../../share/lua/${V_DIR}"
 	fi
 
-	ARRAY="${1}"
 	shift
 
 	if [ $# -eq 0 ]; then
@@ -924,7 +979,7 @@ isinteger() {
 checkints() {
 	while [ $# -gt 0 ]; do
 		if ! isinteger "${1}"; then
-			printf -- "${0##*/}: ${1}: not a number\n" >&2
+			warn "%s: not a number" "${1}"
 			return 1
 		fi
 
@@ -1001,28 +1056,28 @@ mmp2num() {
 
 trylua() {
 	trylua_F="${1}"
-	[ -x "${trylua_F}" ] && safeperm "${trylua_F}" || return 1
+	[ -x "${trylua_F}" ] && safeperm "${trylua_F}" || return 0
 
 	trylua_V="$("${trylua_F}" -e 'print(string.match(_VERSION, [[[%d.]+]]))' </dev/null 2>>/dev/null | head -n1 | sed -ne 's/^\([0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
 	: ${trylua_V:=0}
 	trylua_V="$((${trylua_V%%.*} * 100 + ${trylua_V##*.} % 100))"
 
-	[ "${trylua_V}" -gt 0 -a "${trylua_V}" -ge "${LUA_VER:-0}" ] || return 1
+	[ "${trylua_V}" -gt 0 -a "${trylua_V}" -ge "${LUA_VER:-0}" ] || return 0
 
-	[ "${trylua_V}" -gt "${LUA_VER:-0}" -o "${#trylua_F}" -lt "${#LUA_PATH}" ] || return 1
+	[ "${trylua_V}" -gt "${LUA_VER:-0}" -o "${#trylua_F}" -lt "${#LUA_PATH}" ] || return 0
 
-	[ "${trylua_V}" -ge "${API_MIN}" -a "${trylua_V}" -le "${API_MAX}" ] || return 1
+	[ "${trylua_V}" -ge "${API_MIN}" -a "${trylua_V}" -le "${API_MAX}" ] || return 0
 
 	if [ -n "${JIT_REQ}" ]; then
 		J="$("${trylua_F}" -v </dev/null 2>&1 | head -n1 | sed -ne 's/^LuaJIT \([0123456789][0123456789]*\.[0123456789][0123456789]*\.[0123456789][0123456789]*\).*/\1/p')"
 		J="$(jit2num ${J:-0})"
 
 		if [ "${JIT_REQ}" = "skip" ]; then
-			[ "${J}" -eq 0 ] || return 1
+			[ "${J}" -eq 0 ] || return 0
 		elif [ "${JIT_REQ}" = "yes" ]; then
-			[ "${J}" -gt 0 ] || return 1
-			[ "${J}" -ge "${JIT_MIN}" ] || return 1
-			[ "${J}" -le "${JIT_MAX}" ] || return 1
+			[ "${J}" -gt 0 ] || return 0
+			[ "${J}" -ge "${JIT_MIN}" ] || return 0
+			[ "${J}" -le "${JIT_MAX}" ] || return 0
 		fi
 	fi
 
@@ -1085,7 +1140,7 @@ findlua() {
 
 
 ccname() {
-	"${CC}" -E - <<-EOF | awk '/sunpro/||/clang/||/gcc/||/other/{ print $1; exit; }'
+	runcc -E - <<-EOF | awk '/sunpro/||/clang/||/gcc/||/other/{ print $1; exit; }'
 		#if defined __SUNPRO_C
 		sunpro
 		#elif defined __clang__
@@ -1203,8 +1258,7 @@ while getopts I:L:P:d:De:krm:xsv:j:JVh OPT; do
 		;;
 	m)
 		if [ "${#OPTARG}" -eq 0 -o -n "${OPTARG##[0123456789]}" ]; then
-			printf -- "${0##*/}: ${OPTARG}: invalid maxdepth\n" >&2
-			exit 1
+			panic "%s: invalid maxdepth" "${OPTARG}"
 		fi
 
 		MAXDEPTH="${OPTARG}"
@@ -1230,8 +1284,7 @@ while getopts I:L:P:d:De:krm:xsv:j:JVh OPT; do
 		API_MAX="$(lua2num ${MAX:-99} 99)"
 
 		if [ "${API_MIN}" -gt "${API_MAX}" ]; then
-			printf -- "${0##*/}: ${OPTARG}: invalid version range\n" >&2
-			exit 1
+			panic "%s: invalid version range" "${OPTARG}"
 		fi
 
 		;;
@@ -1243,8 +1296,7 @@ while getopts I:L:P:d:De:krm:xsv:j:JVh OPT; do
 		JIT_MAX="$(jit2num ${MAX:-99} 99 99)"
 
 		if [ "${JIT_MIN}" -gt "${JIT_MAX}" ]; then
-			printf -- "${0##*/}: ${OPTARG}: invalid version range\n" >&2
-			exit 1
+			panic "%s: invalid version range" "${OPTARG}"
 		fi
 
 		JIT_REQ=yes
@@ -1273,10 +1325,13 @@ shift $(($OPTIND - 1))
 [ "${RECURSE}" = "yes" ] || MAXDEPTH=0
 
 
-for U in "${CC:-cc}" grep od rm rmdir sed xargs; do
-	if ! command -v "${U}" >>/dev/null 2>&1; then
-		printf -- "${0##*/}: ${U}: command not found\n" >&2
-	fi
+for U in "${CC}" grep od rm rmdir sed xargs; do
+	! command -v "${U}" >>/dev/null 2>&1 || continue
+
+	# ${CC} might have trailing flags or invoke the compiler through env
+	! command -v "${U%% *}" >>/dev/null 2>&1 || continue
+
+	warn "%s: command not found" "${U}"
 done
 
 
@@ -1284,15 +1339,13 @@ if [ -n "${SANDBOX}" ]; then
 	if [ "${SANDBOX}" = "${SANDBOX%/}" ]; then
 		if [ ! -c "${DEVRANDOM}" ]; then
 			# TODO: expand DEVRANDOM into set of different possibilities to check
-			printf -- "${0##*/}: ${DEVRANDDOM}: no character random device available\n" >&2
-			exit 1
+			panic "%s: no character random device available" "${DEVRANDOM}"
 		fi
 
 		TMP="${SANDBOX}$(od -An -N8 -tx1 < ${DEVRANDOM} 2>>/dev/null | tr -d ' 	')"
 
 		if [ ${#TMP} -ne $((${#SANDBOX} + 16)) ]; then
-			printf -- "${0##*/}: ${SANDBOX}: unable to generate random suffix\n" >&2
-			exit 1
+			panic "%s: unable to generate random suffix" "${SANDBOX}"
 		fi
 
 		SANDBOX="${TMP}"
@@ -1391,21 +1444,38 @@ lua)
 
 	;;
 ldir|cdir)
-	printf -- "${0##*/}: ${1}: deprecated command\n" >&2
-	MODE="${1}"
-	shift
+	#
+	# ldir and cdir were deprecated on 2014-12-18. On 2016-03-25 they
+	# were revived because their names are more intuitive than
+	# package.path and package.cpath. For now try to support the
+	# semantics of both by assuming interpreter glob patterns only match
+	# file names, while preferred install directory string.match
+	# expressions have directory components.
+	#
+	if true; then
+		MODE="${1}"
 
-	if [ $# -gt 0 ]; then
-		append GLOB $*
+		# move command to end; rotates to ${1} after loop
+		set -- "$@" "${1}"
+		shift
+
+		cdir_I=0
+		cdir_N="$(($# - 1))"
+		while [ "${cdir_I}" -lt "${cdir_N}" ]; do
+			if [ "${1#*/}" = "${1}" ]; then
+				append GLOB "${1}"
+				warn "%s: passing glob patterns to %s is deprecated" "${1}" "${MODE}"
+			else
+				set -- "$@" "${1}"
+			fi
+			shift
+			cdir_I=$((${cdir_I} + 1))
+		done
 	fi
 
 	findlua || exit 1
 
-	if [ "${MODE}" = "cdir" ]; then
-		findinstalldir package.cpath
-	else
-		findinstalldir package.path
-	fi
+	findinstalldir "$@" || exit 1
 
 	;;
 package.path|package.cpath)
@@ -1436,9 +1506,9 @@ testsym)
 	;;
 *)
 	if [ -n "${1:-}" ]; then
-		printf -- "${0##*/}: ${1}: unknown command\n" >&2
+		warn "%s: unknown command" "${1}"
 	else
-		printf -- "${0##*/}: no command specified\n" >&2
+		warn "no command specified"
 	fi
 
 	exit 1
