@@ -16,7 +16,7 @@ KNOWN_APIS = 5.1 5.2 5.3
 
 # template for invoking luapath script
 LUAPATH := $(d)/mk/luapath
-LUAPATH_FN = $(shell env CC='$(subst ',\\',$(CC))' CPPFLAGS='$(subst ',\\',$(CPPFLAGS))' LDFLAGS='$(subst ',\\',$(LDFLAGS))' $(LUAPATH) -krxm3 -I'$(subst ',\\',$(DESTDIR)$(includedir))' -I/usr/include -I/usr/local/include -P'$(subst ',\\',$(DESTDIR)$(bindir))' -P'$(subst ',\\',$(bindir))' -L'$(subst ',\\',$(DESTDIR)$(libdir))' -L'$(subst ',\\',$(libdir))' -v$(1) $(2))
+LUAPATH_FN = $(shell env CC='$(subst ',\\',$(CC))' CPPFLAGS='$(subst ',\\',$(CPPFLAGS))' LDFLAGS='$(subst ',\\',$(LDFLAGS))' $(LUAPATH) -krxm3 -I '$(subst ',\\',$(DESTDIR)$(includedir))' -I/usr/include -I/usr/local/include -P '$(subst ',\\',$(DESTDIR)$(bindir))' -P '$(subst ',\\',$(bindir))' -L '$(subst ',\\',$(DESTDIR)$(libdir))' -L '$(subst ',\\',$(libdir))' -v$(1) $(2))
 
 # check whether luapath can locate Lua $(1) headers
 HAVE_API_FN = $(and $(filter $(1),$(call LUAPATH_FN,$(1),version)),$(1)$(info enabling Lua $(1)))
