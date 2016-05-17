@@ -2643,7 +2643,7 @@ static lso_nargs_t lso_eof(lua_State *L) {
 
 
 static lso_nargs_t lso_accept(lua_State *L) {
-	struct luasocket *A = luaL_checkudata(L, 1, LSO_CLASS);
+	struct luasocket *A = lso_checkself(L, 1);
 	struct so_options opts;
 	int fd, error;
 
