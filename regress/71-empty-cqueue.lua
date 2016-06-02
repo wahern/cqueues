@@ -24,6 +24,7 @@ local function check_71A()
 	local fh = check(io.popen(string.format([[
 		GRACE=%d
 		run_and_wait() {
+			set -- "-B"
 			. "${SRCDIR}/regress/regress.sh" || exit 1;
 			runlua - <<-EOF &
 				require"regress".export".*"
