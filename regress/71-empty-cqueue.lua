@@ -60,11 +60,31 @@ local function check_71B()
 	outer:wrap(function ()
 		info"setting alert on inner loop"
 		check(inner:alert())
-		info"stepping inner loop"
-		check(inner:step())
-		info"polling inner loop"
-		local e1, e2 = cqueues.poll(inner, 0)
-		check(e1 ~= inner and e2 ~= inner, "alert not cleared")
+
+		--
+		-- NOTE: A kqueue descriptor will continue polling as
+		-- readable until kevent(2) returns 0 events. As of
+		-- 2016-06-01, cqueue:step does not iteratively call kevent.
+		-- That may change in the future, but for now on BSDs code
+		-- must :step twice for an alert to clear such that a queue
+		-- stops polling as ready.
+		--
+		local count = 0
+		local clear = false
+		while not clear and count < 3 do
+			count = count + 1
+
+			info"stepping inner loop"
+			check(inner:step())
+
+			info"polling inner loop"
+			cqueues.poll(inner, 0)
+			local e1, e2 = cqueues.poll(inner, 0)
+			clear = e1 ~= inner and e2 ~= inner
+		end
+		check(clear, "alert not cleared")
+		info("alert cleared after %d steppings", count)
+
 		cv:signal()
 	end)
 
