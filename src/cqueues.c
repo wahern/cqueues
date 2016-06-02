@@ -1854,6 +1854,13 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 
 	timer_destroy(Q, &T->timer);
 
+	/* XXX: these lua operations are documented as able to longjmp on OOM
+	 * However, inspection of the lua source suggests that when used as below
+	 * they won't throw.
+	 *   - In lua5.1 pushing a lightuserdata doesn't allocate (they're stack allocated)
+	 *   - rawset doesn't allocate if the key already exists in the table (which it always does for this function)
+	 */
+
 	lua_getuservalue(L, I->self);
 
 	/* set thread's uservalue (it's thread) to nil */
