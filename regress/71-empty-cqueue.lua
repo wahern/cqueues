@@ -1,7 +1,6 @@
 #!/bin/sh
 _=[[
 	. "${0%%/*}/regress.sh"
-	export SRCDIR
 	exec runlua "$0" "$@"
 ]]
 require"regress".export".*"
@@ -15,7 +14,6 @@ require"regress".export".*"
 -- continually poll as ready even after calling cqueue:step.
 --
 
-
 local function check_71A()
 	info"testing issue 71A"
 
@@ -24,8 +22,7 @@ local function check_71A()
 	local fh = check(io.popen(string.format([[
 		GRACE=%d
 		run_and_wait() {
-			set -- "-B"
-			. "${SRCDIR}/regress/regress.sh" || exit 1;
+			. "${CQUEUES_SRCDIR}/regress/regress.sh" || exit 1;
 			runlua - <<-EOF &
 				require"regress".export".*"
 				assert(cqueues.new():loop())

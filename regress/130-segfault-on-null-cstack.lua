@@ -4,14 +4,14 @@ _=[[
 	runlua "$0" "$@"
 	RC="$?"
 	if [ ${RC} -eq 0 ]; then
-		case ${VERBOSE} in
+		case ${REGRESS_VERBOSE} in
 		0)
 			;;
 		1)
-			printf "\n%s: OK\n" "${PROGNAME}"
+			printf "\n%s: OK\n" "${REGRESS_PROGNAME}"
 			;;
 		*)
-			printf "%s: OK\n" "${PROGNAME}"
+			printf "%s: OK\n" "${REGRESS_PROGNAME}"
 			;;
 		esac
 	fi

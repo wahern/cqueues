@@ -12,8 +12,8 @@ local regress = {
 	fileresult = auxlib.fileresult,
 }
 
-local emit_progname = os.getenv"PROGNAME" or "regress"
-local emit_verbose = tonumber(os.getenv"VERBOSE" or 1)
+local emit_progname = os.getenv"REGRESS_PROGNAME" or "regress"
+local emit_verbose = tonumber(os.getenv"REGRESS_VERBOSE" or 1)
 local emit_info = {}
 local emit_ll = 0
 
