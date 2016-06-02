@@ -1386,7 +1386,7 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	 * give ourselves an empty table of threads
 	 */
 	lua_newtable(L);
-	lua_setuservalue(L, index);
+	cqs_setuservalue(L, index);
 
 	/*
 	 * associate ourselves with global continuation stack
@@ -1808,20 +1808,6 @@ static double thread_timeout(struct thread *T) {
 	return timeout;
 } /* thread_timeout() */
 
-static void thread_setuservalue(lua_State *L, int index) {
-#if LUA_VERSION_NUM < 503
-	/*
-	 * Lua 5.2 only allows uservalues of nil or a table if api checks
-	 * are on. Lua 5.1's lua_setfenv does not permit assigning nil.
-	 */
-	index = lua_absindex(L, index);
-	lua_createtable(L, 1, 0);
-	lua_pushvalue(L, -2);
-	lua_rawseti(L, -2, 1);
-	lua_replace(L, -2);
-#endif
-	lua_setuservalue(L, index);
-} /* thread_setuservalue() */
 
 static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
 	struct thread *T;
@@ -1835,11 +1821,11 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 
 	/* anchor new lua_State to our thread context */
 	lua_pushvalue(L, index);
-	thread_setuservalue(L, -2);
+	cqs_setuservalue(L, -2);
 	T->L = lua_tothread(L, index);
 
 	/* anchor thread context to cqueue object */
-	lua_getuservalue(L, I->self);
+	cqs_getuservalue(L, I->self);
 	lua_pushvalue(L, -2);
 	lua_rawsetp(L, -2, T);
 	lua_pop(L, 2);
@@ -1869,12 +1855,12 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 	 *   - rawset doesn't allocate if the key already exists in the table
 	 *     (which it always does for this function)
 	 */
-	lua_getuservalue(L, I->self);
+	cqs_getuservalue(L, I->self);
 
 	/* set thread's uservalue (it's thread) to nil */
 	lua_rawgetp(L, -1, T);
 	lua_pushnil(L);
-	thread_setuservalue(L, -2);
+	cqs_setuservalue(L, -2);
 	lua_pop(L, 1);
 	T->L = NULL;
 

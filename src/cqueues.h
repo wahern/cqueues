@@ -347,6 +347,66 @@ static inline void cqs_setmacros(lua_State *L, int index, const struct cqs_macro
 } /* cqs_setmacros() */
 
 
+#if LUA_VERSION_NUM < 503
+/* convert value at index to proxytable with value at t[2] */
+static inline void cqs__toproxytable(lua_State *L, int index) {
+	index = lua_absindex(L, index);
+	lua_createtable(L, 2, 0);
+	lua_pushlightuserdata(L, (void *)lua_topointer(L, -1));
+	lua_rawseti(L, -2, 1); /* set t[1] == pointer-to-t */
+	lua_pushvalue(L, index);
+	lua_rawseti(L, -2, 2); /* set t[2] == value */
+	lua_replace(L, index);
+} /* cqs__toproxytable() */
+
+/* check whether value at index is a proxytable */
+static inline _Bool cqs__isproxytable(lua_State *L, int index) {
+	const void *tp, *t1p;
+
+	if (!lua_istable(L, index))
+		return 0;
+
+	tp = lua_topointer(L, index);
+	lua_rawgeti(L, index, 1);
+	t1p = lua_topointer(L, -1);
+	lua_pop(L, 1);
+
+	return tp && tp == t1p;
+} /* cqs__isproxytable() */
+#endif
+
+static inline void cqs_setuservalue(lua_State *L, int index) {
+#if LUA_VERSION_NUM >= 503
+	lua_setuservalue(L, index);
+#elif LUA_VERSION_NUM == 502
+	if (!lua_istable(L, -1) && !lua_isnil(L, -1))
+		cqs__toproxytable(L, -1);
+	lua_setuservalue(L, index);
+#else
+	if (!lua_istable(L, -1))
+		cqs__toproxytable(L, -1);
+	lua_setfenv(L, index);
+#endif
+} /* cqs_setuservalue() */
+
+static inline int cqs_getuservalue(lua_State *L, int index) {
+#if LUA_VERSION_NUM >= 503
+	return lua_getuservalue(L, index);
+#else
+#if LUA_VERSION_NUM == 502
+	lua_getuservalue(L, index);
+#else
+	lua_getfenv(L, index);
+#endif
+	if (cqs__isproxytable(L, -1)) {
+		lua_rawgeti(L, -1, 2);
+		lua_replace(L, -2);
+	}
+	return lua_type(L, -1);
+#endif
+} /* cqs_setuservalue() */
+
+
 static inline void cqs_closefd(int *fd) {
 	if (*fd != -1) {
 #if __APPLE__
