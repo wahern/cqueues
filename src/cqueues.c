@@ -1808,36 +1808,38 @@ static double thread_timeout(struct thread *T) {
 	return timeout;
 } /* thread_timeout() */
 
+static void thread_setuservalue(lua_State *L, int index) {
+#if LUA_VERSION_NUM == 502
+	/* Lua 5.2 only allows uservalues of nil or a table if api checks are on */
+	index = lua_absindex(L, index);
+	lua_createtable(L, 1, 0);
+	lua_pushvalue(L, -2);
+	lua_rawseti(L, -2, 1);
+	lua_replace(L, -2);
+#endif
+	lua_setuservalue(L, index);
+} /* thread_setuservalue() */
 
 static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
 	struct thread *T;
 
 	index = lua_absindex(L, index);
 
-	lua_getuservalue(L, I->self);
-
-	T = lua_newuserdata(L, sizeof(struct thread));
-	/* have thread keep a reference to state */
-#if LUA_VERSION_NUM == 502
-	/* Lua 5.2 only allows uservalues of nil or a table if api checks are on */
-	lua_createtable(L, 1, 0);
-	lua_pushvalue(L, index);
-	lua_rawseti(L, -2, 1);
-#else
-	lua_pushvalue(L, index);
-#endif
-	lua_setuservalue(L, -2);
-
+	T = lua_newuserdata(L, sizeof *T);
 	memset(T, 0, sizeof *T);
-
 	TAILQ_INIT(&T->events);
-
 	timer_init(&T->timer);
 
+	/* anchor new lua_State to our thread context */
+	lua_pushvalue(L, index);
+	thread_setuservalue(L, -2);
 	T->L = lua_tothread(L, index);
 
+	/* anchor thread context to cqueue object */
+	lua_getuservalue(L, I->self);
+	lua_pushvalue(L, -2);
 	lua_rawsetp(L, -2, T);
-	lua_pop(L, 1);
+	lua_pop(L, 2);
 
 	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
 	T->threads = &Q->thread.pending;
@@ -1851,16 +1853,19 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 	while ((event = TAILQ_FIRST(&T->events))) {
 		event_del(Q, event);
 	}
-
 	timer_destroy(Q, &T->timer);
+	LIST_REMOVE(T, le);
+	Q->thread.count--;
 
-	/* XXX: these lua operations are documented as able to longjmp on OOM
-	 * However, inspection of the lua source suggests that when used as below
-	 * they won't throw.
-	 *   - In lua5.1 pushing a lightuserdata doesn't allocate (they're stack allocated)
-	 *   - rawset doesn't allocate if the key already exists in the table (which it always does for this function)
+	/*
+	 * XXX: These lua operations are documented as able to longjmp on
+	 * OOM. However, inspection of the lua source suggests that when used
+	 * as below they won't throw.
+	 *   - In lua5.1 pushing a lightuserdata doesn't allocate (they're
+	 *     stack allocated)
+	 *   - rawset doesn't allocate if the key already exists in the table
+	 *     (which it always does for this function)
 	 */
-
 	lua_getuservalue(L, I->self);
 
 	/* set thread's uservalue (it's thread) to nil */
@@ -1870,14 +1875,10 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 	lua_pop(L, 1);
 	T->L = NULL;
 
-	LIST_REMOVE(T, le);
-
 	/* remove thread from cqueues's thread table */
 	lua_pushnil(L);
 	lua_rawsetp(L, -2, T);
 	lua_pop(L, 1);
-
-	Q->thread.count--;
 } /* thread_del() */
 
 
