@@ -1809,8 +1809,11 @@ static double thread_timeout(struct thread *T) {
 } /* thread_timeout() */
 
 static void thread_setuservalue(lua_State *L, int index) {
-#if LUA_VERSION_NUM == 502
-	/* Lua 5.2 only allows uservalues of nil or a table if api checks are on */
+#if LUA_VERSION_NUM < 503
+	/*
+	 * Lua 5.2 only allows uservalues of nil or a table if api checks
+	 * are on. Lua 5.1's lua_setfenv does not permit assigning nil.
+	 */
 	index = lua_absindex(L, index);
 	lua_createtable(L, 1, 0);
 	lua_pushvalue(L, -2);
@@ -1871,7 +1874,7 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 	/* set thread's uservalue (it's thread) to nil */
 	lua_rawgetp(L, -1, T);
 	lua_pushnil(L);
-	lua_setuservalue(L, -2);
+	thread_setuservalue(L, -2);
 	lua_pop(L, 1);
 	T->L = NULL;
 
