@@ -1818,7 +1818,14 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 
 	T = lua_newuserdata(L, sizeof(struct thread));
 	/* have thread keep a reference to state */
+#if LUA_VERSION_NUM == 502
+	/* Lua 5.2 only allows uservalues of nil or a table if api checks are on */
+	lua_createtable(L, 1, 0);
 	lua_pushvalue(L, index);
+	lua_rawseti(L, -2, 1);
+#else
+	lua_pushvalue(L, index);
+#endif
 	lua_setuservalue(L, -2);
 
 	memset(T, 0, sizeof *T);
