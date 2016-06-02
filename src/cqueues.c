@@ -2241,40 +2241,38 @@ static int cqueue_step(lua_State *L) {
 		return luaL_error(L, "cannot step live cqueue");
 	}
 
-	if (Q->thread.count) {
-		if (LIST_EMPTY(&Q->thread.pending)) {
-			timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
-		} else {
-			timeout = 0.0;
-		}
+	if (Q->thread.count && LIST_EMPTY(&Q->thread.pending)) {
+		timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
+	} else {
+		timeout = 0.0;
+	}
 
-		if ((error = kpoll_wait(&Q->kp, timeout))) {
-			err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
-			err_setcode(L, &I, error);
-			goto oops;
-		}
+	if ((error = kpoll_wait(&Q->kp, timeout))) {
+		err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
+		err_setcode(L, &I, error);
+		goto oops;
+	}
 
-		switch(cqueue_process(L, Q, &I)) {
-		case LUA_OK:
-			break;
-		case LUA_YIELD:
-			/* clear everything off the stack except for cqueue object; `I` now invalid */
-			lua_settop(L, 1);
+	switch(cqueue_process(L, Q, &I)) {
+	case LUA_OK:
+		break;
+	case LUA_YIELD:
+		/* clear everything off the stack except for cqueue object; `I` now invalid */
+		lua_settop(L, 1);
 #if LUA_VERSION_NUM >= 502
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return lua_yieldk(L, nargs, 0, cqueue_step_cont);
 #else
-			lua_pushliteral(L, "yielded");
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return nargs+1;
+		lua_pushliteral(L, "yielded");
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return nargs+1;
 #endif
-		default:
-			goto oops;
-		}
+	default:
+		goto oops;
 	}
 
 	lua_pushboolean(L, 1);
@@ -2348,6 +2346,25 @@ error:
 
 	return 3;
 } /* cqueue_wrap() */
+
+
+static int cqueue_alert(lua_State *L) {
+	struct cqueue *Q = cqueue_checkself(L, 1);
+	int error;
+
+	if ((error = kpoll_alert(&Q->kp)))
+		goto error;
+
+	lua_pushvalue(L, 1);
+
+	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushstring(L, cqs_strerror(error));
+	lua_pushinteger(L, error);
+
+	return 3;
+} /* cqueue_alert() */
 
 
 static int cqueue_empty(lua_State *L) {
@@ -2810,6 +2827,7 @@ static const luaL_Reg cqueue_methods[] = {
 #endif
 	{ "attach",  &cqueue_attach },
 	{ "wrap",    &cqueue_wrap },
+	{ "alert",   &cqueue_alert },
 	{ "empty",   &cqueue_empty },
 	{ "count",   &cqueue_count },
 	{ "cancel",  &cqueue_cancel },
