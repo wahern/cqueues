@@ -1123,7 +1123,6 @@ struct timer {
 
 
 struct thread {
-	auxref_t ref;
 	lua_State *L; /* only for coroutines */
 
 	TAILQ_HEAD(, event) events;
@@ -1143,15 +1142,13 @@ struct thread {
 struct cqueue {
 	struct kpoll kp;
 
-	auxref_t registry; /* ephemeron table global registry index */
-
 	struct {
 		LLRB_HEAD(table, fileno) table;
 		LIST_HEAD(, fileno) polling, outstanding, inactive;
 	} fileno;
 
 	struct {
-		struct pool wakecb, fileno, thread, event;
+		struct pool wakecb, fileno, event;
 	} pool;
 
 	struct {
@@ -1194,11 +1191,10 @@ static void cstack_push(struct cstack *, struct stackinfo *);
 static void cstack_pop(struct cstack *);
 static _Bool cstack_isrunning(const struct cstack *, const struct cqueue *);
 
-#define CALLINFO_INITIALIZER { 0, 0, { 0, 0, 0, 0, -1 } }
+#define CALLINFO_INITIALIZER { 0, { 0, 0, 0, 0, -1 } }
 
 struct callinfo {
 	cqs_index_t self; /* stack index of cqueue object */
-	cqs_index_t registry; /* stack index of ephemeron registry table */
 
 	struct {
 		cqs_index_t value;
@@ -1220,12 +1216,6 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 
 	I->self = lua_absindex(L, index);
 
-	lua_rawgeti(L, LUA_REGISTRYINDEX, Q->registry);
-	lua_pushvalue(L, I->self);
-	lua_gettable(L, -2);
-	lua_replace(L, -2);
-	I->registry = lua_absindex(L, -1);
-
 	I->error.value = 0;
 	I->error.code = 0;
 	I->error.thread = 0;
@@ -1243,19 +1233,6 @@ static cqs_error_t cqueue_tryalert(struct cqueue *Q) {
 		return 0;
 	}
 } /* cqueue_tryalert() */
-
-
-static int cqueue_ref(lua_State *L, struct callinfo *I, int index) {
-	lua_pushvalue(L, index);
-	return luaL_ref(L, I->registry);
-} /* cqueue_ref() */
-
-
-static void cqueue_unref(lua_State *L, struct callinfo *I, auxref_t *ref) {
-	luaL_unref(L, I->registry, *ref);
-	*ref = LUA_NOREF;
-} /* cqueue_unref() */
-
 
 static void err_setvfstring(lua_State *L, struct callinfo *I, const char *fmt, va_list ap) {
 	lua_pushvfstring(L, fmt, ap);
@@ -1389,11 +1366,8 @@ static void cqueue_preinit(struct cqueue *Q) {
 
 	Q->thread.current = NULL;
 
-	Q->registry = LUA_NOREF;
-
 	pool_init(&Q->pool.wakecb, sizeof (struct wakecb));
 	pool_init(&Q->pool.fileno, sizeof (struct fileno));
-	pool_init(&Q->pool.thread, sizeof (struct thread));
 	pool_init(&Q->pool.event, sizeof (struct event));
 } /* cqueue_preinit() */
 
@@ -1409,26 +1383,10 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 		luaL_error(L, "unable to initialize continuation queue: %s", cqs_strerror(error));
 
 	/*
-	 * create ephemeron table
+	 * give ourselves an empty table of threads
 	 */
 	lua_newtable(L);
-	lua_newtable(L);
-	lua_pushstring(L, "k");
-	lua_setfield(L, -2, "__mode");
-	lua_setmetatable(L, -2);
-
-	/*
-	 * create our registry table, indexed in our ephemeron table by
-	 * a reference to our self.
-	 */
-	lua_pushvalue(L, index);
-	lua_newtable(L);
-	lua_settable(L, -3);
-
-	/*
-	 * anchor our ephemeron table in the global registry
-	 */
-	Q->registry = luaL_ref(L, LUA_REGISTRYINDEX);
+	lua_setuservalue(L, index);
 
 	/*
 	 * associate ourselves with global continuation stack
@@ -1466,12 +1424,8 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	kpoll_destroy(&Q->kp);
 
 	pool_destroy(&Q->pool.event);
-	pool_destroy(&Q->pool.thread);
 	pool_destroy(&Q->pool.fileno);
 	pool_destroy(&Q->pool.wakecb);
-
-	luaL_unref(L, LUA_REGISTRYINDEX, Q->registry);
-	Q->registry = LUA_NOREF;
 } /* cqueue_destroy() */
 
 
@@ -1855,30 +1809,39 @@ static double thread_timeout(struct thread *T) {
 } /* thread_timeout() */
 
 
-static cqs_error_t thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
+static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
 	struct thread *T;
-	int error;
 
 	index = lua_absindex(L, index);
 
-	if (!(T = pool_get(&Q->pool.thread, &error)))
-		return error;
+	lua_getuservalue(L, I->self);
+
+	T = lua_newuserdata(L, sizeof(struct thread));
+	/* have thread keep a reference to state */
+#if LUA_VERSION_NUM == 502
+	/* Lua 5.2 only allows uservalues of nil or a table if api checks are on */
+	lua_createtable(L, 1, 0);
+	lua_pushvalue(L, index);
+	lua_rawseti(L, -2, 1);
+#else
+	lua_pushvalue(L, index);
+#endif
+	lua_setuservalue(L, -2);
 
 	memset(T, 0, sizeof *T);
 
-	T->ref = LUA_NOREF;
 	TAILQ_INIT(&T->events);
 
 	timer_init(&T->timer);
 
-	T->ref = cqueue_ref(L, I, index);
 	T->L = lua_tothread(L, index);
+
+	lua_rawsetp(L, -2, T);
+	lua_pop(L, 1);
 
 	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
 	T->threads = &Q->thread.pending;
 	Q->thread.count++;
-
-	return 0;
 } /* thread_add() */
 
 
@@ -1891,13 +1854,30 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 
 	timer_destroy(Q, &T->timer);
 
-	cqueue_unref(L, I, &T->ref);
+	/* XXX: these lua operations are documented as able to longjmp on OOM
+	 * However, inspection of the lua source suggests that when used as below
+	 * they won't throw.
+	 *   - In lua5.1 pushing a lightuserdata doesn't allocate (they're stack allocated)
+	 *   - rawset doesn't allocate if the key already exists in the table (which it always does for this function)
+	 */
+
+	lua_getuservalue(L, I->self);
+
+	/* set thread's uservalue (it's thread) to nil */
+	lua_rawgetp(L, -1, T);
+	lua_pushnil(L);
+	lua_setuservalue(L, -2);
+	lua_pop(L, 1);
 	T->L = NULL;
 
 	LIST_REMOVE(T, le);
-	Q->thread.count--;
 
-	pool_put(&Q->pool.thread, T);
+	/* remove thread from cqueues's thread table */
+	lua_pushnil(L);
+	lua_rawsetp(L, -2, T);
+	lua_pop(L, 1);
+
+	Q->thread.count--;
 } /* thread_del() */
 
 
@@ -2295,8 +2275,7 @@ static int cqueue_attach(lua_State *L) {
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TTHREAD);
 
-	if ((error = thread_add(L, Q, &I, 2)))
-		goto error;
+	thread_add(L, Q, &I, 2);
 
 	if ((error = cqueue_tryalert(Q)))
 		goto error;
@@ -2330,8 +2309,7 @@ static int cqueue_wrap(lua_State *L) {
 	}
 	lua_xmove(L, newL, top - 1);
 
-	if ((error = thread_add(L, Q, &I, -1)))
-		goto error;
+	thread_add(L, Q, &I, -1);
 
 	if ((error = cqueue_tryalert(Q)))
 		goto error;
