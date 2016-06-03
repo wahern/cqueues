@@ -197,5 +197,26 @@ function regress.getsslctx(protocol, accept, keytype)
 	return ctx
 end -- regress.getsslctx
 
+-- test 87-alpn-disappears relies on package.searchpath
+function regress.searchpath(name, paths, sep, rep)
+	sep = (sep or "."):gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+	rep = (rep or "/"):gsub("%%", "%%%%")
+
+	local nofile = {}
+
+	for path in paths:gmatch("([^;]+)") do
+		path = path:gsub("%?", (name:gsub(sep, rep):gsub("%%", "%%%%")))
+		local fh = io.open(path, "rb")
+		if fh then
+			fh:close()
+			return path
+		end
+		nofile[#nofile + 1] = string.format("no file '%s'", path)
+	end
+
+	return nil, table.concat(nofile, "\n")
+end -- regress.searchpath
+
+package.searchpath = package.searchpath or regress.searchpath
 
 return regress
