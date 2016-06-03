@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright (C) 2015 William Ahern
+# Copyright (C) 2015-2016 William Ahern
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -132,11 +132,13 @@ export LC_ALL=C
 : ${RUNLUA_E:=}
 : ${RUNLUA_R:=1-}
 : ${RUNLUA_J:=0-}
+: ${RUNLUA_M:=6}
+: ${RUNLUA_S:=}
 : ${RUNLUA_T:=}
 : ${RUNLUA_D:=}
 : ${RUNLUA_P:=}
 
-MYVERSION=20150617
+MYVERSION=20160409
 MYVENDOR="william@25thandClement.com"
 
 TMPWD=
@@ -175,20 +177,52 @@ null_ifs() {
 	[ $# -gt 1 ] || printf "\2"
 }
 
+# glob PATTERN [MAXDEPTH] [EXEC-COMMAND] [INTERNAL:GLOB-COUNT]
+#
+# Recursive tree descending pathname generator combining features of glob(3)
+# and find(3).
+#
+glob() {
+        glob_N="${4:-0}"
+
+        IFS=
+        set +f
+        for glob_F in ${1}; do
+                [ -e "${glob_F}" ] || continue
+                if eval "${3:-printf '%s\\n'} \"\${glob_F}\""; then
+                        glob_N=$((${glob_N} + 1))
+                fi
+        done
+        set -f
+        unset IFS
+
+        if [ "${2-0}" -gt 0 ]; then
+                glob "${1%/*}/*/${1##*/}" "$((${2} - 1))" "${3:-}" "${glob_N}" || :
+        fi
+
+        [ "${glob_N}" -gt 0 ]
+}
+
 tempnam() {
 	printf "%s-%s\n" "${1}" "$(od -An -N8 -tx1 -v /dev/urandom 2>>/dev/null | tr -cd '0123456789abcdef')"
+}
+
+# chomp VARIABLE SUFFIX
+chomp() {
+	chomp_K="${1}"
+	chomp_C="${2}"
+
+	eval "chomp_V=\"\${${chomp_K}}\""
+	while [ "${chomp_V%${chomp_C}}" != "${chomp_V}" ]; do
+		chomp_V="${chomp_V%${chomp_C}}"
+	done
+	eval "${chomp_K}=\"\${chomp_V}\""
 }
 
 # istrue STRING
 istrue() {
 	case "${1#!}" in
-	true)
-		return 0
-		;;
-	yes)
-		return 0
-		;;
-	1)
+	[TtYy1]*)
 		return 0
 		;;
 	*)
@@ -207,6 +241,11 @@ isinteger() {
 		[ "${I##[0123456789]}" != "${I}" ] || return 1
 		I="${I##[0123456789]}"
 	done
+}
+
+# isdir PATH
+isdir() {
+	[ "${#1}" -gt 0 ] && [ -d "${1}" ]
 }
 
 # ver2num STRING [MAJOR] [MINOR] [PATCH]
@@ -362,8 +401,34 @@ rmwd() {
 	fi
 }
 
+# set LUA_API and LUA_PRELOAD if LUA was specified from environment
+checklua() {
+	case "${LUA_API:-}" in
+	[0123456789].[0123456789])
+		;;
+	*)
+		# need absolute path
+		if [ "${LUA#*/}" = "${LUA}" ]; then
+			LUA="$(command -v "${LUA}" || panic "%s: cannot find path" "${LUA}")"
+			debug "using %s" "${LUA}"
+		fi
+		V="$(getapi "${LUA}")"
+		LUA_API="$(num2api ${V:-0})"
+		debug "%s API is %s" "${LUA}" "${LUA_API}"
+		;;
+	esac
+
+	if istrue "${RUNLUA_T}"; then
+		if ! istrue "${LUA_PRELOAD+true}"; then
+			LUA_PRELOAD="$(getpth "${LUA}")"
+			[ -z "${LUA_PRELOAD}" ] || debug "preloading %s" "${LUA_PRELOAD}"
+		fi
+	fi
+}
+
 findlua() {
 	if [ -n "${LUA:-}" ]; then
+		checklua
 		printf "%s\n" "${LUA}"
 		return 0
 	fi
@@ -467,6 +532,7 @@ findlua() {
 	rmwd
 
 	LUA="${found_PATH}"
+	LUA_API="$(num2api "${found_API}")"
 	LUA_PRELOAD="${found_PTH-}"
 
 	[ -n "${LUA}" ] || panic "unable to locate Lua interpreter"
@@ -475,6 +541,59 @@ findlua() {
 	[ -n "${LUA_PRELOAD}" ] && debug "preloading %s" "${LUA_PRELOAD}"
 
 	printf "%s\n" "${LUA}"
+}
+
+# scan_api2key PREFIX VERSION
+scan_api2key() {
+	case "${2}" in
+	5.1)
+		printf "%s" "${1}"
+		;;
+	*)
+		printf "%s_%s" "${1}" "$(printf "%s" "${2}" | tr '.' '_')"
+		;;
+	esac
+}
+
+scan_addenv() {
+	[ "${#1}" -gt 0 ] || return 0
+
+	addenv_K="$(scan_api2key "${2}" "${3}")"
+	debug "adding %s to %s" "${1}" "${addenv_K}"
+
+	# NB: append left to right (see note in scan routine)
+	eval "addenv_V=\"\${${addenv_K}:-;;}\""
+	addenv_V="${1};${addenv_V#;}"
+	eval "export ${addenv_K}=\"\${addenv_V}\""
+}
+
+# callback from glob for paths matching */${LUA_API}
+scan__add() {
+	isdir "${1}" || return 0
+
+	# NB: test in subshell as our glob routine isn't reentrant
+	if (glob "${1}/*.lua" ${RUNLUA_M} ":"); then
+		scan_addenv "${1}/?.lua" LUA_PATH "${LUA_API}"
+	fi
+
+	if (glob "${1}/*.so" ${RUNLUA_M} ":"); then
+		scan_addenv "${1}/?.so" LUA_CPATH "${LUA_API}"
+	fi
+}
+
+scan() {
+	# NB: process from right to left and append left to right
+	while [ ${#RUNLUA_S} -gt 0 ]; do
+		scan_D="${RUNLUA_S##*;}"
+
+		if isdir "${scan_D}"; then
+			debug "scanning %s" "${scan_D}"
+			glob "${scan_D}/${LUA_API}" "${RUNLUA_M}" scan__add || :
+		fi
+
+		RUNLUA_S="${RUNLUA_S%${scan_D}}"
+		chomp RUNLUA_S ";"
+	done
 }
 
 noenv() {
@@ -496,7 +615,7 @@ setopt() {
 
 usage() {
 	cat <<-EOF
-	Usage: ${0##*/} [-e:il:vEr:j:Js:tdpVh] [PATH [...]]
+	Usage: ${0##*/} [-e:il:vEr:j:Jms:tdpVh] [PATH [...]]
 	  -e STRING  execute statement
 	  -i         enter interactive mode after executing PATH
 	  -l STRING  require package
@@ -505,6 +624,8 @@ usage() {
 	  -r RANGE   run specific Lua version
 	  -j RANGE   run specific LuaJIT version
 	  -J         exclude LuaJIT from candidate interpreters
+	  -m NUMBER  limit recursion to NUMBER
+	  -s PATH    scan directory tree for Lua modules
 	  -t         preload POSIX threading library
 	  -d         enable debug logging (twice for even more logging)
 	  -p         print path of Lua interpreter
@@ -522,6 +643,7 @@ usage() {
 	  RUNLUA_E=BOOLEAN  same as -E if TRUE
 	  RUNLUA_R=RANGE    same as -r (use !RANGE to override -r)
 	  RUNLUA_J=RANGE    same as -j (use !RANGE to override -j or -J)
+	  RUNLUA_M=NUMBER   same as -m
 	  RUNLUA_T=BOOLEAN  same as -t if TRUE
 	  RUNLUA_D=NUMBER   set debug level (e.g. same -dd if 2)
 	  RUNLUA_P=BOOLEAN  same as -p if TRUE
@@ -600,11 +722,19 @@ while getopts "e:il:vEr:j:Js:tdpVh" OPTC; do
 	J)
 		setopt RUNLUA_J "0-0"
 		;;
+	m)
+		setopt RUNLUA_M "${OPTARG}"
+		;;
+	s)
+		if [ "${RUNLUA_S}" = "${RUNLUA_S#!}" ]; then
+			MAIN_S="${MAIN_S-}${MAIN_S:+;}${OPTARG}"
+		fi
+		;;
 	t)
 		setopt RUNLUA_T yes
 		;;
 	d)
-		main_DEBUG="$((${main_DEBUG:-0} + 1))"
+		MAIN_D="$((${MAIN_D:-0} + 1))"
 		;;
 	p)
 		setopt RUNLUA_P yes
@@ -655,7 +785,13 @@ if [ ${ARGC} -gt 0 ]; then
 	done
 fi
 
-setopt RUNLUA_D "${main_DEBUG:-0}"
+RUNLUA_M="${RUNLUA_M#!}"
+isinteger "${RUNLUA_M}" || panic "%s: not an integer" "${RUNLUA_M}"
+
+RUNLUA_S="${MAIN_S-}${MAIN_S:+;}${RUNLUA_S#!}"
+chomp RUNLUA_S ";"
+
+setopt RUNLUA_D "${MAIN_D:-0}"
 isinteger "${RUNLUA_D#!}" || panic "%s: not an integer" "${RUNLUA_D#!}"
 
 if istrue "${RUNLUA_E}"; then
@@ -668,6 +804,8 @@ if istrue "${RUNLUA_P}"; then
 	printf "%s\n" "${LUA}"
 	exit 0
 fi
+
+scan
 
 if [ ${#_LC_ALL} -gt 0 ]; then
 	LC_ALL="${_LC_ALL#X}"
