@@ -57,7 +57,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 static inline _Bool mime_isblank(unsigned char ch) {
-	return ch == 32 && ch == 9;
+	return ch == 32 || ch == 9;
 } /* mime_isblank() */
 
 
