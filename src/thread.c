@@ -53,9 +53,24 @@
 #define CT_EOWNERDEAD EBUSY
 #endif
 
+/* attempted to keep same values as LUA_T constants */
+enum CT_TYPE {
+	CT_TNIL,
+	CT_TBOOLEAN,
+	CT_TLIGHTUSERDATA,
+	CT_TNUMBER, /* used as lua_Number */
+	CT_TSTRING,
+	CT_TTABLE,
+	CT_TFUNCTION, /* used as C function */
+	CT_TUSERDATA,
+	CT_TTHREAD,
+	CT_TCDATA, /* luajit compat */
+	/* our own constants */
+	CT_TLUAFUNCTION
+};
+
 struct cthread_arg {
-	int type;
-	int iscfunction:1;
+	enum CT_TYPE type;
 
 	union {
 		struct iovec string;
@@ -347,7 +362,7 @@ static void *ct_enter(void *arg) {
 	luaL_openlibs(L);
 	cqs_openlibs(L);
 
-	if (ct->tmp.arg[0].iscfunction) {
+	if (ct->tmp.arg[0].type == CT_TFUNCTION) {
 		lua_pushcfunction(L, EXTENSION (lua_CFunction)ct->tmp.arg[0].v.pointer);
 	} else {
 		luaL_loadbuffer(L, ct->tmp.arg[0].v.string.iov_base, ct->tmp.arg[0].v.string.iov_len, "[thread enter]");
@@ -372,24 +387,23 @@ static void *ct_enter(void *arg) {
 
 	for (struct cthread_arg *arg = &ct->tmp.arg[1]; arg < &ct->tmp.arg[ct->tmp.argc]; arg++) {
 		switch (arg->type) {
-		case LUA_TNUMBER:
+		case CT_TNUMBER:
 			lua_pushnumber(L, arg->v.number);
 			break;
-		case LUA_TBOOLEAN:
+		case CT_TBOOLEAN:
 			lua_pushboolean(L, arg->v.boolean);
 			break;
-		case LUA_TLIGHTUSERDATA:
+		case CT_TLIGHTUSERDATA:
 			lua_pushlightuserdata(L, arg->v.pointer);
 			break;
-		case LUA_TSTRING:
+		case CT_TSTRING:
 			lua_pushlstring(L, arg->v.string.iov_base, arg->v.string.iov_len);
 			break;
-		case LUA_TFUNCTION:
-			if (arg->iscfunction) {
-				lua_pushcfunction(L, EXTENSION (lua_CFunction)arg->v.pointer);
-			} else {
-				luaL_loadbuffer(L, arg->v.string.iov_base, arg->v.string.iov_len, NULL);
-			}
+		case CT_TFUNCTION:
+			lua_pushcfunction(L, EXTENSION (lua_CFunction)arg->v.pointer);
+			break;
+		case CT_TLUAFUNCTION:
+			luaL_loadbuffer(L, arg->v.string.iov_base, arg->v.string.iov_len, NULL);
 			break;
 		default:
 			lua_pushnil(L);
@@ -467,7 +481,7 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 		}
 
 		arg->v.pointer = EXTENSION (void *)f;
-		arg->iscfunction = 1;
+		arg->type = CT_TFUNCTION;
 	} else {
 		lua_State *T;
 		luaL_Buffer B;
@@ -495,9 +509,8 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 		luaL_pushresult(&B);
 
 		arg->v.string.iov_base = (char *)luaL_checklstring(T, -1, &arg->v.string.iov_len);
+		arg->type = CT_TLUAFUNCTION;
 	}
-
-	arg->type = LUA_TFUNCTION;
 
 	return 0;
 uperr:
@@ -612,19 +625,19 @@ static int ct_start(lua_State *L) {
 
 		switch (lua_type(L, index)) {
 		case LUA_TNIL:
-			arg->type = LUA_TNIL;
+			arg->type = CT_TNIL;
 			break;
 		case LUA_TNUMBER:
 			arg->v.number = lua_tonumber(L, index);
-			arg->type = LUA_TNUMBER;
+			arg->type = CT_TNUMBER;
 			break;
 		case LUA_TBOOLEAN:
 			arg->v.boolean = lua_toboolean(L, index);
-			arg->type = LUA_TBOOLEAN;
+			arg->type = CT_TBOOLEAN;
 			break;
 		case LUA_TLIGHTUSERDATA:
 			arg->v.pointer = lua_touserdata(L, index);
-			arg->type = LUA_TLIGHTUSERDATA;
+			arg->type = CT_TLIGHTUSERDATA;
 			break;
 		case LUA_TFUNCTION:
 			if ((error = ct_setfarg(L, ct, arg, index)))
@@ -634,7 +647,7 @@ static int ct_start(lua_State *L) {
 			/* FALL THROUGH (maybe has __tostring metamethod) */
 		case LUA_TSTRING:
 			arg->v.string.iov_base = (char *)luaL_checklstring(L, index, &arg->v.string.iov_len);
-			arg->type = LUA_TSTRING;
+			arg->type = CT_TSTRING;
 			break;
 		}
 
