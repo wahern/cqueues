@@ -66,6 +66,7 @@ enum CT_TYPE {
 	CT_TTHREAD,
 	CT_TCDATA, /* luajit compat */
 	/* our own constants */
+	CT_TINTEGER,
 	CT_TLUAFUNCTION
 };
 
@@ -75,6 +76,7 @@ struct cthread_arg {
 	union {
 		struct iovec string;
 		lua_Number number;
+		lua_Integer integer;
 		_Bool boolean;
 		void *pointer;
 	} v;
@@ -390,6 +392,9 @@ static void *ct_enter(void *arg) {
 		case CT_TNUMBER:
 			lua_pushnumber(L, arg->v.number);
 			break;
+		case CT_TINTEGER:
+			lua_pushinteger(L, arg->v.integer);
+			break;
 		case CT_TBOOLEAN:
 			lua_pushboolean(L, arg->v.boolean);
 			break;
@@ -628,6 +633,13 @@ static int ct_start(lua_State *L) {
 			arg->type = CT_TNIL;
 			break;
 		case LUA_TNUMBER:
+#if LUA_VERSION_NUM >= 503
+			if (lua_isinteger(L, index)) {
+				arg->v.integer = lua_tointeger(L, index);
+				arg->type = CT_TINTEGER;
+				break;
+			}
+#endif
 			arg->v.number = lua_tonumber(L, index);
 			arg->type = CT_TNUMBER;
 			break;
