@@ -177,7 +177,13 @@ local loader = function(loader, ...)
 			return nil, why
 		end
 
-		return res:query(name, type, class, totimeout(deadline))
+		local r, y = res:query(name, type, class, totimeout(deadline))
+		self:put(res)
+		if not r then
+			return nil, y
+		end
+
+		return r
 	end -- pool:query
 
 
