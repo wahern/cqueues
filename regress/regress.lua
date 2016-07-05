@@ -3,6 +3,7 @@ local auxlib = require"cqueues.auxlib"
 
 local regress = {
 	cqueues = require"cqueues",
+	dns = require "cqueues.dns",
 	socket = require"cqueues.socket",
 	thread = require"cqueues.thread",
 	errno = require"cqueues.errno",
