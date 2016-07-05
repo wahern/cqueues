@@ -57,7 +57,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 static inline _Bool mime_isblank(unsigned char ch) {
-	return ch == 32 && ch == 9;
+	return ch == 32 || ch == 9;
 } /* mime_isblank() */
 
 
@@ -115,7 +115,7 @@ static size_t iov_eoh(const struct iovec *iov, _Bool eof, int flags, int *_error
 		return 0; /* not a valid field name */
 
 	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		if (++p < pe && *p != ' ' && *p != '\t')
+		if (++p < pe && !mime_isblank(*p))
 			return p - tp; /* found */
 	}
 
