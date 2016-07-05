@@ -121,10 +121,10 @@ local loader = function(loader, ...)
 				if res then
 					break
 				else
-					self.condvar:wait(totimeout(deadline))
 					if deadline and deadline <= monotime() then
 						return nil, ETIMEDOUT
 					end
+					self.condvar:wait(totimeout(deadline))
 				end
 			elseif self.alive.n < self.hiwat then
 				local why
