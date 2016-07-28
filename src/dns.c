@@ -86,9 +86,6 @@ static int optfbool(lua_State *L, int t, const char *k, _Bool def) {
 } /* optfbool() */
 
 
-static void dnsL_loadall(lua_State *);
-
-
 /*
  * R E S O U R C E  R E C O R D  B I N D I N G S
  *
@@ -758,13 +755,12 @@ int luaopen__cqueues_dns_record(lua_State *L) {
 		{ "SHA1", DNS_SSHFP_SHA1 },
 	};
 
-	dnsL_loadall(L);
+	rr_loadall(L);
 
 	luaL_newlib(L, rr_globals);
 
 	lua_createtable(L, 0, countof(classes));
 	cqs_setmacros(L, -1, classes, countof(classes), 1);
-
 	lua_setfield(L, -2, "class");
 
 	lua_createtable(L, 0, countof(types));
@@ -1131,7 +1127,7 @@ int luaopen__cqueues_dns_packet(lua_State *L) {
 		{ "QBUFSIZ", DNS_P_QBUFSIZ },
 	};
 
-	dnsL_loadall(L);
+	cqs_newmetatable(L, PACKET_CLASS, pkt_methods, pkt_metatable, 0);
 
 	luaL_newlib(L, pkt_globals);
 
@@ -1637,7 +1633,7 @@ static const luaL_Reg resconf_globals[] = {
 };
 
 int luaopen__cqueues_dns_config(lua_State *L) {
-	dnsL_loadall(L);
+	cqs_newmetatable(L, RESCONF_CLASS, resconf_methods, resconf_metatable, 0);
 
 	luaL_newlib(L, resconf_globals);
 
@@ -1819,7 +1815,10 @@ static const luaL_Reg hosts_globals[] = {
 };
 
 int luaopen__cqueues_dns_hosts(lua_State *L) {
-	dnsL_loadall(L);
+	// not needed until dns_hosts_query bound
+	//cqs_requiref(L, "_cqueues.dns.packet", &luaopen__cqueues_dns_packet, 0);
+
+	cqs_newmetatable(L, HOSTS_CLASS, hosts_methods, hosts_metatable, 0);
 
 	luaL_newlib(L, hosts_globals);
 
@@ -2040,7 +2039,11 @@ static const luaL_Reg hints_globals[] = {
 };
 
 int luaopen__cqueues_dns_hints(lua_State *L) {
-	dnsL_loadall(L);
+	cqs_newmetatable(L, HINTS_CLASS, hints_methods, hints_metatable, 0);
+
+	cqs_requiref(L, "_cqueues.dns.config", &luaopen__cqueues_dns_config, 0);
+	// not needed until dns_hints_query bound
+	//cqs_requiref(L, "_cqueues.dns.packet", &luaopen__cqueues_dns_packet, 0);
 
 	luaL_newlib(L, hints_globals);
 
@@ -2209,6 +2212,7 @@ error:
 		return 2;
 	}
 
+	/* FIXME: Leaks packet if lua_newuserdata throws */
 	size = dns_p_sizeof(pkt);
 	error = dns_p_study(dns_p_copy(dns_p_init(lua_newuserdata(L, size), size), pkt));
 	free(pkt);
@@ -2347,7 +2351,12 @@ static const luaL_Reg res_globals[] = {
 };
 
 int luaopen__cqueues_dns_resolver(lua_State *L) {
-	dnsL_loadall(L);
+	cqs_newmetatable(L, RESOLVER_CLASS, res_methods, res_metatable, 0);
+
+	cqs_requiref(L, "_cqueues.dns.config", &luaopen__cqueues_dns_config, 0);
+	cqs_requiref(L, "_cqueues.dns.hosts", &luaopen__cqueues_dns_hosts, 0);
+	cqs_requiref(L, "_cqueues.dns.hints", &luaopen__cqueues_dns_hints, 0);
+	cqs_requiref(L, "_cqueues.dns.packet", &luaopen__cqueues_dns_packet, 0);
 
 	luaL_newlib(L, res_globals);
 
@@ -2405,20 +2414,7 @@ static const luaL_Reg dnsL_globals[] = {
 int luaopen__cqueues_dns(lua_State *L) {
 	luaL_newlib(L, dnsL_globals);
 
-	dnsL_loadall(L);
-
 	return 1;
 } /* luaopen__cqueues_dns() */
 
-
-static void dnsL_loadall(lua_State *L) {
-	rr_loadall(L);
-
-	cqs_newmetatable(L, PACKET_CLASS, pkt_methods, pkt_metatable, 0);
-	cqs_newmetatable(L, RESCONF_CLASS, resconf_methods, resconf_metatable, 0);
-	cqs_newmetatable(L, HOSTS_CLASS, hosts_methods, hosts_metatable, 0);
-	cqs_newmetatable(L, HINTS_CLASS, hints_methods, hints_metatable, 0);
-	cqs_newmetatable(L, RESOLVER_CLASS, res_methods, res_metatable, 0);
-	lua_pop(L, 5);
-} /* dnsL_loadall() */
 
