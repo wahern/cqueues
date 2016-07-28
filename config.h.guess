@@ -34,7 +34,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define AG_VENDOR  "william+autoguess@25thandClement.com"
-#define AG_VERSION 20160318L
+#define AG_VERSION 20160728L
 
 
 /*
@@ -284,7 +284,7 @@
 #include <limits.h>
 
 #ifndef AG_MUSL_MAYBE
-#define AG_MUSL_MAYBE (__linux && !__GLIBC__ && !__BIONIC__)
+#define AG_MUSL_MAYBE (__linux__ && !__GLIBC__ && !__BIONIC__)
 #endif
 
 #ifndef HAVE_SYS_PARAM_H
@@ -295,7 +295,7 @@
  * NOTE: Conditionally load <sys/param.h> so we don't unnecessarily pollute
  * the namespace.
  */
-#if HAVE_SYS_PARAM_H && !__linux && !__sun && !_AIX
+#if HAVE_SYS_PARAM_H && !__linux__ && !__sun && !_AIX
 #include <sys/param.h> /* __FreeBSD_version __NetBSD_Prereq__ BSD OpenBSD */
 #endif
 
@@ -462,12 +462,12 @@
 #endif
 
 #ifndef HAVE_SYS_AUXV_H
-#define HAVE_SYS_AUXV_H_ (AG_GLIBC_PREREQ(2,16) || (!AG_GLIBC_PREREQ(0,0) && __linux) || __sun)
+#define HAVE_SYS_AUXV_H_ (AG_GLIBC_PREREQ(2,16) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || __sun)
 #define HAVE_SYS_AUXV_H ag_test_include(<sys/auxv.h>, HAVE_SYS_AUXV_H_)
 #endif
 
 #ifndef HAVE_SYS_EPOLL_H
-#define HAVE_SYS_EPOLL_H ag_test_include(<sys/epoll.h>, __linux)
+#define HAVE_SYS_EPOLL_H ag_test_include(<sys/epoll.h>, __linux__)
 #endif
 
 #ifndef HAVE_SYS_EVENT_H
@@ -475,16 +475,16 @@
 #endif
 
 #ifndef HAVE_SYS_EVENTFD_H
-#define HAVE_SYS_EVENTFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux) || EFD_CLOEXEC)
+#define HAVE_SYS_EVENTFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || EFD_CLOEXEC)
 #define HAVE_SYS_EVENTFD_H ag_test_include(<sys/eventfd.h>, HAVE_SYS_EVENTFD_H_)
 #endif
 
 #ifndef HAVE_SYS_INOTIFY_H
-#define HAVE_SYS_INOTIFY_H ag_test_include(<sys/inotify.h>, __linux)
+#define HAVE_SYS_INOTIFY_H ag_test_include(<sys/inotify.h>, __linux__)
 #endif
 
 #ifndef HAVE_SYS_SIGNALFD_H
-#define HAVE_SYS_SIGNALFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux) || SFD_CLOEXEC)
+#define HAVE_SYS_SIGNALFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || SFD_CLOEXEC)
 #define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, HAVE_SYS_SIGNALFD_H_)
 #endif
 
@@ -501,7 +501,7 @@
 #endif
 
 #ifndef HAVE_SYS_TIMERFD_H
-#define HAVE_SYS_TIMERFD_H_  (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux) || TFD_CLOEXEC)
+#define HAVE_SYS_TIMERFD_H_  (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || TFD_CLOEXEC)
 #define HAVE_SYS_TIMERFD_H ag_test_include(<sys/timerfd.h>, HAVE_SYS_TIMERFD_H_)
 #endif
 
@@ -520,7 +520,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE_STRUCT_SOCKADDR_SA_LEN
-#define HAVE_STRUCT_SOCKADDR_SA_LEN (!__linux && !__sun)
+#define HAVE_STRUCT_SOCKADDR_SA_LEN (!__linux__ && !__sun)
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_ATIM
@@ -570,7 +570,7 @@
 #endif
 
 #ifndef HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME
-#define HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME (__linux && HAVE__GNU_SOURCE)
+#define HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME (__linux__ && HAVE__GNU_SOURCE)
 #endif
 
 #ifndef HAVE_DECL_PTHREAD_MUTEX_ROBUST
@@ -596,7 +596,7 @@
 #endif
 
 #ifndef HAVE_PROGRAM_INVOCATION_SHORT_NAME
-#define HAVE_PROGRAM_INVOCATION_SHORT_NAME (__linux)
+#define HAVE_PROGRAM_INVOCATION_SHORT_NAME (__linux__)
 #endif
 
 #ifndef HAVE_SYS_SIGLIST
@@ -715,7 +715,7 @@
 #endif
 
 #ifndef HAVE_ISSETUGID
-#define HAVE_ISSETUGID ((!__linux || (AG_MUSL_MAYBE && HAVE__GNU_SOURCE)) && !_AIX)
+#define HAVE_ISSETUGID ((!__linux__ || (AG_MUSL_MAYBE && HAVE__GNU_SOURCE)) && !_AIX)
 #endif
 
 #if HAVE_SYS_EVENT_H
