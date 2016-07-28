@@ -444,7 +444,7 @@ static inline int cqs_setfd(int fd, int flags) {
 
 
 static inline int cqs_pipe(int fd[2], int flags) {
-#if __linux
+#if HAVE_PIPE2
 	if (0 != pipe2(fd, flags))
 		return errno;
 
