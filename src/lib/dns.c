@@ -157,7 +157,8 @@
 #define dns_same_type(a, b, def) (def)
 #endif
 #define dns_isarray(a) (!dns_same_type((a), (&(a)[0]), 0))
-#define dns_inline_assert(cond) ((void)(sizeof (struct { int:-!(cond); })))
+/* NB: "_" field silences Sun Studio "zero-sized struct/union" error diagnostic */
+#define dns_inline_assert(cond) ((void)(sizeof (struct { int:-!(cond); int _; })))
 
 #if HAVE___ASSUME
 #define dns_assume(cond) __assume(cond)
@@ -3694,8 +3695,11 @@ size_t dns_ptr_qname(void *dst, size_t lim, int af, void *addr) {
 		return dns_aaaa_arpa(dst, lim, addr);
 	case AF_INET:
 		return dns_a_arpa(dst, lim, addr);
-	default:
-		return dns_a_arpa(dst, lim, &(struct dns_a){ { INADDR_NONE } });
+	default: {
+		struct dns_a a;
+		a.addr.s_addr = INADDR_NONE;
+		return dns_a_arpa(dst, lim, &a);
+	}
 	}
 } /* dns_ptr_qname() */
 
@@ -7886,10 +7890,10 @@ struct dns_packet *dns_res_fetch(struct dns_resolver *R, int *error) {
 	struct dns_packet *P = NULL;
 
 	if (R->stack[0].state != DNS_R_DONE)
-		return *error = DNS_EUNKNOWN, NULL;
+		return *error = DNS_EUNKNOWN, (void *)0;
 
 	if (!dns_p_movptr(&P, &R->stack[0].answer))
-		return *error = DNS_EFETCHED, NULL;
+		return *error = DNS_EFETCHED, (void *)0;
 
 	return P;
 } /* dns_res_fetch() */
