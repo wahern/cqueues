@@ -1,3 +1,12 @@
+liblua-cqueues (20160808-0) unstable; urgency=low
+
+  * Use userdata values (userdata environments in Lua 5.1) instead of relying
+    on ephemeron tables.
+  * Update dns.c with various bug fixes.
+  * Immediately put resolvers back into resolver pool. (@torhve)
+
+ -- William Ahern <william@25thandClement.com>  Mon, 08 Aug 2016 20:22:04 -0700
+
 liblua-cqueues (20160318-0) unstable; urgency=low
 
   * Refactor build framework to make it easier to avoid automatic Lua
