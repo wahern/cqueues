@@ -25,11 +25,17 @@
  */
 #include "config.h"
 
-#include <string.h>
+#include <errno.h>
 #include <math.h>
 #include <signal.h>
-#include <errno.h>
-
+#include <string.h>
+#if HAVE_SYS_EVENT_H
+#include <sys/event.h>
+#endif
+#if HAVE_SYS_SIGNALFD_H
+#include <sys/signalfd.h>
+#endif
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <lua.h>
@@ -43,15 +49,13 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#if ENABLE_EPOLL
-#include <sys/signalfd.h>
-#elif ENABLE_PORTS
-#include <port.h>
-#else
-#include <sys/time.h>
-#include <sys/event.h>
+#ifndef ENABLE_SIGNALFD
+#define ENABLE_SIGNALFD HAVE_SIGNALFD
 #endif
 
+#ifndef ENABLE_EVFILT_SIGNAL
+#define ENABLE_EVFILT_SIGNAL (ENABLE_KQUEUE && defined EVFILT_SIGNAL)
+#endif
 
 #define LSL_CLASS "CQS Signal"
 
@@ -72,28 +76,29 @@ static void sfd_preinit(struct signalfd *S) {
 	sigemptyset(&S->polling);
 	sigemptyset(&S->pending);
 
-#if ENABLE_PORTS
-	S->timeout = 1.1;
-#else
+#if ENABLE_SIGNALFD || ENABLE_EVFILT_SIGNAL
 	S->timeout = NAN;
+#else
+	S->timeout = 1.1;
 #endif
 } /* sfd_preinit() */
 
 
 static int sfd_init(struct signalfd *S) {
-#if ENABLE_EPOLL
+#if ENABLE_SIGNALFD
 	if (-1 == (S->fd = signalfd(-1, &S->desired, SFD_NONBLOCK|SFD_CLOEXEC)))
 		return errno;
 
 	S->polling = S->desired;
 
 	return 0;
-#elif ENABLE_PORTS
-	return 0;
-#else
+#elif ENABLE_EVFILT_SIGNAL
 	if (-1 == (S->fd = kqueue()))
 		return errno;
 
+	return 0;
+#else
+	(void)S;
 	return 0;
 #endif
 } /* sfd_init() */
@@ -117,7 +122,7 @@ static int sfd_diff(const sigset_t *a, const sigset_t *b) {
 
 
 static int sfd_update(struct signalfd *S) {
-#if ENABLE_EPOLL
+#if ENABLE_SIGNALFD
 	if (sfd_diff(&S->desired, &S->polling)) {
 		if (-1 == signalfd(S->fd, &S->desired, 0))
 			return errno;
@@ -126,9 +131,7 @@ static int sfd_update(struct signalfd *S) {
 	}
 
 	return 0;
-#elif ENABLE_PORTS
-	return 0;
-#else
+#elif ENABLE_EVFILT_SIGNAL
 	int signo;
 
 	while ((signo = sfd_diff(&S->desired, &S->polling))) {
@@ -152,12 +155,15 @@ static int sfd_update(struct signalfd *S) {
 	}
 
 	return 0;
+#else
+	(void)S;
+	return 0;
 #endif
 } /* sfd_update() */
 
 
 static int sfd_query(struct signalfd *S) {
-#if ENABLE_EPOLL
+#if ENABLE_SIGNALFD
 	struct signalfd_siginfo info;
 	long n;
 
@@ -180,14 +186,7 @@ syerr:
 	}
 
 	return errno;
-#elif ENABLE_PORTS
-	int signo;
-
-	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))
-		sigaddset(&S->pending, signo);
-
-	return 0;
-#else
+#elif ENABLE_EVFILT_SIGNAL
 	struct kevent event;
 	int n;
 
@@ -205,6 +204,16 @@ retry:
 	}
 
 	return sfd_update(S);
+#elif HAVE_SIGTIMEDWAIT
+	int signo;
+
+	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))
+		sigaddset(&S->pending, signo);
+
+	return 0;
+#else
+	(void)S;
+	return EOPNOTSUPP;
 #endif
 } /* sfd_query() */
 
@@ -519,5 +528,4 @@ int luaopen__cqueues_signal(lua_State *L) {
 
 	return 1;
 } /* luaopen__cqueues_signal() */
-
 
