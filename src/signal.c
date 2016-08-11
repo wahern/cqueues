@@ -106,7 +106,9 @@ static int signal_flags(int *flags) {
 }
 
 struct signalfd {
+	int features;
 	int fd;
+
 	sigset_t desired;
 	sigset_t polling;
 	sigset_t pending;
@@ -116,6 +118,7 @@ struct signalfd {
 
 
 static void sfd_preinit(struct signalfd *S) {
+	S->features = 0;
 	S->fd = -1;
 
 	sigemptyset(&S->desired);
@@ -132,16 +135,42 @@ static void sfd_preinit(struct signalfd *S) {
 
 static int sfd_init(struct signalfd *S) {
 #if ENABLE_SIGNALFD
+	S->features |= SIGNAL_SIGNALFD;
+
 	if (-1 == (S->fd = signalfd(-1, &S->desired, SFD_NONBLOCK|SFD_CLOEXEC)))
 		return errno;
 
 	S->polling = S->desired;
 
 	return 0;
-#elif ENABLE_EVFILT_SIGNAL
-	if (-1 == (S->fd = kqueue()))
+#elif ENABLE_EVFILT_SIGNAL && HAVE_KQUEUE1
+	S->features |= SIGNAL_EVFILT_SIGNAL | SIGNAL_KQUEUE1;
+
+	if (-1 == (S->fd = kqueue1(O_CLOEXEC)))
 		return errno;
 
+	return 0;
+#elif ENABLE_EVFILT_SIGNAL
+	int flags, error;
+
+	S->features |= SIGNAL_EVFILT_SIGNAL | SIGNAL_KQUEUE;
+
+	if (-1 == (S->fd = kqueue()))
+		goto syerr;
+	if (-1 == (flags = fcntl(S->fd, F_GETFL)))
+		goto syerr;
+	if (-1 == fcntl(S->fd, F_SETFD, flags|FD_CLOEXEC))
+		goto syerr;
+
+	return 0;
+syerr:
+	error = errno;
+
+	cqs_closefd(&S->fd);
+
+	return error;
+#elif ENABLE_SIGTIMEDWAIT
+	S->features |= SIGNAL_SIGTIMEDWAIT;
 	return 0;
 #else
 	(void)S;
@@ -294,6 +323,15 @@ static int lsl__gc(lua_State *L) {
 } /* lsl__gc() */
 
 
+static int lsl_features(lua_State *L) {
+	struct signalfd *S = luaL_checkudata(L, 1, LSL_CLASS);
+
+	lua_pushinteger(L, S->features);
+
+	return 1;
+} /* lsl_features() */
+
+
 static int lsl_wait(lua_State *L) {
 	struct signalfd *S = luaL_checkudata(L, 1, LSL_CLASS);
 	sigset_t none;
@@ -432,6 +470,7 @@ static int lsl_flags(lua_State *L) {
 
 
 static const luaL_Reg lsl_methods[] = {
+	{ "features",   &lsl_features },
 	{ "wait",       &lsl_wait },
 	{ "pollfd",     &lsl_pollfd },
 	{ "events",     &lsl_events },
