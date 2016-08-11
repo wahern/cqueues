@@ -59,6 +59,52 @@
 
 #define LSL_CLASS "CQS Signal"
 
+#define SIGNAL_SIGNALFD      0x01
+#define SIGNAL_EVFILT_SIGNAL 0x02
+#define SIGNAL_SIGTIMEDWAIT  0x04
+#define SIGNAL_KQUEUE        0x08
+#define SIGNAL_KQUEUE1       0x10
+
+static int signal_features(void) {
+	return 0
+#if ENABLE_SIGNALFD
+	| SIGNAL_SIGNALFD
+#endif
+#if ENABLE_EVFILT_SIGNAL
+	| SIGNAL_EVFILT_SIGNAL
+#endif
+#if HAVE_SIGTIMEDWAIT
+	| SIGNAL_SIGTIMEDWAIT
+#endif
+#if HAVE_KQUEUE
+	| SIGNAL_KQUEUE
+#endif
+#if HAVE_KQUEUE1
+	| SIGNAL_KQUEUE1
+#endif
+	;
+}
+
+static const char *signal_strflag(int flag) {
+	static const char *const table[32] = {
+		[0] = "signalfd", "EVFILT_SIGNAL", "sigtimedwait",
+		      "kqueue", "kqueue1",
+	};
+	int i = ffs(0xFFFFFFFF & flag);
+	return (i)? table[i - 1] : NULL;
+}
+
+static int signal_flags(int *flags) {
+	while (0xFFFFFFFF & *flags) {
+		int flag = 1 << (ffs(0xFFFFFFFF & *flags) - 1);
+		*flags &= ~flag;
+		if (signal_strflag(flag))
+			return flag;
+	}
+
+	return 0;
+}
+
 struct signalfd {
 	int fd;
 	sigset_t desired;
@@ -334,6 +380,57 @@ static int lsl_interpose(lua_State *L) {
 } /* lsl_interpose() */
 
 
+static int lsl_strflag(lua_State *L) {
+	int top = lua_gettop(L), count = 0;
+
+	for (int i = 1; i <= top; i++) {
+		int flags = luaL_checkint(L, i);
+		int flag;
+
+		while ((flag = signal_flags(&flags))) {
+			const char *txt;
+
+			if (!(txt = signal_strflag(flag)))
+				continue;
+			luaL_checkstack(L, 1, "too many arguments");
+			lua_pushstring(L, txt);
+			count++;
+		}
+	}
+
+	return count;
+} /* lsl_strflag() */
+
+
+static int lsl_nxtflag(lua_State *L) {
+	int flags = (int)lua_tointeger(L, lua_upvalueindex(1));
+	int flag;
+
+	if ((flag = signal_flags(&flags))) {
+		lua_pushinteger(L, flags);
+		lua_replace(L, lua_upvalueindex(1));
+
+		lua_pushinteger(L, flag);
+
+		return 1;
+	}
+
+	return 0;
+} /* lsl_nxtflag() */
+
+static int lsl_flags(lua_State *L) {
+	int i, flags = 0;
+
+	for (i = 1; i <= lua_gettop(L); i++)
+		flags |= luaL_checkint(L, i);
+
+	lua_pushinteger(L, flags);
+	lua_pushcclosure(L, &lsl_nxtflag, 1);
+
+	return 1;
+} /* lsl_flags() */
+
+
 static const luaL_Reg lsl_methods[] = {
 	{ "wait",       &lsl_wait },
 	{ "pollfd",     &lsl_pollfd },
@@ -478,6 +575,9 @@ static const luaL_Reg ls_globals[] = {
 	{ "listen",    &lsl_listen },
 	{ "type",      &lsl_type },
 	{ "interpose", &lsl_interpose },
+	{ "strflag",   &lsl_strflag },
+	{ "flags",     &lsl_flags },
+	{ "interpose", &lsl_interpose },
 	{ "ignore",    &ls_ignore },
 	{ "default",   &ls_default },
 	{ "discard",   &ls_discard },
@@ -504,6 +604,12 @@ int luaopen__cqueues_signal(lua_State *L) {
 		{ "SIGTERM", SIGTERM },
 		{ "SIGUSR1", SIGUSR1 },
 		{ "SIGUSR2", SIGUSR2 },
+	}, flag[] = {
+		{ "SIGNALFD",      SIGNAL_SIGNALFD },
+		{ "EVFILT_SIGNAL", SIGNAL_EVFILT_SIGNAL },
+		{ "SIGTIMEDWAIT",  SIGNAL_SIGTIMEDWAIT },
+		{ "KQUEUE",        SIGNAL_KQUEUE },
+		{ "KQUEUE1",       SIGNAL_KQUEUE1 },
 	};
 	unsigned i;
 
@@ -517,14 +623,23 @@ int luaopen__cqueues_signal(lua_State *L) {
 	luaL_newlib(L, ls_globals);
 
 	for (i = 0; i < sizeof siglist / sizeof *siglist; i++) {
-		lua_pushstring(L, siglist[i].name);
 		lua_pushinteger(L, siglist[i].value);
-		lua_settable(L, -3);
+		lua_setfield(L, -2, siglist[i].name);
 
-		lua_pushinteger(L, siglist[i].value);
 		lua_pushstring(L, siglist[i].name);
-		lua_settable(L, -3);
+		lua_rawseti(L, -2, siglist[i].value);
 	}
+
+	for (i = 0; i < sizeof flag / sizeof *flag; i++) {
+		lua_pushinteger(L, flag[i].value);
+		lua_setfield(L, -2, flag[i].name);
+
+		lua_pushstring(L, flag[i].name);
+		lua_rawseti(L, -2, flag[i].value);
+	}
+
+	lua_pushinteger(L, signal_features());
+	lua_setfield(L, -2, "FEATURES");
 
 	return 1;
 } /* luaopen__cqueues_signal() */
