@@ -428,11 +428,11 @@ static int lsl_strflag(lua_State *L) {
 		while ((flag = signal_flags(&flags))) {
 			const char *txt;
 
-			if (!(txt = signal_strflag(flag)))
-				continue;
-			luaL_checkstack(L, 1, "too many arguments");
-			lua_pushstring(L, txt);
-			count++;
+			if ((txt = signal_strflag(flag))) {
+				luaL_checkstack(L, 1, "too many results");
+				lua_pushstring(L, txt);
+				count++;
+			}
 		}
 	}
 

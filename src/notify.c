@@ -191,6 +191,7 @@ static int ln_strflag(lua_State *L) {
 		flags &= ~flag;
 
 		if ((name = notify_strflag(flag))) {
+			luaL_checkstack(L, 1, "too many results");
 			lua_pushstring(L, name);
 			count++;
 		}
