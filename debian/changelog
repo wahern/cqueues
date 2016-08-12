@@ -1,3 +1,11 @@
+liblua-cqueues (20160812-0) unstable; urgency=low
+
+  * Support older Linux environments lacking signalfd by falling back
+    to sigtimedwait as we do for Solaris.
+  * On BSDs set FD_CLOEXEC on the signal.c kqueue descriptor.
+
+ -- William Ahern <william@25thandClement.com>  Fri, 12 Aug 2016 13:20:05 -0700
+
 liblua-cqueues (20160808-0) unstable; urgency=low
 
   * Use userdata values (userdata environments in Lua 5.1) instead of relying
