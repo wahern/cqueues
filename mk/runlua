@@ -138,7 +138,7 @@ export LC_ALL=C
 : ${RUNLUA_D:=}
 : ${RUNLUA_P:=}
 
-MYVERSION=20160409
+MYVERSION=20160816
 MYVENDOR="william@25thandClement.com"
 
 TMPWD=
@@ -483,9 +483,9 @@ findlua() {
 			B="${F##*/}"
 
 			# strip pre-release suffix from basename (luajit-2.1.0-alpha)
-			B="${B%[._-]alpha}"
-			B="${B%[._-]beta}"
-			B="${B%[._-]dev}"
+			B="${B%[._-]alpha*}"
+			B="${B%[._-]beta*}"
+			B="${B%[._-]dev*}"
 
 			# strip version suffix from basename (lua51,  luajit-2.0.3)
 			while [ "${B}" != "${B%%[0123456789._-]}" ]; do
