@@ -152,7 +152,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #if HAVE___BUILTIN_TYPES_COMPATIBLE_P
-#define dns_same_type(a, b, def) __builtin_types_compatible_p(typeof (a), typeof (b))
+#define dns_same_type(a, b, def) __builtin_types_compatible_p(__typeof__ (a), __typeof__ (b))
 #else
 #define dns_same_type(a, b, def) (def)
 #endif
