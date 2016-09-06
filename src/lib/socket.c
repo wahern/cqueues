@@ -65,6 +65,33 @@
 #define BIO_set_data(bio, val) ((void)((bio)->ptr = (val)))
 #define BIO_get_data(bio) ((bio)->ptr)
 #define BIO_up_ref(bio) CRYPTO_add(&(bio)->references, 1, CRYPTO_LOCK_BIO)
+
+static void *CRYPTO_zalloc(size_t num, const char *file, int line)
+{
+    void *ret = CRYPTO_malloc(num, file, line);
+
+    if (ret != NULL)
+        memset(ret, 0, num);
+    return ret;
+}
+#define OPENSSL_zalloc(num) CRYPTO_zalloc(num, __FILE__, __LINE__)
+#define BIO_get_new_index() (0)
+static BIO_METHOD *BIO_meth_new(int type, const char *name)
+{
+    BIO_METHOD *biom = OPENSSL_zalloc(sizeof(BIO_METHOD));
+
+    if (biom != NULL) {
+        biom->type = type;
+        biom->name = name;
+    }
+    return biom;
+}
+#define BIO_meth_set_write(bio_meth, func) ((bio_meth)->bwrite = (func), 1)
+#define BIO_meth_set_read(bio_meth, func) ((bio_meth)->bread = (func), 1)
+#define BIO_meth_set_puts(bio_meth, func) ((bio_meth)->bputs = (func), 1)
+#define BIO_meth_set_ctrl(bio_meth, func) ((bio_meth)->ctrl = (func), 1)
+#define BIO_meth_set_create(bio_meth, func) ((bio_meth)->create = (func), 1)
+#define BIO_meth_set_destroy(bio_meth, func) ((bio_meth)->destroy = (func), 1)
 #endif
 
 #include "dns.h"
@@ -2385,23 +2412,32 @@ static int bio_destroy(BIO *bio) {
 	return 1;
 } /* bio_destroy() */
 
-static BIO_METHOD bio_methods = {
-	BIO_TYPE_SOURCE_SINK,
-	"struct socket*",
-	bio_write,
-	bio_read,
-	bio_puts,
-	NULL,
-	bio_ctrl,
-	bio_create,
-	bio_destroy,
-	NULL,
-};
+static BIO_METHOD *bio_methods;
 
 static BIO *so_newbio(struct socket *so, int *error) {
 	BIO *bio;
 
-	if (!(bio = BIO_new(&bio_methods))) {
+	if (bio_methods == NULL) {
+		int type = BIO_get_new_index();
+		if (type == -1) {
+			*error = SO_EOPENSSL;
+			return NULL;
+		}
+		type |= BIO_TYPE_SOURCE_SINK|BIO_TYPE_DESCRIPTOR;
+		bio_methods = BIO_meth_new(type, "struct socket*");
+		if (bio_methods == NULL) {
+			*error = SO_EOPENSSL;
+			return NULL;
+		}
+		BIO_meth_set_write(bio_methods, bio_write);
+		BIO_meth_set_read(bio_methods, bio_read);
+		BIO_meth_set_puts(bio_methods, bio_puts);
+		BIO_meth_set_ctrl(bio_methods, bio_ctrl);
+		BIO_meth_set_create(bio_methods, bio_create);
+		BIO_meth_set_destroy(bio_methods, bio_destroy);
+	}
+
+	if (!(bio = BIO_new(bio_methods))) {
 		*error = SO_EOPENSSL;
 		return NULL;
 	}
