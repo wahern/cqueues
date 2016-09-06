@@ -39,7 +39,12 @@
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
 #include <arpa/inet.h>	/* ntohs(3) */
 
+#include <openssl/ssl.h> /* SSL_CTX, SSL_CTX_free(), SSL_CTX_up_ref(), SSL, SSL_up_ref() */
+#if OPENSSL_VERSION_NUMBER < 0x10100001L
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
+#define SSL_CTX_up_ref(ctx) CRYPTO_add(&(ctx)->references, 1, CRYPTO_LOCK_SSL_CTX)
+#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
+#endif
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -1060,7 +1065,7 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 		if (S->tls.config.context)
 			SSL_CTX_free(S->tls.config.context);
 
-		CRYPTO_add(&(*ctx)->references, 1, CRYPTO_LOCK_SSL_CTX);
+		SSL_CTX_up_ref(*ctx);
 		S->tls.config.context = *ctx;
 	}
 
@@ -1099,7 +1104,7 @@ static lso_nargs_t lso_checktls(lua_State *L) {
 
 	lua_setmetatable(L, -2);
 
-	CRYPTO_add(&(*ssl)->references, 1, CRYPTO_LOCK_SSL);
+	SSL_up_ref(*ssl);
 
 	return 1;
 } /* lso_checktls() */
