@@ -2296,9 +2296,8 @@ static int cqueue_wrap(lua_State *L) {
 	luaL_checktype(L, 2, LUA_TFUNCTION);
 
 	newL = lua_newthread(L);
-	for (i = 2; i <= top; i++) {
-		lua_pushvalue(L, i);
-	}
+	lua_insert(L, 2);
+	luaL_checkstack(newL, top - 1, "too many arguments");
 	lua_xmove(L, newL, top - 1);
 
 	thread_add(L, Q, &I, -1);
