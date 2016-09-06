@@ -2343,7 +2343,6 @@ static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
 		 */
 		BIO *udata = udata_p;
 		udata->init = 0;
-		udata->num = 0;
 		udata->ptr = NULL;
 
 		return 1;
@@ -2364,7 +2363,6 @@ static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
 static int bio_create(BIO *bio) {
 	bio->init = 0;
 	bio->shutdown = 0;
-	bio->num = 0;
 	bio->ptr = NULL;
 
 	return 1;
@@ -2373,7 +2371,6 @@ static int bio_create(BIO *bio) {
 static int bio_destroy(BIO *bio) {
 	bio->init = 0;
 	bio->shutdown = 0;
-	bio->num = 0;
 	bio->ptr = NULL;
 
 	return 1;
