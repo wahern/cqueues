@@ -877,7 +877,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = lso_checkopts(L, 1);
 
 		lua_getfield(L, 1, "family");
-		family = luaL_optinteger(L, -1, AF_INET);
+		family = luaL_optinteger(L, -1, AF_UNSPEC);
 		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "type");
@@ -897,7 +897,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
-		family = luaL_optinteger(L, 3, AF_INET);
+		family = luaL_optinteger(L, 3, AF_UNSPEC);
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
@@ -916,7 +916,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
+		if (!(S->socket = so_open(host, port, 0, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -965,7 +965,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = lso_checkopts(L, 1);
 
 		lua_getfield(L, 1, "family");
-		family = luaL_optinteger(L, -1, AF_INET);
+		family = luaL_optinteger(L, -1, AF_UNSPEC);
 		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "type");
@@ -985,7 +985,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
-		family = luaL_optinteger(L, 3, AF_INET);
+		family = luaL_optinteger(L, 3, AF_UNSPEC);
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
@@ -1004,7 +1004,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
+		if (!(S->socket = so_open(host, port, 0, family, type, &opts, &error)))
 			goto error;
 	}
 
