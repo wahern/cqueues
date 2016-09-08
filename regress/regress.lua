@@ -11,6 +11,12 @@ local regress = {
 	auxlib = auxlib,
 	assert = auxlib.assert,
 	fileresult = auxlib.fileresult,
+	pack = table.pack or function (...)
+		local t = { ... }
+		t.n = select("#", ...)
+		return t
+	end,
+	unpack = table.unpack or unpack,
 }
 
 local emit_progname = os.getenv"REGRESS_PROGNAME" or "regress"
@@ -219,5 +225,30 @@ function regress.searchpath(name, paths, sep, rep)
 end -- regress.searchpath
 
 package.searchpath = package.searchpath or regress.searchpath
+
+
+local Error = {}
+Error.__index = Error
+
+function Error:__tostring()
+	return self.text
+end
+
+function Error:unpack()
+	return regress.unpack(self, 1, self.n)
+end
+
+function regress.packerror(v, ...)
+	if not v then
+		local err = regress.pack(select(2, auxlib.fileresult(nil, ...)))
+
+		err.text = err[1] or "?"
+		err.code = err[2]
+
+		return setmetatable(err, Error)
+	else
+		return nil, v, ...
+	end
+end
 
 return regress
