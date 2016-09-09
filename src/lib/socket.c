@@ -2400,16 +2400,16 @@ static BIO_METHOD bio_methods = {
 	NULL,
 };
 
-static BIO_METHOD* get_bio_methods() {
+static BIO_METHOD* so_get_bio_methods() {
 	return &bio_methods;
-} /* get_bio_methods() */
+} /* so_get_bio_methods() */
 #else
 CRYPTO_RWLOCK *bio_methods_lock = NULL;
 static CRYPTO_ONCE bio_methods_init = CRYPTO_ONCE_STATIC_INIT;
 static void bio_methods_lock_init(void) {
 	bio_methods_lock = CRYPTO_THREAD_lock_new();
 }
-static BIO_METHOD* get_bio_methods() {
+static BIO_METHOD* so_get_bio_methods() {
 	static BIO_METHOD *bio_methods = NULL;
 	int type;
 
@@ -2444,12 +2444,12 @@ cleanup:
 	CRYPTO_THREAD_unlock(bio_methods_lock);
 
 	return bio_methods;
-} /* get_bio_methods() */
+} /* so_get_bio_methods() */
 #endif
 
 static BIO *so_newbio(struct socket *so, int *error) {
 	BIO *bio;
-	BIO_METHOD *bio_methods = get_bio_methods();
+	BIO_METHOD *bio_methods = so_get_bio_methods();
 
 	if (bio_methods == NULL || !(bio = BIO_new(bio_methods))) {
 		*error = SO_EOPENSSL;
