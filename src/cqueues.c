@@ -1982,7 +1982,7 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 		}
 	} else {
 		nargs = lua_gettop(T->L);
-		if (status == LUA_OK && lua_getstack(T->L, 0, &(lua_Debug){}) > 0) {
+		if (status == LUA_OK && lua_getstack(T->L, 0, &(lua_Debug){}) != 0) {
 			/* already running */
 			lua_pushliteral(L, "cannot resume non-suspended coroutine");
 			I->error.value = lua_gettop(L);
