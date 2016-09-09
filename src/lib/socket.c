@@ -2413,7 +2413,7 @@ static void bio_methods_init(void) {
 	if (type == -1)
 		return;
 
-	bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK|BIO_TYPE_DESCRIPTOR, "struct socket*");
+	bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK, "struct socket*");
 	if (bio_methods == NULL)
 		return;
 
