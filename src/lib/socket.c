@@ -54,6 +54,7 @@
 #include <ucred.h>       /* ucred_t getpeerucred(2) ucred_free(3) */
 #endif
 
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
@@ -65,33 +66,6 @@
 #define BIO_set_data(bio, val) ((void)((bio)->ptr = (val)))
 #define BIO_get_data(bio) ((bio)->ptr)
 #define BIO_up_ref(bio) CRYPTO_add(&(bio)->references, 1, CRYPTO_LOCK_BIO)
-
-static void *CRYPTO_zalloc(size_t num, const char *file, int line)
-{
-    void *ret = CRYPTO_malloc(num, file, line);
-
-    if (ret != NULL)
-        memset(ret, 0, num);
-    return ret;
-}
-#define OPENSSL_zalloc(num) CRYPTO_zalloc(num, __FILE__, __LINE__)
-#define BIO_get_new_index() (0)
-static BIO_METHOD *BIO_meth_new(int type, const char *name)
-{
-    BIO_METHOD *biom = OPENSSL_zalloc(sizeof(BIO_METHOD));
-
-    if (biom != NULL) {
-        biom->type = type;
-        biom->name = name;
-    }
-    return biom;
-}
-#define BIO_meth_set_write(bio_meth, func) ((bio_meth)->bwrite = (func), 1)
-#define BIO_meth_set_read(bio_meth, func) ((bio_meth)->bread = (func), 1)
-#define BIO_meth_set_puts(bio_meth, func) ((bio_meth)->bputs = (func), 1)
-#define BIO_meth_set_ctrl(bio_meth, func) ((bio_meth)->ctrl = (func), 1)
-#define BIO_meth_set_create(bio_meth, func) ((bio_meth)->create = (func), 1)
-#define BIO_meth_set_destroy(bio_meth, func) ((bio_meth)->destroy = (func), 1)
 #endif
 
 #include "dns.h"
@@ -2412,22 +2386,51 @@ static int bio_destroy(BIO *bio) {
 	return 1;
 } /* bio_destroy() */
 
-static BIO_METHOD *bio_methods;
+#if OPENSSL_VERSION_NUMBER < 0x10100001L
+static BIO_METHOD bio_methods = {
+	BIO_TYPE_SOURCE_SINK,
+	"struct socket*",
+	bio_write,
+	bio_read,
+	bio_puts,
+	NULL,
+	bio_ctrl,
+	bio_create,
+	bio_destroy,
+	NULL,
+};
 
-static BIO *so_newbio(struct socket *so, int *error) {
-	BIO *bio;
+static BIO_METHOD* get_bio_methods() {
+	return &bio_methods;
+} /* get_bio_methods() */
+#else
+CRYPTO_RWLOCK *bio_methods_lock = NULL;
+static CRYPTO_ONCE bio_methods_init = CRYPTO_ONCE_STATIC_INIT;
+static void bio_methods_lock_init(void) {
+	bio_methods_lock = CRYPTO_THREAD_lock_new();
+}
+static BIO_METHOD* get_bio_methods() {
+	static BIO_METHOD *bio_methods = NULL;
+	int type;
+
+	if (bio_methods == NULL)
+		return bio_methods;
+
+	if (!(CRYPTO_THREAD_run_once(&bio_methods_init, bio_methods_lock_init) ? bio_methods_lock != NULL : 0)) {
+		return NULL;
+	}
+	if (!CRYPTO_THREAD_write_lock(bio_methods_lock)) {
+		return NULL;
+	}
 
 	if (bio_methods == NULL) {
-		int type = BIO_get_new_index();
-		if (type == -1) {
-			*error = SO_EOPENSSL;
-			return NULL;
-		}
-		type |= BIO_TYPE_SOURCE_SINK|BIO_TYPE_DESCRIPTOR;
-		bio_methods = BIO_meth_new(type, "struct socket*");
+		type = BIO_get_new_index();
+		if (type == -1)
+			goto cleanup;
+
+		bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK|BIO_TYPE_DESCRIPTOR, "struct socket*");
 		if (bio_methods == NULL) {
-			*error = SO_EOPENSSL;
-			return NULL;
+			goto cleanup;
 		}
 		BIO_meth_set_write(bio_methods, bio_write);
 		BIO_meth_set_read(bio_methods, bio_read);
@@ -2437,7 +2440,18 @@ static BIO *so_newbio(struct socket *so, int *error) {
 		BIO_meth_set_destroy(bio_methods, bio_destroy);
 	}
 
-	if (!(bio = BIO_new(bio_methods))) {
+cleanup:
+	CRYPTO_THREAD_unlock(bio_methods_lock);
+
+	return bio_methods;
+} /* get_bio_methods() */
+#endif
+
+static BIO *so_newbio(struct socket *so, int *error) {
+	BIO *bio;
+	BIO_METHOD *bio_methods = get_bio_methods();
+
+	if (bio_methods == NULL || !(bio = BIO_new(bio_methods))) {
 		*error = SO_EOPENSSL;
 		return NULL;
 	}
