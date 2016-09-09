@@ -58,7 +58,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
-#if OPENSSL_VERSION_NUMBER < 0x10100001L
+#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
 #undef BIO_ctrl_set_connected
 #define BIO_ctrl_set_connected(b, peer) (int)BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, 0, (char *)peer)
 #define BIO_set_init(bio, val) ((void)((bio)->init = (val)))
@@ -2386,7 +2386,7 @@ static int bio_destroy(BIO *bio) {
 	return 1;
 } /* bio_destroy() */
 
-#if OPENSSL_VERSION_NUMBER < 0x10100001L
+#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
 static BIO_METHOD bio_methods = {
 	BIO_TYPE_SOURCE_SINK,
 	"struct socket*",

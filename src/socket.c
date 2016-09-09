@@ -40,7 +40,7 @@
 #include <arpa/inet.h>	/* ntohs(3) */
 
 #include <openssl/ssl.h> /* SSL_CTX, SSL_CTX_free(), SSL_CTX_up_ref(), SSL, SSL_up_ref() */
-#if OPENSSL_VERSION_NUMBER < 0x10100001L
+#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
 #define SSL_CTX_up_ref(ctx) CRYPTO_add(&(ctx)->references, 1, CRYPTO_LOCK_SSL_CTX)
 #define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
