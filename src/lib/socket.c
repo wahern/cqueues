@@ -2404,8 +2404,10 @@ static BIO_METHOD* so_get_bio_methods() {
 	return &bio_methods;
 } /* so_get_bio_methods() */
 #else
-static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
 static BIO_METHOD* bio_methods = NULL;
+
+static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
+
 static void bio_methods_init(void) {
 	int type = BIO_get_new_index();
 	if (type == -1)
@@ -2421,13 +2423,12 @@ static void bio_methods_init(void) {
 	BIO_meth_set_ctrl(bio_methods, bio_ctrl);
 	BIO_meth_set_create(bio_methods, bio_create);
 	BIO_meth_set_destroy(bio_methods, bio_destroy);
-}
+} /* bio_methods_init() */
+
 static BIO_METHOD* so_get_bio_methods() {
-	if (bio_methods != NULL)
-		return bio_methods;
-
-	CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
-
+	if (bio_methods == NULL) {
+		CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
+	}
 	return bio_methods;
 } /* so_get_bio_methods() */
 #endif
