@@ -2404,44 +2404,29 @@ static BIO_METHOD* so_get_bio_methods() {
 	return &bio_methods;
 } /* so_get_bio_methods() */
 #else
-CRYPTO_RWLOCK *bio_methods_lock = NULL;
-static CRYPTO_ONCE bio_methods_init = CRYPTO_ONCE_STATIC_INIT;
-static void bio_methods_lock_init(void) {
-	bio_methods_lock = CRYPTO_THREAD_lock_new();
+static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
+static BIO_METHOD* bio_methods = NULL;
+static void bio_methods_init(void) {
+	int type = BIO_get_new_index();
+	if (type == -1)
+		return;
+
+	bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK|BIO_TYPE_DESCRIPTOR, "struct socket*");
+	if (bio_methods == NULL)
+		return;
+
+	BIO_meth_set_write(bio_methods, bio_write);
+	BIO_meth_set_read(bio_methods, bio_read);
+	BIO_meth_set_puts(bio_methods, bio_puts);
+	BIO_meth_set_ctrl(bio_methods, bio_ctrl);
+	BIO_meth_set_create(bio_methods, bio_create);
+	BIO_meth_set_destroy(bio_methods, bio_destroy);
 }
 static BIO_METHOD* so_get_bio_methods() {
-	static BIO_METHOD *bio_methods = NULL;
-	int type;
-
-	if (bio_methods == NULL)
+	if (bio_methods != NULL)
 		return bio_methods;
 
-	if (!(CRYPTO_THREAD_run_once(&bio_methods_init, bio_methods_lock_init) ? bio_methods_lock != NULL : 0)) {
-		return NULL;
-	}
-	if (!CRYPTO_THREAD_write_lock(bio_methods_lock)) {
-		return NULL;
-	}
-
-	if (bio_methods == NULL) {
-		type = BIO_get_new_index();
-		if (type == -1)
-			goto cleanup;
-
-		bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK|BIO_TYPE_DESCRIPTOR, "struct socket*");
-		if (bio_methods == NULL) {
-			goto cleanup;
-		}
-		BIO_meth_set_write(bio_methods, bio_write);
-		BIO_meth_set_read(bio_methods, bio_read);
-		BIO_meth_set_puts(bio_methods, bio_puts);
-		BIO_meth_set_ctrl(bio_methods, bio_ctrl);
-		BIO_meth_set_create(bio_methods, bio_create);
-		BIO_meth_set_destroy(bio_methods, bio_destroy);
-	}
-
-cleanup:
-	CRYPTO_THREAD_unlock(bio_methods_lock);
+	CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
 
 	return bio_methods;
 } /* so_get_bio_methods() */
