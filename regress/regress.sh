@@ -105,7 +105,7 @@ else
 			lua53path="${lua53path}" lua53cpath="${lua53cpath}")
 	fi
 
-	if [ ! -d "${CQUEUES_SRCDIR}/regress/.local/lib/5.3" ] || ! runlua -e 'require"_cqueues"' >/dev/null 2>&1; then
+	if [ ! -d "${CQUEUES_SRCDIR}/regress/.local/lib/5.3" ] || ! runlua -e 'require"_cqueues"' >>/dev/null 2>&1; then
 		export RUNLUA_R="${RUNLUA_R:=5.1-5.2}"
 	fi
 

@@ -31,7 +31,7 @@ local function check_71A()
 			PID="$!"
 			sleep ${GRACE}
 			set +e # disable strict errors
-			kill -9 "${PID}" 2>&-
+			kill -9 "${PID}" 2>>/dev/null
 			wait "${PID}"
 			RC="$?"
 			printf "RC=%%d\n" "${RC}"

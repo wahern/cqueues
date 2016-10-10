@@ -104,6 +104,30 @@
 # 	interpreter glob patterns from preferred install directory
 # 	string.match expressions.
 #
+# * 2016-10-10 - Fix issue with passing empty CPPFLAGS to ${CC}. /usr/bin/cc
+# 	in NetBSD 7.0.1 does not tolerate an empty string argument. This
+# 	exposed a bug in NetBSD's and FreeBSD's /bin/sh, triggered by how we
+# 	pass CPPFLAGS (see evalmacro and runcc routines, below).
+#
+# 	Some Ash variants (confirmed /bin/sh in NetBSD 7.0.1 and FreeBSD
+# 	10.1) will expand unquoted ${UNSET-} and ${UNSET:-} as an empty
+# 	string rather than eliding it during argument processing. That is,
+#
+# 		nargs() { printf "%d\n" "$#"; }
+# 		nargs ${UNSET} 2 3
+# 		nargs ${UNSET-} 2 3
+#
+# 	prints "2" and "3", whereas every other shell tested prints "2" and
+# 	"2" (confirmed dash in Ubuntu Xenial; bash 4.3 in Ubuntu Xenial;
+# 	pdksh in FreeBSD 10.1, NetBSD 7.0, OS X 10.1, OpenBSD 6.0; ksh93 in
+# 	Solaris 11.3 and AIX 7.1; ksh88 in AIX 7.1).
+#
+# 	A workaround in set -u mode (where unbound variable expansion aborts
+# 	execution) is to substitute a known empty value. E.g.
+#
+# 		EMPTY=
+# 		nargs ${UNSET-$EMPTY}
+#
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 #
 # Copyright (C) 2012-2016 William Ahern
@@ -138,10 +162,11 @@ unset IFS # no field splitting surprises
 unset LUA_PATH || true # interferes search for module install directory
 unset LUA_CPATH || true
 
-MYVERSION=20160325
+MYVERSION=20161010
 MYVENDOR="william@25thandClement.com"
 
 
+EMPTY= # empty string for parameter expansion workaround for Ash bug
 DEVRANDOM=/dev/urandom
 SANDBOX="${TMPDIR}/${0##*/}-"
 
@@ -322,7 +347,7 @@ runcc() {
 #
 evalmacro() {
 	printf "#include <$1>\n[===[$2]===]\n" \
-	| runcc ${CPPFLAGS:-} -E - 2>>/dev/null \
+	| runcc ${CPPFLAGS:-${EMPTY}} -E - 2>>/dev/null \
 	| sed -ne "
 		s/^.*\\[===\\[ *\\(${3:-.*}\\) *\\]===\\].*$/${4:-\\1}/
 		t Found
