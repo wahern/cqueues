@@ -1984,10 +1984,22 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 		}
 	} else {
 		nargs = lua_gettop(T->L);
-		if (status != LUA_YIELD) {
+		if (status == LUA_OK && lua_getstack(T->L, 0, &(lua_Debug){}) != 0) {
+			/* already running */
+			lua_pushliteral(L, "cannot resume non-suspended coroutine");
+			I->error.value = lua_gettop(L);
+			err_setthread(L, I, T);
+			goto defunct;
+		} else if ((status != LUA_OK && status != LUA_YIELD) || nargs == 0) {
+			/* dead coroutine */
+			lua_pushliteral(L, "cannot resume dead coroutine");
+			I->error.value = lua_gettop(L);
+			err_setthread(L, I, T);
+			goto defunct;
+		} else if (status == LUA_OK) {
+			/* initial */
 			nargs -= 1;
-			assert(nargs >= 0);
-		}
+		} /* else normal yield */
 	}
 
 	timer_del(Q, &T->timer);
