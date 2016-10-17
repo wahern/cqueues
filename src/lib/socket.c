@@ -58,16 +58,6 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
-#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
-#undef BIO_ctrl_set_connected
-#define BIO_ctrl_set_connected(b, peer) (int)BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, 0, (char *)peer)
-#define BIO_set_init(bio, val) ((void)((bio)->init = (val)))
-#define BIO_set_shutdown(bio, val) ((void)((bio)->shutdown = (val)))
-#define BIO_set_data(bio, val) ((void)((bio)->ptr = (val)))
-#define BIO_get_data(bio) ((bio)->ptr)
-#define BIO_up_ref(bio) CRYPTO_add(&(bio)->references, 1, CRYPTO_LOCK_BIO)
-#endif
-
 #include "dns.h"
 #include "socket.h"
 
@@ -108,6 +98,88 @@ int socket_v_api(void) {
 #else
 #define SO_THREAD_SAFE 0
 #endif
+#endif
+
+#define HAVE_OPENSSL11_API (!(OPENSSL_VERSION_NUMBER < 0x10100001L || defined LIBRESSL_VERSION_NUMBER))
+
+#ifndef HAVE_SSL_IS_SERVER
+#define HAVE_SSL_IS_SERVER HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_CTRL_SET_CONNECTED
+#define HAVE_BIO_CTR_SET_CONNECTED HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_SET_INIT
+#define HAVE_BIO_SET_INIT HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_SET_SHUTDOWN
+#define HAVE_BIO_SET_SHUTDOWN HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_SET_DATA
+#define HAVE_BIO_SET_DATA HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_GET_DATA
+#define HAVE_BIO_GET_DATA HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_UP_REF
+#define HAVE_BIO_UP_REF HAVE_OPENSSL11_API
+#endif
+
+
+/*
+ * C O M P A T  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !HAVE_BIO_CTRL_SET_CONNECTED
+#undef BIO_ctrl_set_connected
+#define BIO_ctrl_set_connected(b, peer) (int)BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, 0, (char *)peer)
+#endif
+
+#if !HAVE_BIO_SET_INIT
+#define BIO_set_init(bio, val) ((void)((bio)->init = (val)))
+#endif
+
+#if !HAVE_BIO_SET_SHUTDOWN
+#define BIO_set_shutdown(bio, val) ((void)((bio)->shutdown = (val)))
+#endif
+
+#if !HAVE_BIO_SET_DATA
+#define BIO_set_data(bio, val) ((void)((bio)->ptr = (val)))
+#endif
+
+#if !HAVE_BIO_GET_DATA
+#define BIO_get_data(bio) ((bio)->ptr)
+#endif
+
+#if !HAVE_BIO_UP_REF
+#define BIO_up_ref(bio) CRYPTO_add(&(bio)->references, 1, CRYPTO_LOCK_BIO)
+#endif
+
+#if !HAVE_SSL_IS_SERVER
+#undef SSL_is_server
+#define SSL_is_server(ssl) compat_SSL_is_server(ssl)
+
+static _Bool compat_SSL_is_server(SSL *ssl) {
+	const SSL_METHOD *method = SSL_get_ssl_method(ssl);
+
+	/*
+	 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
+	 * OpenSSL's internal ssl_undefined_function().
+	 *
+	 * Server methods such as TLSv1_2_server_method(), etc. should have
+	 * their .ssl_connect method set to this value.
+	 */
+	if (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect)
+		return 1;
+
+	return 0;
+} /* compat_SSL_is_server() */
 #endif
 
 
@@ -2104,17 +2176,7 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
-	/*
-	 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
-	 * OpenSSL's internal ssl_undefined_function().
-	 *
-	 * Server methods such as TLSv1_2_server_method(), etc. should have
-	 * their .ssl_connect method set to this value.
-	 */
-	method = SSL_get_ssl_method(so->ssl.ctx);
-
-	if (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect)
-		so->ssl.accept = 1;
+	so->ssl.accept = SSL_is_server(so->ssl.ctx);
 
 	if (!so->ssl.accept && so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
 		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))
@@ -2386,7 +2448,7 @@ static int bio_destroy(BIO *bio) {
 	return 1;
 } /* bio_destroy() */
 
-#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
+#if !HAVE_OPENSSL11_API
 static BIO_METHOD bio_methods = {
 	BIO_TYPE_SOURCE_SINK,
 	"struct socket*",
@@ -2400,11 +2462,11 @@ static BIO_METHOD bio_methods = {
 	NULL,
 };
 
-static BIO_METHOD* so_get_bio_methods() {
+static BIO_METHOD *so_get_bio_methods() {
 	return &bio_methods;
 } /* so_get_bio_methods() */
 #else
-static BIO_METHOD* bio_methods = NULL;
+static BIO_METHOD *bio_methods = NULL;
 
 static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
 
@@ -2425,7 +2487,7 @@ static void bio_methods_init(void) {
 	BIO_meth_set_destroy(bio_methods, bio_destroy);
 } /* bio_methods_init() */
 
-static BIO_METHOD* so_get_bio_methods() {
+static BIO_METHOD *so_get_bio_methods() {
 	if (bio_methods == NULL) {
 		CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
 	}
