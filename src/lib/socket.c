@@ -2072,7 +2072,7 @@ int so_listen(struct socket *so) {
 
 
 int so_accept(struct socket *so, struct sockaddr *saddr, socklen_t *slen, int *error_) {
-	int fd, error;
+	int fd = -1, error;
 
 	if ((error = so_listen(so)))
 		goto error;
@@ -2083,8 +2083,19 @@ int so_accept(struct socket *so, struct sockaddr *saddr, socklen_t *slen, int *e
 	so->events = POLLIN;
 
 retry:
+#if HAVE_ACCEPT4 && defined SOCK_CLOEXEC
+	if (-1 == (fd = accept4(so->fd, saddr, slen, SOCK_CLOEXEC)))
+		goto soerr;
+#elif HAVE_PACCEPT && defined SOCK_CLOEXEC
+	if (-1 == (fd = paccept(so->fd, saddr, slen, NULL, SOCK_CLOEXEC)))
+		goto soerr;
+#else
 	if (-1 == (fd = accept(so->fd, saddr, slen)))
 		goto soerr;
+
+	if ((error = so_cloexec(fd, 1)))
+		goto error;
+#endif
 
 	return fd;
 soerr:
@@ -2104,6 +2115,8 @@ soerr:
 	}
 error:
 	*error_ = error;
+
+	so_closesocket(&fd, NULL);
 
 	return -1;
 } /* so_accept() */
