@@ -1985,8 +1985,8 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 	} else {
 		nargs = lua_gettop(T->L);
 		if (status != LUA_YIELD) {
-			nargs -= 1;
-			assert(nargs >= 0);
+			if (nargs > 0)
+				nargs -= 1; /* exclude function */
 		}
 	}
 

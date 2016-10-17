@@ -11,7 +11,8 @@ end)
 coroutine.resume(co) -- kick off coroutine
 coroutine.resume(co) -- resume a yield with no arguments
 
--- co is now dead
+local status = coroutine.status(co)
+check(status == "dead", "expected dead coroutine (got %q)", status)
 
 local cq = require"cqueues".new()
 cq:attach(co)
