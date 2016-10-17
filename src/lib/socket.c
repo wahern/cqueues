@@ -54,9 +54,19 @@
 #include <ucred.h>       /* ucred_t getpeerucred(2) ucred_free(3) */
 #endif
 
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
+#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
+#undef BIO_ctrl_set_connected
+#define BIO_ctrl_set_connected(b, peer) (int)BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, 0, (char *)peer)
+#define BIO_set_init(bio, val) ((void)((bio)->init = (val)))
+#define BIO_set_shutdown(bio, val) ((void)((bio)->shutdown = (val)))
+#define BIO_set_data(bio, val) ((void)((bio)->ptr = (val)))
+#define BIO_get_data(bio) ((bio)->ptr)
+#define BIO_up_ref(bio) CRYPTO_add(&(bio)->references, 1, CRYPTO_LOCK_BIO)
+#endif
 
 #include "dns.h"
 #include "socket.h"
@@ -1442,7 +1452,7 @@ static int so_starttls_(struct socket *so) {
 				goto error;
 			}
 
-			BIO_ctrl_set_connected(bio, 1, &peer);
+			BIO_ctrl_set_connected(bio, &peer);
 
 			SSL_set_bio(so->ssl.ctx, bio, bio);
 			SSL_set_read_ahead(so->ssl.ctx, 1);
@@ -2267,7 +2277,7 @@ static _Bool bio_nonfatal(int error) {
 } /* bio_nonfatal() */
 
 static int bio_read(BIO *bio, char *dst, int lim) {
-	struct socket *so = bio->ptr;
+	struct socket *so = BIO_get_data(bio);
 	size_t count;
 
 	assert(so);
@@ -2297,7 +2307,7 @@ static int bio_read(BIO *bio, char *dst, int lim) {
 } /* bio_read() */
 
 static int bio_write(BIO *bio, const char *src, int len) {
-	struct socket *so = bio->ptr;
+	struct socket *so = BIO_get_data(bio);
 	size_t count;
 
 	assert(so);
@@ -2342,9 +2352,8 @@ static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
 		 * for example, has a hack to always copy .init and .num.
 		 */
 		BIO *udata = udata_p;
-		udata->init = 0;
-		udata->num = 0;
-		udata->ptr = NULL;
+		BIO_set_init(udata, 0);
+		BIO_set_data(udata, NULL);
 
 		return 1;
 	}
@@ -2362,23 +2371,22 @@ static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
 } /* bio_ctrl() */
 
 static int bio_create(BIO *bio) {
-	bio->init = 0;
-	bio->shutdown = 0;
-	bio->num = 0;
-	bio->ptr = NULL;
+	BIO_set_init(bio, 0);
+	BIO_set_shutdown(bio, 0);
+	BIO_set_data(bio, NULL);
 
 	return 1;
 } /* bio_create() */
 
 static int bio_destroy(BIO *bio) {
-	bio->init = 0;
-	bio->shutdown = 0;
-	bio->num = 0;
-	bio->ptr = NULL;
+	BIO_set_init(bio, 0);
+	BIO_set_shutdown(bio, 0);
+	BIO_set_data(bio, NULL);
 
 	return 1;
 } /* bio_destroy() */
 
+#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
 static BIO_METHOD bio_methods = {
 	BIO_TYPE_SOURCE_SINK,
 	"struct socket*",
@@ -2392,16 +2400,50 @@ static BIO_METHOD bio_methods = {
 	NULL,
 };
 
+static BIO_METHOD* so_get_bio_methods() {
+	return &bio_methods;
+} /* so_get_bio_methods() */
+#else
+static BIO_METHOD* bio_methods = NULL;
+
+static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
+
+static void bio_methods_init(void) {
+	int type = BIO_get_new_index();
+	if (type == -1)
+		return;
+
+	bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK, "struct socket*");
+	if (bio_methods == NULL)
+		return;
+
+	BIO_meth_set_write(bio_methods, bio_write);
+	BIO_meth_set_read(bio_methods, bio_read);
+	BIO_meth_set_puts(bio_methods, bio_puts);
+	BIO_meth_set_ctrl(bio_methods, bio_ctrl);
+	BIO_meth_set_create(bio_methods, bio_create);
+	BIO_meth_set_destroy(bio_methods, bio_destroy);
+} /* bio_methods_init() */
+
+static BIO_METHOD* so_get_bio_methods() {
+	if (bio_methods == NULL) {
+		CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
+	}
+	return bio_methods;
+} /* so_get_bio_methods() */
+#endif
+
 static BIO *so_newbio(struct socket *so, int *error) {
 	BIO *bio;
+	BIO_METHOD *bio_methods = so_get_bio_methods();
 
-	if (!(bio = BIO_new(&bio_methods))) {
+	if (bio_methods == NULL || !(bio = BIO_new(bio_methods))) {
 		*error = SO_EOPENSSL;
 		return NULL;
 	}
 
-	bio->init = 1;
-	bio->ptr = so;
+	BIO_set_init(bio, 1);
+	BIO_set_data(bio, so);
 
 	/*
 	 * NOTE: Applications can acquire a reference to our BIO via the SSL
@@ -2410,12 +2452,12 @@ static BIO *so_newbio(struct socket *so, int *error) {
 	 * and zero any pointer to ourselves here and from so_destroy.
 	 */
 	if (so->bio.ctx) {
-		so->bio.ctx->init = 0;
-		so->bio.ctx->ptr = NULL;
+		BIO_set_init(so->bio.ctx, 0);
+		BIO_set_data(so->bio.ctx, NULL);
 		BIO_free(so->bio.ctx);
 	}
 
-	CRYPTO_add(&bio->references, 1, CRYPTO_LOCK_BIO);
+	BIO_up_ref(bio);
 	so->bio.ctx = bio;
 
 	return bio;
