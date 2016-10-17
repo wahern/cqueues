@@ -64,14 +64,20 @@
 
 #define GNUC_PREREQ(M, m) (defined __GNUC__ && ((__GNUC__ > M) || (__GNUC__ == M && __GNUC_MINOR__ >= m)))
 
+#ifndef NETBSD_PREREQ
 #define NETBSD_PREREQ(M, m) __NetBSD_Prereq__(M, m, 0)
+#endif
 
+#ifndef FREEBSD_PREREQ
 #define FREEBSD_PREREQ(M, m) (defined __FreeBSD_version && __FreeBSD_version >= ((M) * 100000) + ((m) * 1000))
+#endif
 
+#ifndef GLIBC_PREREQ
 #if defined __GLIBC_PREREQ
 #define GLIBC_PREREQ(M, m) (defined __GLIBC__ && __GLIBC_PREREQ(M, m) && !__UCLIBC__)
 #else
 #define GLIBC_PREREQ(M, m) 0
+#endif
 #endif
 
 #define UCLIBC_PREREQ(M, m, p) (defined __UCLIBC__ && (__UCLIBC_MAJOR__ > M || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ > m) || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ == m && __UCLIBC_SUBLEVEL__ >= p)))
