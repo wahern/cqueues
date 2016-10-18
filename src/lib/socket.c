@@ -39,7 +39,7 @@
 #include <sys/types.h>   /* socklen_t mode_t in_port_t */
 #include <sys/stat.h>    /* fchmod(2) fstat(2) S_IFSOCK S_ISSOCK */
 #include <sys/select.h>  /* FD_ZERO FD_SET fd_set select(2) */
-#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
+#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_EOR MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 #if defined(AF_UNIX)
 #include <sys/un.h>      /* struct sockaddr_un struct unpcbid */
 #endif
@@ -2289,6 +2289,7 @@ error:
 
 static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *error) {
 	long count;
+	int flags = 0;
 
 	if (so->st.sent.eof) {
 		*error = EPIPE;
@@ -2296,20 +2297,28 @@ static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *e
 	}
 
 //	so_pipeign(so, 0);
+
+#if _WIN32
+#else
+	if (S_ISSOCK(so->mode)) {
+		#if defined(MSG_NOSIGNAL)
+		if (so->opts.fd_nosigpipe)
+			flags |= MSG_NOSIGNAL;
+		#endif
+		if (so->type == SOCK_SEQPACKET)
+			flags |= MSG_EOR;
+	}
+#endif
 retry:
 #if _WIN32
-	count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
+	if (1) {
 #else
-#if defined(MSG_NOSIGNAL)
-	if (S_ISSOCK(so->mode) && so->opts.fd_nosigpipe) {
-		count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
+	if (S_ISSOCK(so->mode)) {
+#endif
+		count = send(so->fd, src, SO_MIN(len, LONG_MAX), flags);
 	} else {
 		count = write(so->fd, src, SO_MIN(len, LONG_MAX));
 	}
-#else
-	count = write(so->fd, src, SO_MIN(len, LONG_MAX));
-#endif
-#endif
 
 	if (count == -1)
 		goto error;
