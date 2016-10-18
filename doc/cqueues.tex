@@ -140,7 +140,7 @@ Microsoft Windows support is basically out of the question\footnote{I have been 
 \section{Libraries}
 
 \subsection{LuaJIT, Lua 5.2, Lua 5.3}
-\cqueues principally targets Lua 5.2 and above. It's not fully portable to Lua 5.1 because \cqueues relies on ephemeron tables to prevent coroutine/controller reference cycles, and because Lua 5.1 does not support yielding from metamethods and iterators. LuaJIT removes the latter of these handicaps, and so \cqueues targets LuaJIT secondarily. In lieu of ephemeron tables, application code must be sure not to hold a reference to a parent controller in an upvalue of the coroutine. Instead, use \fn{cqueues.running}.
+\cqueues principally targets Lua 5.2 and above. Some semantics are not fully portable to Lua 5.1 due to 5.1 not supporting yielding from metamethods and iterators. LuaJIT does not have this handicap.
 
 \subsection{OpenSSL}
 The \cqueues \module{socket} module provides seamless SSL/TLS support using OpenSSL.
@@ -169,77 +169,7 @@ The Makefile requires GNU Make, usually installed as gmake on platforms other th
 
 \chapter{Installation}
 
-All the C modules are built into a single core C library. The core routines are then wrapped and extended through Lua modules. Because there several extant versions of Lua often used in parallel on the same system, there are individual targets to build and install for each supported Lua version. The targets \texttt{all} and \texttt{install} will attempt to build and install both Lua 5.1 and 5.2 modules.
-
-Note that building and installation and can accomplished in a single step by simply invoking one of the install targets with all the necessary variables defined.
-
-\section{Building}
-
-There is no separate \texttt{./configure} step. System introspection occurs during compile-time. However, the ``\texttt{configure}'' make target can be used to cache the build environment so one needn't continually use a long command-line invocation.
-
-All the common GNU-style compiler variables are supported, including \texttt{CC}, \texttt{CPPFLAGS}, \texttt{CFLAGS}, \texttt{LDFLAGS}, and \texttt{SOFLAGS}. Note that you can specify the path to Lua 5.1, Lua 5.2, and Lua 5.3 include headers at the same time in CPPFLAGS; the build system will work things out to ensure the correct headers are loaded when compiling each version of the module.
-
-\subsection{Targets}
-
-\begin{description}
-\item[\texttt{all}] \hfill \\
-Build modules for Lua 5.1 and 5.2.
-
-\item[\texttt{all5.1}] \hfill \\
-Build Lua 5.1 module.
-
-\item[\texttt{all5.2}] \hfill \\
-Build Lua 5.2 module.
-
-\item[\texttt{all5.3}] \hfill \\
-Build Lua 5.3 module.
-
-\end{description}
-
-\section{Installing}
-
-All the common GNU-style installation path variables are supported, including \texttt{prefix}, \texttt{bindir}, \texttt{libdir}, \texttt{datadir}, \texttt{includedir}, and \texttt{DESTDIR}. These additional path variables are also allowed:
-
-\begin{description}
-
-\item[\texttt{lua51path}]  \hfill \\
-Install path for Lua 5.1 modules, e.g. \texttt{\$(prefix)/share/lua/5.1}
-
-\item[\texttt{lua51cpath}]  \hfill \\
-Install path for Lua 5.1 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.1}
-
-\item[\texttt{lua52path}]  \hfill \\
-Install path for Lua 5.2 modules, e.g. \texttt{\$(prefix)/share/lua/5.2}
-
-\item[\texttt{lua52cpath}]  \hfill \\
-Install path for Lua 5.2 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.2}
-
-\item[\texttt{lua53path}]  \hfill \\
-Install path for Lua 5.3 modules, e.g. \texttt{\$(prefix)/share/lua/5.3}
-
-\item[\texttt{lua53cpath}]  \hfill \\
-Install path for Lua 5.3 C modules, e.g. \texttt{\$(prefix)/lib/lua/5.3}
-
-\end{description}
-
-\subsection{Targets}
-
-\begin{description}
-
-\item[\texttt{install}] \hfill \\
-Install modules for Lua 5.1 and 5.2.
-
-\item[\texttt{install5.1}] \hfill \\
-Install Lua 5.1 module.
-
-\item[\texttt{install5.2}] \hfill \\
-Install Lua 5.2 module.
-
-\item[\texttt{install5.3}] \hfill \\
-Install Lua 5.3 module.
-
-\end{description}
-
+Refer to the included \texttt{README.md} for up-to-date build and installation instructions.
 
 \chapter{Usage}
 

@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include "lib/notify.h"
 #include "cqueues.h"
 
@@ -189,6 +191,7 @@ static int ln_strflag(lua_State *L) {
 		flags &= ~flag;
 
 		if ((name = notify_strflag(flag))) {
+			luaL_checkstack(L, 1, "too many results");
 			lua_pushstring(L, name);
 			count++;
 		}

@@ -1,0 +1,836 @@
+/* ==========================================================================
+ * config.h.guess - Preprocessor-based feature detection
+ * --------------------------------------------------------------------------
+ * Copyright (c) 2015-2016  William Ahern
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the
+ * following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ * NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * ==========================================================================
+ */
+#ifndef CONFIG_H_GUESS
+#define CONFIG_H_GUESS
+
+/*
+ * A U T O G U E S S  V E R S I O N
+ *
+ * Change AG_VENDOR if maintaining a fork.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define AG_VENDOR  "william+autoguess@25thandClement.com"
+#define AG_VERSION 20160728L
+
+
+/*
+ * C O M P I L E R  V E N D O R / V E R S I O N  D E T E C T I O N
+ *
+ * See http://sourceforge.net/p/predef/wiki/Compilers/
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define AG_GNUC_2VER(M, m, p) (((M) * 10000) + ((m) * 100) + (p))
+#define AG_GNUC_PREREQ(M, m, p) (__GNUC__ > 0 && AG_GNUC_2VER(__GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__) >= AG_GNUC_2VER((M), (m), (p)))
+
+#define AG_MSC_2VER(M, m, p) ((((M) + 6) * 10000000) + ((m) * 1000000) + (p))
+#define AG_MSC_PREREQ(M, m, p) (_MSC_VER_FULL > 0 && _MSC_VER_FULL >= AG_MSC_2VER((M), (m), (p)))
+
+#define AG_SUNPRO_PREREQ(M, m, p) (__SUNPRO_C > 0 && __SUNPRO_C >= 0x ## M ## m ## p)
+
+
+/*
+ * C O M P I L E R / L A N G U A G E  F E A T U R E  D E T E C T I O N
+ *
+ * NOTE: The has_ and test_ macros are separate because if the test
+ * expression uses the preprocessor "defined" operator the operand
+ * identifier may be replaced before the expression is evaluated. Most tests
+ * will only use arithmetic operations, but if this is not possible then the
+ * test must be written inline, for example
+ *
+ * 	#if has_attribute(x) || (!HAVE_C___HAS_ATTRIBUTE && defined FOO)
+ * 	#define HAVE___ATTRIBUTE___X
+ * 	#endif
+ *
+ * NOTE: Solaris Studio 12.4 supports __has_attribute, but we must enclose
+ * it in parentheses because the expansion results in a token sequence that
+ * chokes the compiler: __has_attribute(nonnull) becomes
+ * __has_attribute__ (nonnull), with a literal space between the preprocessor
+ * identifier and the open parenthesis.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if defined __has_attribute
+#define ag_has_attribute(a) __has_attribute(a)
+#define ag_test_attribute(a, E) (ag_has_attribute(a))
+#else
+#define ag_has_attribute(a) 0
+#define ag_test_attribute(a, E) (E)
+#endif
+
+#if defined __has_extension
+#define ag_has_extension(x) __has_extension(x)
+#define ag_test_extension(x, E) (ag_has_extension(x))
+#else
+#define ag_has_extension(x) 0
+#define ag_test_extension(x, E) (E)
+#endif
+
+#if defined __has_include
+#define ag_has_include(p) __has_include(p)
+#define ag_test_include(p, E) (ag_has_include(p))
+#else
+#define ag_has_include(p) 0
+#define ag_test_include(p, E) (E)
+#endif
+
+#if defined __has_builtin
+#define ag_has_builtin(f) __has_builtin(f)
+#define ag_test_builtin(f, E) (ag_has_builtin(f))
+#else
+#define ag_has_builtin(f) 0
+#define ag_test_builtin(f, E) (E)
+#endif
+
+#ifndef HAVE_C___ATTRIBUTE__
+#define HAVE_C___ATTRIBUTE__ (__GNUC__ || AG_SUNPRO_PREREQ(5,9,0))
+#endif
+
+#ifndef HAVE_C___ATTRIBUTE___CONSTRUCTOR
+#define HAVE_C___ATTRIBUTE___CONSTRUCTOR ag_test_attribute(constructor, __GNUC__)
+#endif
+
+#ifndef HAVE_C___ATTRIBUTE___NONNULL
+#define HAVE_C___ATTRIBUTE___NONNULL ag_test_attribute(nonnull, AG_GNUC_PREREQ(3,3,1))
+#endif
+
+#ifndef HAVE_C___ATTRIBUTE___UNUSED
+#define HAVE_C___ATTRIBUTE___UNUSED ag_test_attribute(unused, __GNUC__)
+#endif
+
+#ifndef HAVE_C___ATTRIBUTE___USED
+#define HAVE_C___ATTRIBUTE___USED ag_test_attribute(used, __GNUC__)
+#endif
+
+#ifndef HAVE_C___ATTRIBUTE___VISIBILITY
+#define HAVE_C___ATTRIBUTE___VISIBILITY ag_test_attribute(visibility, __GNUC__)
+#endif
+
+#ifndef HAVE_C___HAS_EXTENSION
+#define HAVE_C___HAS_EXTENSION (defined __has_extension)
+#endif
+
+#ifndef HAVE_C___HAS_INCLUDE
+#define HAVE_C___HAS_INCLUDE (defined __has_include)
+#endif
+
+#ifndef HAVE_C___EXTENSION__
+#define HAVE_C___EXTENSION__ (__GNUC__)
+#endif
+
+#ifndef HAVE_C___TYPEOF
+#define HAVE_C___TYPEOF (_MSC_VER || __GNUC__ || AG_SUNPRO_PREREQ(5,9,0))
+#endif
+
+#ifndef HAVE_C___TYPEOF__
+#define HAVE_C___TYPEOF__ (__GNUC__ || __xlc__ || AG_SUNPRO_PREREQ(5,9,0))
+#endif
+
+#ifndef HAVE_C__GENERIC
+#define HAVE_C__GENERIC ag_test_extension(c_generic_selections, (AG_GNUC_PREREQ(4,9,0) || __STDC_VERSION__ >= 201112L))
+#endif
+
+#ifndef HAVE_C_STATEMENT_EXPRESSION
+#define HAVE_C_STATEMENT_EXPRESSION (__GNUC__ || AG_SUNPRO_PREREQ(5,9,0))
+#endif
+
+#ifndef HAVE_C_TYPEOF
+#define HAVE_C_TYPEOF (__GNUC__ || __xlc__ || AG_SUNPRO_PREREQ(5,9,0))
+#endif
+
+#ifndef HAVE___ATOMIC_FETCH_ADD
+#define HAVE___ATOMIC_FETCH_ADD (defined __ATOMIC_RELAXED)
+#endif
+
+#ifndef HAVE___ATOMIC_FETCH_SUB
+#define HAVE___ATOMIC_FETCH_SUB HAVE___ATOMIC_FETCH_ADD
+#endif
+
+#ifndef HAVE___BUILTIN_CHOOSE_EXPR
+#define HAVE___BUILTIN_CHOOSE_EXPR (AG_GNUC_PREREQ(3,1,1) || __clang__)
+#endif
+
+#ifndef HAVE___BUILTIN_EXPECT
+#define HAVE___BUILTIN_EXPECT ag_test_builtin(__builtin_expect, __GNUC__)
+#endif
+
+#ifndef HAVE___BUILTIN_NAN
+#define HAVE___BUILTIN_NAN ag_test_builtin(__builtin_nan, AG_GNUC_PREREQ(3,3,1))
+#endif
+
+#ifndef HAVE___BUILTIN_TRAP
+#define HAVE___BUILTIN_TRAP ag_test_builtin(__builtin_trap, AG_GNUC_PREREQ(3,3,1))
+#endif
+
+#ifndef HAVE___BUILTIN_TYPES_COMPATIBLE_P
+#define HAVE___BUILTIN_TYPES_COMPATIBLE_P (AG_GNUC_PREREQ(3,1,1) || __clang__)
+#endif
+
+#ifndef HAVE___BUILTIN_UNREACHABLE
+#define HAVE___BUILTIN_UNREACHABLE ag_test_builtin(__builtin_unreachable, AG_GNUC_PREREQ(4,5,0))
+#endif
+
+#ifndef HAVE__STATIC_ASSERT
+#define HAVE__STATIC_ASSERT ag_test_extension(c_static_assert, (AG_GNUC_PREREQ(4,6,0) || __C11FEATURES__ || __STDC_VERSION__ >= 201112L))
+#endif
+
+
+/*
+ * S Y S T E M  E X T E N S I O N S
+ *
+ * We must set these before including any headers for feature detection.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if AG_USE_SYSTEM_EXTENSIONS
+
+/* Solaris */
+#ifndef __EXTENSIONS__
+#define __EXTENSIONS__ 1
+#endif
+
+/* AIX */
+#ifndef _ALL_SOURCE
+#define _ALL_SOURCE 1
+#endif
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
+
+#ifndef _MINIX
+#define _MINIX 1
+#endif
+
+/* Solaris */
+#ifndef _POSIX_PTHREAD_SEMANTICS
+#define _POSIX_PTHREAD_SEMANTICS 1
+#endif
+
+#endif /* AG_USE_SYSTEM_EXTENSIONS */
+
+#if AG_SYS_LARGEFILE
+
+/* NOTE: BSDs and musl-libc always provide a 64-bit file API */
+
+/* Apple */
+#ifndef _DARWIN_USE_64_BIT_INODE
+#define _DARWIN_USE_64_BIT_INODE 1
+#endif
+
+/* Solaris and glibc (per Large File Summit recommendation) */
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
+/* AIX */
+#ifndef _LARGE_FILES
+#define _LARGE_FILES 1
+#endif
+
+#endif /* AG_SYS_LARGEFILE */
+
+
+/*
+ * S Y S T E M  D E T E C T I O N  (S T A G E  0)
+ *
+ * Define HAVE_FOO macros as arithmetic truth values for any predefined
+ * system macros which have truth values solely based on whether they're
+ * defined.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+/* NOTE: None so far. See stage 3 below. */
+
+
+/*
+ * S Y S T E M  D E T E C T I O N  (S T A G E  1)
+ *
+ * Include any headers necessary for minimal libc feature checking, defining
+ * any prerequisite feature macros.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+/*
+ * NOTE: <limits.h> will indirectly include <features.h>, <standards.h>,
+ * <sys/cdefs.h>, <sys/feature_tests.h>, <sys/featuretest.h>, and similar
+ * system headers which define most of what we care about. Among the typical
+ * feature macros, we also get _DTRACE_VERSION.
+ */
+#include <limits.h>
+
+#ifndef AG_MUSL_MAYBE
+#define AG_MUSL_MAYBE (__linux__ && !__GLIBC__ && !__BIONIC__)
+#endif
+
+#ifndef HAVE_SYS_PARAM_H
+#define HAVE_SYS_PARAM_H ag_test_include(<sys/param.h>, !AG_MUSL_MAYBE)
+#endif
+
+/*
+ * NOTE: Conditionally load <sys/param.h> so we don't unnecessarily pollute
+ * the namespace.
+ */
+#if HAVE_SYS_PARAM_H && !__linux__ && !__sun && !_AIX
+#include <sys/param.h> /* __FreeBSD_version __NetBSD_Prereq__ BSD OpenBSD */
+#endif
+
+#include <fcntl.h> /* F_DUPFD_CLOEXEC */
+
+
+/*
+ * S Y S T E M  D E T E C T I O N  (S T A G E  2)
+ *
+ * Macros which determine libc vendor and version.
+ *
+ * See http://sourceforge.net/p/predef/wiki/Libraries/
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define AG_AIX_PREREQ(M, m) (_AIX # M # m)
+
+#if defined __GLIBC_PREREQ && !defined __UCLIBC__
+#define AG_GLIBC_PREREQ(M, m) (__GLIBC_PREREQ(M, m))
+#else
+#define AG_GLIBC_PREREQ(M, m) 0
+#endif
+
+#define AG_FREEBSD_2VER(M, m, p) (((M) * 100000) + ((m) * 1000) + (p))
+#define AG_FREEBSD_PREREQ(M, m, p) (__FreeBSD__ > 0 && __FreeBSD_version >= AG_FREEBSD_2VER((M), (m), (p)))
+
+#define AG_IPHONE_2VER(M, m) (((M) * 10000) + ((M) * 100))
+#if defined __IPHONE_OS_VERSION_MIN_REQUIRED
+#define AG_IPHONE_PREREQ(M, m) (AG_IPHONE_2VER((M), (m)) <= __IPHONE_OS_VERSION_MIN_REQUIRED)
+#else
+#define AG_IPHONE_PREREQ(M, m) 0
+#endif
+
+#if defined __NetBSD_Prereq__
+#define AG_NETBSD_PREREQ(M, m, p) (!__minix && __NetBSD_Prereq__(M, m, p))
+#else
+#define AG_NETBSD_PREREQ(M, m, p) 0
+#endif
+
+#define AG_MACOS_2VER_10_9(M, m, p) (((M) * 100) + ((m) * 10))
+#define AG_MACOS_2VER_10_10(M, m, p) (((M) * 10000) + ((M) * 100) + (p))
+#define AG_MACOS_PREREQ_10_10(M, m, p) (((M) > 10 || ((M) == 10 && (m) >= 10)) && AG_MACOS_2VER_10_10((M), (m), (p)) <= __MAC_OS_X_VERSION_MIN_REQUIRED)
+#define AG_MACOS_PREREQ_10_9(M, m, p) (((M) == 10 && (m) < 10) && AG_MACOS_2VER_10_9((M), (m), (p)) <= __MAC_OS_X_VERSION_MIN_REQUIRED)
+#if defined __MAC_OS_X_VERSION_MIN_REQUIRED
+#define AG_MACOS_PREREQ(M, m, p) (AG_MACOS_PREREQ_10_10((M), (m), (p)) || AG_MACOS_PREREQ_10_9((M), (m), (p)))
+#else
+#define AG_MACOS_PREREQ(M, m, p) 0
+#endif
+
+#define AG_SUNOS_PREREQ_5_10 (__sun && _DTRACE_VERSION)
+#define AG_SUNOS_PREREQ_5_11 (__sun && F_DUPFD_CLOEXEC)
+#define AG_SUNOS_PREREQ(M, m) (AG_SUNOS_PREREQ_ ## M ## _ ## m)
+
+#define AG_UCLIBC_2VER(M, m, p) (((M) * 10000) + ((m) * 100) + (p))
+#if defined __UCLIBC__
+#define AG_UCLIBC_PREREQ(M, m, p) (AG_UCLIBC_2VER(__UCLIBC_MAJOR__, __UCLIBC_MINOR__, __UCLIBC_SUBLEVEL__) >= AG_UCLIBC_2VER((M), (m), (p)))
+#else
+#define AG_UCLIBC_PREREQ(M, m, p) 0
+#endif
+
+
+/*
+ * S Y S T E M  D E T E C T I O N  (S T A G E  3)
+ *
+ * Define HAVE_FOO macros as arithmetic truth values for any system macros
+ * which have a truth value solely based on whether they're defined.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef HAVE___EXTENSIONS__
+#ifdef __EXTENSIONS__
+#define HAVE___EXTENSIONS__ 1
+#endif
+#endif
+
+#ifndef HAVE__ALL_SOURCE
+#ifdef _ALL_SOURCE
+#define HAVE__ALL_SOURCE 1
+#endif
+#endif
+
+#ifndef HAVE__GNU_SOURCE
+#ifdef _GNU_SOURCE
+#define HAVE__GNU_SOURCE 1
+#endif
+#endif
+
+#ifndef HAVE__MINIX
+#if defined _MINIX || (defined __minix && defined _NETBSD_SOURCE)
+#define HAVE__MINIX 1
+#endif
+#endif
+
+#ifndef HAVE__POSIX_PTHREAD_SEMANTICS
+#ifdef _POSIX_PTHREAD_SEMANTICS
+#define HAVE__POSIX_PTHREAD_SEMANTICS 1
+#endif
+#endif
+
+#ifndef HAVE__REENTRANT
+#ifdef _REENTRANT
+#define HAVE__REENTRANT 1
+#endif
+#endif
+
+
+/*
+ * H E A D E R  D E T E C T I O N
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef HAVE_DLFCN_H
+#define HAVE_DLFCN_H ag_test_include(<dlfcn.h>, 1)
+#endif
+
+#ifndef HAVE_IFADDRS_H
+#define HAVE_IFADDRS_H_ (!_AIX && (!__sun || AG_SUNOS_PREREQ(5,11)))
+#define HAVE_IFADDRS_H ag_test_include(<ifaddrs.h>, HAVE_IFADDRS_H_)
+#endif
+
+#ifndef HAVE_INTTYPES_H
+#define HAVE_INTTYPES_H 1
+#endif
+
+#ifndef HAVE_MACH_CLOCK_H
+#define HAVE_MACH_CLOCK_H ag_test_include(<mach/clock.h>, __APPLE__)
+#endif
+
+#ifndef HAVE_MACH_MACH_H
+#define HAVE_MACH_MACH_H ag_test_include(<mach/mach.h>, __APPLE__)
+#endif
+
+#ifndef HAVE_MACH_MACH_TIME_H
+#define HAVE_MACH_MACH_TIME_H ag_test_include(<mach/mach_time.h>, __APPLE__)
+#endif
+
+#ifndef HAVE_MEMORY_H
+#define HAVE_MEMORY_H 1
+#endif
+
+#ifndef HAVE_PORT_H
+#define HAVE_PORT_H ag_test_include(<port.h>, AG_SUNOS_PREREQ(5,10))
+#endif
+
+/* TODO: Maybe test _POSIX_THREADS from <unistd.h>. */
+#ifndef HAVE_PTHREAD_H
+#define HAVE_PTHREAD_H ag_test_include(<pthread.h>, !__minix)
+#endif
+
+#ifndef HAVE_STDINT_H
+#define HAVE_STDINT_H 1
+#endif
+
+#ifndef HAVE_STDLIB_H
+#define HAVE_STDLIB_H 1
+#endif
+
+#ifndef HAVE_STRING_H
+#define HAVE_STRING_H 1
+#endif
+
+#ifndef HAVE_STRINGS_H
+#define HAVE_STRINGS_H 1
+#endif
+
+#ifndef HAVE_SYS_AUXV_H
+#define HAVE_SYS_AUXV_H_ (AG_GLIBC_PREREQ(2,16) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || __sun)
+#define HAVE_SYS_AUXV_H ag_test_include(<sys/auxv.h>, HAVE_SYS_AUXV_H_)
+#endif
+
+#ifndef HAVE_SYS_EPOLL_H
+#define HAVE_SYS_EPOLL_H ag_test_include(<sys/epoll.h>, __linux__)
+#endif
+
+#ifndef HAVE_SYS_EVENT_H
+#define HAVE_SYS_EVENT_H ag_test_include(<sys/event.h>, BSD)
+#endif
+
+#ifndef HAVE_SYS_EVENTFD_H
+#define HAVE_SYS_EVENTFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || EFD_CLOEXEC)
+#define HAVE_SYS_EVENTFD_H ag_test_include(<sys/eventfd.h>, HAVE_SYS_EVENTFD_H_)
+#endif
+
+#ifndef HAVE_SYS_INOTIFY_H
+#define HAVE_SYS_INOTIFY_H ag_test_include(<sys/inotify.h>, __linux__)
+#endif
+
+#ifndef HAVE_SYS_SIGNALFD_H
+#define HAVE_SYS_SIGNALFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || SFD_CLOEXEC)
+#define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, HAVE_SYS_SIGNALFD_H_)
+#endif
+
+#ifndef HAVE_SYS_SOCKIO_H
+#define HAVE_SYS_SOCKIO_H ag_test_include(<sys/sockio.h>, (__sun || BSD))
+#endif
+
+#ifndef HAVE_SYS_STAT_H
+#define HAVE_SYS_STAT_H 1
+#endif
+
+#ifndef HAVE_SYS_SYSCTL_H
+#define HAVE_SYS_SYSCTL_H ag_test_include(<sys/sysctl.h>, (BSD || __GLIBC__))
+#endif
+
+#ifndef HAVE_SYS_TIMERFD_H
+#define HAVE_SYS_TIMERFD_H_  (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || TFD_CLOEXEC)
+#define HAVE_SYS_TIMERFD_H ag_test_include(<sys/timerfd.h>, HAVE_SYS_TIMERFD_H_)
+#endif
+
+#ifndef HAVE_SYS_TYPES_H
+#define HAVE_SYS_TYPES_H 1
+#endif
+
+#ifndef HAVE_UNISTD_H
+#define HAVE_UNISTD_H 1
+#endif
+
+
+/*
+ * T Y P E  D E T E C T I O N
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef HAVE_STRUCT_SOCKADDR_SA_LEN
+#define HAVE_STRUCT_SOCKADDR_SA_LEN (!__linux__ && !__sun)
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_ATIM
+#define HAVE_STRUCT_STAT_ST_ATIM (defined st_atime && ((!__APPLE__ && !__NetBSD__) || !HAVE_STRUCT_STAT_ST_ATIMESPEC))
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_CTIM
+#define HAVE_STRUCT_STAT_ST_CTIM HAVE_STRUCT_STAT_ST_ATIM
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_MTIM
+#define HAVE_STRUCT_STAT_ST_MTIM HAVE_STRUCT_STAT_ST_ATIM
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_ATIMESPEC
+#define HAVE_STRUCT_STAT_ST_ATIMESPEC (__APPLE__ || defined st_atimespec || defined st_atimensec)
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_CTIMESPEC
+#define HAVE_STRUCT_STAT_ST_CTIMESPEC HAVE_STRUCT_STAT_ST_ATIMESPEC
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_MTIMESPEC
+#define HAVE_STRUCT_STAT_ST_MTIMESPEC HAVE_STRUCT_STAT_ST_ATIMESPEC
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_BLOCKS
+#define HAVE_STRUCT_STAT_ST_BLOCKS 1
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_BLKSIZE
+#define HAVE_STRUCT_STAT_ST_BLKSIZE 1
+#endif
+
+#ifndef HAVE_STRUCT_STAT_ST_RDEV
+#define HAVE_STRUCT_STAT_ST_RDEV 1
+#endif
+
+
+/*
+ * D E C L A R A T I O N  D E T E C T I O N
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef HAVE___DECL_LIBC_ENABLE_SECURE
+#define HAVE___DECL_LIBC_ENABLE_SECURE 0
+#endif
+
+#ifndef HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME
+#define HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME (__linux__ && HAVE__GNU_SOURCE)
+#endif
+
+#ifndef HAVE_DECL_PTHREAD_MUTEX_ROBUST
+#define HAVE_DECL_PTHREAD_MUTEX_ROBUST (defined PTHREAD_MUTEX_ROBUST || AG_GLIBC_PREREQ(2,12))
+#endif
+
+#ifndef HAVE_DECL_STRERROR_R
+#define HAVE_DECL_STRERROR_R 1
+#endif
+
+#ifndef HAVE_DECL_SYS_SIGLIST
+#define HAVE_DECL_SYS_SIGLIST (!AG_MUSL_MAYBE && !__sun && !_AIX)
+#endif
+
+
+/*
+ * V A R I A B L E  D E T E C T I O N
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef HAVE___LIBC_ENABLE_SECURE
+#define HAVE___LIBC_ENABLE_SECURE AG_GLIBC_PREREQ(2,1) /* added to glibc between 2.0.98 and 2.0.99 */
+#endif
+
+#ifndef HAVE_PROGRAM_INVOCATION_SHORT_NAME
+#define HAVE_PROGRAM_INVOCATION_SHORT_NAME (__linux__)
+#endif
+
+#ifndef HAVE_SYS_SIGLIST
+#define HAVE_SYS_SIGLIST HAVE_DECL_SYS_SIGLIST
+#endif
+
+
+/*
+ * F U N C T I O N  D E T E C T I O N
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#ifndef HAVE_ACCEPT4
+#define HAVE_ACCEPT4 (defined SOCK_CLOEXEC && !__NetBSD__)
+#endif
+
+#ifndef HAVE_ARC4RANDOM
+#define HAVE_ARC4RANDOM \
+	(__APPLE__ || __DragonFly__ || __FreeBSD__ || __NetBSD__ || \
+	 __OpenBSD__ || __minix)
+#endif
+
+#ifndef HAVE_ARC4RANDOM_ADDRANDOM
+#define HAVE_ARC4RANDOM_ADDRANDOM (HAVE_ARC4RANDOM && OpenBSD < 201405)
+#endif
+
+#ifndef HAVE_ARC4RANDOM_STIR
+#define HAVE_ARC4RANDOM_STIR HAVE_ARC4RANDOM_ADDRANDOM
+#endif
+
+#ifndef HAVE_CLOCK_GETTIME
+#define HAVE_CLOCK_GETTIME (!__APPLE__)
+#endif
+
+#ifndef HAVE_DLADDR
+#define HAVE_DLADDR (HAVE_DLOPEN && !_AIX && ((!__GLIBC__ && !AG_MUSL_MAYBE) || HAVE__GNU_SOURCE))
+#endif
+
+#ifndef HAVE_DLOPEN
+#define HAVE_DLOPEN HAVE_DLFCN_H
+#endif
+
+#ifndef HAVE_DLSYM
+#define HAVE_DLSYM HAVE_DLOPEN
+#endif
+
+#ifndef HAVE_DUP2
+#define HAVE_DUP2 1
+#endif
+
+#ifndef HAVE_DUP3
+#define HAVE_DUP3 (AG_GLIBC_PREREQ(2,9) || AG_FREEBSD_PREREQ(10,0,0) || AG_NETBSD_PREREQ(6,0,0) || AG_UCLIBC_PREREQ(0,9,34) || AG_MUSL_MAYBE || __BIONIC__)
+#endif
+
+#ifndef HAVE_FDOPENDIR
+#define HAVE_FDOPENDIR ( \
+	(!__APPLE__ || AG_MACOS_PREREQ(10,10,0) || AG_IPHONE_PREREQ(8,0)) \
+	&& (!__NetBSD__ || AG_NETBSD_PREREQ(6,0,0)) \
+)
+#endif
+
+#ifndef HAVE_EPOLL_CREATE
+#define HAVE_EPOLL_CREATE HAVE_SYS_EPOLL_H
+#endif
+
+#if HAVE_SYS_EPOLL_H
+#include <sys/epoll.h>
+#endif
+
+#ifndef HAVE_EPOLL_CREATE1
+#define HAVE_EPOLL_CREATE1 (HAVE_EPOLL_CREATE && (EPOLL_CLOEXEC || AG_GLIBC_PREREQ(2,9)))
+#endif
+
+#ifndef HAVE_EPOLL_CTL
+#define HAVE_EPOLL_CTL HAVE_EPOLL_CREATE
+#endif
+
+#ifndef HAVE_EPOLL_PWAIT
+#define HAVE_EPOLL_PWAIT 0
+#endif
+
+#ifndef HAVE_EPOLL_WAIT
+#define HAVE_EPOLL_WAIT HAVE_EPOLL_CREATE
+#endif
+
+#ifndef HAVE_EVENTFD
+#define HAVE_EVENTFD HAVE_SYS_EVENTFD_H
+#endif
+
+#ifndef HAVE_GETAUXVAL
+#define HAVE_GETAUXVAL (HAVE_SYS_AUXV_H && !__sun)
+#endif
+
+#ifndef HAVE_GETENV_R
+#define HAVE_GETENV_R (AG_NETBSD_PREREQ(4,0,0) || __minix)
+#endif
+
+#ifndef HAVE_GETEXECNAME
+#define HAVE_GETEXECNAME (__sun)
+#endif
+
+#ifndef HAVE_GETIFADDRS
+#define HAVE_GETIFADDRS (HAVE_IFADDRS_H && !__sun)
+#endif
+
+#ifndef HAVE_GETPROGNAME
+#define HAVE_GETPROGNAME (HAVE_ARC4RANDOM || AG_SUNOS_PREREQ(5,11))
+#endif
+
+#ifndef HAVE_INOTIFY_INIT
+#define HAVE_INOTIFY_INIT HAVE_SYS_INOTIFY_H
+#endif
+
+#ifndef HAVE_INOTIFY_INIT1
+#define HAVE_INOTIFY_INIT1 (HAVE_INOTIFY_INIT && IN_CLOEXEC)
+#endif
+
+#ifndef HAVE_ISSETUGID
+#define HAVE_ISSETUGID ((!__linux__ || (AG_MUSL_MAYBE && HAVE__GNU_SOURCE)) && !_AIX)
+#endif
+
+#if HAVE_SYS_EVENT_H
+#include <sys/event.h>
+#endif
+
+#ifndef HAVE_KEVENT
+#define HAVE_KEVENT (defined EV_SET)
+#endif
+
+#ifndef HAVE_KQUEUE
+#define HAVE_KQUEUE HAVE_KEVENT
+#endif
+
+#ifndef HAVE_KQUEUE1
+#define HAVE_KQUEUE1 (HAVE_KQUEUE && AG_NETBSD_PREREQ(6,0,0))
+#endif
+
+#ifndef HAVE_OPENAT
+#define HAVE_OPENAT \
+	((!__APPLE__ || AG_MACOS_PREREQ(10,10,0) || AG_IPHONE_PREREQ(8,0)) \
+	 && (!__NetBSD__))
+#endif
+
+#ifndef HAVE_PACCEPT
+#define HAVE_PACCEPT AG_NETBSD_PREREQ(6,0,0)
+#endif
+
+#ifndef HAVE_PIPE2
+#define HAVE_PIPE2 (AG_GLIBC_PREREQ(2,9) || AG_FREEBSD_PREREQ(10,0,0) || AG_NETBSD_PREREQ(6,0,0) || AG_UCLIBC_PREREQ(0,9,32) || AG_MUSL_MAYBE || __BIONIC__)
+#endif
+
+#ifndef HAVE_PORT_ALERT
+#define HAVE_PORT_ALERT HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_PORT_ASSOCIATE
+#define HAVE_PORT_ASSOCIATE HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_PORT_CREATE
+#define HAVE_PORT_CREATE HAVE_PORT_H
+#endif
+
+#ifndef HAVE_PORT_DISSOCIATE
+#define HAVE_PORT_DISSOCIATE HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_PORT_GET
+#define HAVE_PORT_GET HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_PORT_GETN
+#define HAVE_PORT_GETN HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_PORT_SEND
+#define HAVE_PORT_SEND HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_PORT_SENDN
+#define HAVE_PORT_SENDN HAVE_PORT_CREATE
+#endif
+
+#ifndef HAVE_POSIX_FADVISE
+#define HAVE_POSIX_FADVISE (defined POSIX_FADV_NORMAL || AG_GLIBC_PREREQ(2,2) || __sun || AG_MUSL_MAYBE || AG_FREEBSD_PREREQ(9,0,0))
+#endif
+
+#ifndef HAVE_POSIX_FALLOCATE
+#define HAVE_POSIX_FALLOCATE (AG_GLIBC_PREREQ(2,2) || __sun || AG_MUSL_MAYBE || AG_FREEBSD_PREREQ(9,0,0) || _AIX)
+#endif
+
+#ifndef HAVE_SIGNALFD
+#define HAVE_SIGNALFD HAVE_SYS_SIGNALFD_H
+#endif
+
+#ifndef HAVE_SIGTIMEDWAIT
+#define HAVE_SIGTIMEDWAIT (!__APPLE__ && !__OpenBSD__)
+#endif
+
+#ifndef HAVE_SIGWAIT
+#define HAVE_SIGWAIT (!__minix)
+#endif
+
+#ifndef HAVE_STATIC_ASSERT
+#if AG_GNUC_PREREQ(0,0,0) && !AG_GNUC_PREREQ(4,6,0)
+#define HAVE_STATIC_ASSERT 0 /* glibc doesn't check GCC version */
+#else
+#define HAVE_STATIC_ASSERT (defined static_assert)
+#endif
+#endif
+
+#ifndef HAVE_STRERROR_R
+#define HAVE_STRERROR_R 1
+#endif
+
+#ifndef HAVE_SYSCTL
+#define HAVE_SYSCTL HAVE_SYS_SYSCTL_H
+#endif
+
+#ifndef HAVE_TIMERFD_CREATE
+#define HAVE_TIMERFD_CREATE HAVE_SYS_TIMERFD_H
+#endif
+
+#ifndef HAVE_TIMERFD_GETTIME
+#define HAVE_TIMERFD_GETTIME HAVE_TIMERFD_CREATE
+#endif
+
+#ifndef HAVE_TIMERFD_SETTIME
+#define HAVE_TIMERFD_SETTIME HAVE_TIMERFD_CREATE
+#endif
+
+#ifndef STRERROR_R_CHAR_P
+#define STRERROR_R_CHAR_P ((AG_GLIBC_PREREQ(0,0) || AG_UCLIBC_PREREQ(0,0,0)) && (HAVE__GNU_SOURCE || !(_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600)))
+#endif
+
+
+#endif /* CONFIG_H_GUESS */

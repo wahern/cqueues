@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <string.h> /* memcpy(3) strcmp(3) strerror_r(3) strnlen(3) */
 #include <errno.h>
 

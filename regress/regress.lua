@@ -3,6 +3,7 @@ local auxlib = require"cqueues.auxlib"
 
 local regress = {
 	cqueues = require"cqueues",
+	dns = require "cqueues.dns",
 	socket = require"cqueues.socket",
 	thread = require"cqueues.thread",
 	errno = require"cqueues.errno",
@@ -10,10 +11,16 @@ local regress = {
 	auxlib = auxlib,
 	assert = auxlib.assert,
 	fileresult = auxlib.fileresult,
+	pack = table.pack or function (...)
+		local t = { ... }
+		t.n = select("#", ...)
+		return t
+	end,
+	unpack = table.unpack or unpack,
 }
 
-local emit_progname = os.getenv"PROGNAME" or "regress"
-local emit_verbose = tonumber(os.getenv"VERBOSE" or 1)
+local emit_progname = os.getenv"REGRESS_PROGNAME" or "regress"
+local emit_verbose = tonumber(os.getenv"REGRESS_VERBOSE" or 1)
 local emit_info = {}
 local emit_ll = 0
 
@@ -197,5 +204,51 @@ function regress.getsslctx(protocol, accept, keytype)
 	return ctx
 end -- regress.getsslctx
 
+-- test 87-alpn-disappears relies on package.searchpath
+function regress.searchpath(name, paths, sep, rep)
+	sep = (sep or "."):gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+	rep = (rep or "/"):gsub("%%", "%%%%")
+
+	local nofile = {}
+
+	for path in paths:gmatch("([^;]+)") do
+		path = path:gsub("%?", (name:gsub(sep, rep):gsub("%%", "%%%%")))
+		local fh = io.open(path, "rb")
+		if fh then
+			fh:close()
+			return path
+		end
+		nofile[#nofile + 1] = string.format("no file '%s'", path)
+	end
+
+	return nil, table.concat(nofile, "\n")
+end -- regress.searchpath
+
+package.searchpath = package.searchpath or regress.searchpath
+
+
+local Error = {}
+Error.__index = Error
+
+function Error:__tostring()
+	return self.text
+end
+
+function Error:unpack()
+	return regress.unpack(self, 1, self.n)
+end
+
+function regress.packerror(v, ...)
+	if not v then
+		local err = regress.pack(select(2, auxlib.fileresult(nil, ...)))
+
+		err.text = err[1] or "?"
+		err.code = err[2]
+
+		return setmetatable(err, Error)
+	else
+		return nil, v, ...
+	end
+end
 
 return regress

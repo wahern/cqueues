@@ -81,7 +81,7 @@ local loader = function(loader, ...)
 				-- return string and number for auxlib.fileresult
 				return (errno.strerror(v) or tostring(v)), v
 			else
-				return tostring(v)
+				return tostring(v), ...
 			end
 		elseif select("#", ...) > 0 then
 			return findwhy(...)

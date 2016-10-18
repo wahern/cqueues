@@ -111,39 +111,32 @@ local loader = function(loader, ...)
 
 	local pool = {}
 
-	local function tryget(self)
-		local res, why
-
-		local cache_len = #self.cache
-		if cache_len > 1 then
-			res = self.cache[cache_len]
-			self.cache[cache_len] = nil
-		elseif self.alive.n < self.hiwat then
-			res, why = resolver.new(self.resconf, self.hosts, self.hints)
-
-			if not res then
-				return nil, why
-			end
-		end
-
-		self.alive:add(res)
-
-		return res
-	end -- tryget
-
 	local function getby(self, deadline)
-		local res, why = tryget(self)
-
-		while not res and not why do
-			if deadline and deadline <= monotime() then
-				return nil, ETIMEDOUT
-			else
-				self.condvar:wait(totimeout(deadline))
-				res, why = tryget(self)
+		local res
+		while true do
+			local cache_len = #self.cache
+			if cache_len > 1 then
+				res = self.cache[cache_len]
+				self.cache[cache_len] = nil
+				if res then
+					break
+				else
+					if deadline and deadline <= monotime() then
+						return nil, ETIMEDOUT
+					end
+					self.condvar:wait(totimeout(deadline))
+				end
+			elseif self.alive.n < self.hiwat then
+				local why
+				res, why = resolver.new(self.resconf, self.hosts, self.hints)
+				if not res then
+					return nil, why
+				end
+				break
 			end
 		end
-
-		return res, why
+		self.alive:add(res)
+		return res
 	end -- getby
 
 
@@ -184,7 +177,13 @@ local loader = function(loader, ...)
 			return nil, why
 		end
 
-		return res:query(name, type, class, totimeout(deadline))
+		local r, y = res:query(name, type, class, totimeout(deadline))
+		self:put(res)
+		if not r then
+			return nil, y
+		end
+
+		return r
 	end -- pool:query
 
 

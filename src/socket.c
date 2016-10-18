@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <stddef.h>	/* NULL offsetof size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* strtol(3) */
@@ -37,7 +39,12 @@
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
 #include <arpa/inet.h>	/* ntohs(3) */
 
+#include <openssl/ssl.h> /* SSL_CTX, SSL_CTX_free(), SSL_CTX_up_ref(), SSL, SSL_up_ref() */
+#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
+#define SSL_CTX_up_ref(ctx) CRYPTO_add(&(ctx)->references, 1, CRYPTO_LOCK_SSL_CTX)
+#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
+#endif
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -55,7 +62,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 static inline _Bool mime_isblank(unsigned char ch) {
-	return ch == 32 && ch == 9;
+	return ch == 32 || ch == 9;
 } /* mime_isblank() */
 
 
@@ -113,7 +120,7 @@ static size_t iov_eoh(const struct iovec *iov, _Bool eof, int flags, int *_error
 		return 0; /* not a valid field name */
 
 	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		if (++p < pe && *p != ' ' && *p != '\t')
+		if (++p < pe && !mime_isblank(*p))
 			return p - tp; /* found */
 	}
 
@@ -875,7 +882,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = lso_checkopts(L, 1);
 
 		lua_getfield(L, 1, "family");
-		family = luaL_optinteger(L, -1, AF_INET);
+		family = luaL_optinteger(L, -1, AF_UNSPEC);
 		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "type");
@@ -895,7 +902,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
-		family = luaL_optinteger(L, 3, AF_INET);
+		family = luaL_optinteger(L, 3, AF_UNSPEC);
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
@@ -914,7 +921,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
+		if (!(S->socket = so_open(host, port, 0, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -963,7 +970,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = lso_checkopts(L, 1);
 
 		lua_getfield(L, 1, "family");
-		family = luaL_optinteger(L, -1, AF_INET);
+		family = luaL_optinteger(L, -1, AF_UNSPEC);
 		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "type");
@@ -983,7 +990,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
-		family = luaL_optinteger(L, 3, AF_INET);
+		family = luaL_optinteger(L, 3, AF_UNSPEC);
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
@@ -1002,7 +1009,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
+		if (!(S->socket = so_open(host, port, 0, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -1055,7 +1062,6 @@ typedef struct {
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	SSL_CTX **ctx;
-	const SSL_METHOD *method;
 	int error;
 
 	/*
@@ -1067,15 +1073,7 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 		goto check;
 
 	if ((ctx = luaL_testudata(L, 2, "SSL_CTX*"))) {
-		/*
-		 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
-		 * OpenSSL's internal ssl_undefined_function().
-		 *
-		 * Server methods such as TLSv1_2_server_method(), etc. should have
-		 * their .ssl_connect method set to this value.
-		 */
-		method = SSL_CTX_get_ssl_method(*ctx);
-		so_setbool(&S->tls.config.accept, (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect));
+		/* accept-mode check handled by so_starttls() */
 	} else if ((ctx = luaL_testudata(L, 2, "SSL:Context"))) { /* luasec compatability */
 		luaL_argcheck(L, ((lsec_context*)ctx)->mode != LSEC_MODE_INVALID, 2, "invalid mode");
 		so_setbool(&S->tls.config.accept, ((((lsec_context*)ctx)->mode) == LSEC_MODE_SERVER));
@@ -1085,7 +1083,7 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 		if (S->tls.config.context)
 			SSL_CTX_free(S->tls.config.context);
 
-		CRYPTO_add(&(*ctx)->references, 1, CRYPTO_LOCK_SSL_CTX);
+		SSL_CTX_up_ref(*ctx);
 		S->tls.config.context = *ctx;
 	}
 
@@ -1124,7 +1122,7 @@ static lso_nargs_t lso_checktls(lua_State *L) {
 
 	lua_setmetatable(L, -2);
 
-	CRYPTO_add(&(*ssl)->references, 1, CRYPTO_LOCK_SSL);
+	SSL_up_ref(*ssl);
 
 	return 1;
 } /* lso_checktls() */
@@ -2668,7 +2666,7 @@ static lso_nargs_t lso_eof(lua_State *L) {
 
 
 static lso_nargs_t lso_accept(lua_State *L) {
-	struct luasocket *A = luaL_checkudata(L, 1, LSO_CLASS);
+	struct luasocket *A = lso_checkself(L, 1);
 	struct so_options opts;
 	int fd, error;
 
