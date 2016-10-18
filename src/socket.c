@@ -1040,7 +1040,6 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 
 
 /* luasec compat */
-
 #define LSEC_MODE_INVALID 0
 #define LSEC_MODE_SERVER  1
 #define LSEC_MODE_CLIENT  2
@@ -1076,10 +1075,10 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 		 * their .ssl_connect method set to this value.
 		 */
 		method = SSL_CTX_get_ssl_method(*ctx);
-		S->tls.config.accept = (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect);
-	} else if((ctx = luaL_testudata(L, 2, "SSL:Context"))) { /* luasec compatability */
+		so_setbool(&S->tls.config.accept, (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect));
+	} else if ((ctx = luaL_testudata(L, 2, "SSL:Context"))) { /* luasec compatability */
 		luaL_argcheck(L, ((lsec_context*)ctx)->mode != LSEC_MODE_INVALID, 2, "invalid mode");
-		S->tls.config.accept = (((lsec_context*)ctx)->mode) == LSEC_MODE_SERVER;
+		so_setbool(&S->tls.config.accept, ((((lsec_context*)ctx)->mode) == LSEC_MODE_SERVER));
 	}
 
 	if (ctx && *ctx && *ctx != S->tls.config.context) {

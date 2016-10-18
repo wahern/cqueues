@@ -131,6 +131,17 @@ const char *so_strerror(int);
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+typedef struct {
+	enum {
+		SO_OPT_UNSET = 0,
+		SO_OPT_BOOLEAN,
+	} type;
+
+	union {
+		_Bool boolean;
+	};
+} so_optional;
+
 struct so_options {
 	const void *sa_bind;
 
@@ -174,6 +185,23 @@ struct so_options {
 #define SO_OPTS_TLS_HOSTNAME ((char *)1) /* place holder for peer host name */
 
 #define so_opts(...)	(&(struct so_options){ .sin_reuseaddr = 1, .sin_v6only = SO_V6ONLY_DEFAULT, .fd_nonblock = 1, .fd_cloexec = 1, .fd_nosigpipe = 1, .tls_sendname = SO_OPTS_TLS_HOSTNAME, .st_time = 1, __VA_ARGS__ })
+
+static inline _Bool so_isbool(const so_optional v) {
+	return v.type == SO_OPT_BOOLEAN;
+}
+
+static inline _Bool so_optbool(const so_optional v, _Bool def) {
+	return (so_isbool(v))? v.boolean : def;
+}
+
+static inline _Bool so_tobool(const so_optional v) {
+	return so_optbool(v, 0);
+}
+
+static inline void so_setbool(so_optional *v, _Bool b) {
+	v->type = SO_OPT_BOOLEAN;
+	v->boolean = b;
+}
 
 
 /*
@@ -530,7 +558,7 @@ struct so_starttls {
 
 	struct iovec pushback;
 
-	_Bool accept;
+	so_optional accept;
 }; /* struct so_starttls */
 
 int so_starttls(struct socket *, const struct so_starttls *);

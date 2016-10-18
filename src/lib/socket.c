@@ -2090,7 +2090,7 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
-	so->ssl.accept = cfg->accept;
+	so->ssl.accept = so_tobool(cfg->accept);
 
 	if (!so->ssl.accept && so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
 		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))
