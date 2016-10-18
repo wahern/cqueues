@@ -40,11 +40,7 @@
 #include <arpa/inet.h>	/* ntohs(3) */
 
 #include <openssl/ssl.h> /* SSL_CTX, SSL_CTX_free(), SSL_CTX_up_ref(), SSL, SSL_up_ref() */
-#if OPENSSL_VERSION_NUMBER < 0x10100001L || defined(LIBRESSL_VERSION_NUMBER)
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
-#define SSL_CTX_up_ref(ctx) CRYPTO_add(&(ctx)->references, 1, CRYPTO_LOCK_SSL_CTX)
-#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
-#endif
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -54,6 +50,36 @@
 #include "lib/dns.h"
 
 #include "cqueues.h"
+
+
+/*
+ * F E A T U R E  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define HAVE_OPENSSL11_API (!(OPENSSL_VERSION_NUMBER < 0x10100001L || defined LIBRESSL_VERSION_NUMBER))
+
+#ifndef HAVE_SSL_CTX_UP_REF
+#define HAVE_SSL_CTX_UP_REF HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_SSL_UP_REF
+#define HAVE_SSL_UP_REF HAVE_OPENSSL11_API
+#endif
+
+
+/*
+ * C O M P A T  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !HAVE_SSL_CTX_UP_REF
+#define SSL_CTX_up_ref(ctx) CRYPTO_add(&(ctx)->references, 1, CRYPTO_LOCK_SSL_CTX)
+#endif
+
+#if !HAVE_SSL_UP_REF
+#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
+#endif
 
 
 /*
