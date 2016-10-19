@@ -34,7 +34,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define AG_VENDOR  "william+autoguess@25thandClement.com"
-#define AG_VERSION 20161018L
+#define AG_VERSION 20161019L
 
 
 /*
@@ -345,6 +345,11 @@
 #define AG_MACOS_PREREQ(M, m, p) 0
 #endif
 
+#define AG_OPENBSD_PREREQ_0_0 (__OpenBSD__)
+#define AG_OPENBSD_PREREQ_5_5 (OpenBSD >= 201405)
+#define AG_OPENBSD_PREREQ_5_7 (OpenBSD >= 201505)
+#define AG_OPENBSD_PREREQ(M, m) (AG_OPENBSD_PREREQ_ ## M ## _ ## m)
+
 #define AG_SUNOS_PREREQ_5_10 (__sun && _DTRACE_VERSION)
 #define AG_SUNOS_PREREQ_5_11 (__sun && F_DUPFD_CLOEXEC)
 #define AG_SUNOS_PREREQ(M, m) (AG_SUNOS_PREREQ_ ## M ## _ ## m)
@@ -528,7 +533,7 @@
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_ATIM
-#define HAVE_STRUCT_STAT_ST_ATIM (defined st_atime && ((!__APPLE__ && !__NetBSD__) || !HAVE_STRUCT_STAT_ST_ATIMESPEC))
+#define HAVE_STRUCT_STAT_ST_ATIM (defined st_atime && ((!__APPLE__ && (!__NetBSD__ || AG_NETBSD_PREREQ(7,0,0))) || !HAVE_STRUCT_STAT_ST_ATIMESPEC))
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_CTIM
@@ -636,7 +641,7 @@
 #endif
 
 #ifndef HAVE_ARC4RANDOM_ADDRANDOM
-#define HAVE_ARC4RANDOM_ADDRANDOM (HAVE_ARC4RANDOM && OpenBSD < 201405)
+#define HAVE_ARC4RANDOM_ADDRANDOM (HAVE_ARC4RANDOM && !AG_OPENBSD_PREREQ(5,5))
 #endif
 
 #ifndef HAVE_ARC4RANDOM_STIR
@@ -664,7 +669,7 @@
 #endif
 
 #ifndef HAVE_DUP3
-#define HAVE_DUP3 (AG_GLIBC_PREREQ(2,9) || AG_FREEBSD_PREREQ(10,0,0) || AG_NETBSD_PREREQ(6,0,0) || AG_UCLIBC_PREREQ(0,9,34) || AG_MUSL_MAYBE || __BIONIC__)
+#define HAVE_DUP3 (AG_GLIBC_PREREQ(2,9) || AG_FREEBSD_PREREQ(10,0,0) || AG_NETBSD_PREREQ(6,0,0) || AG_UCLIBC_PREREQ(0,9,34) || AG_MUSL_MAYBE || __BIONIC__ || AG_OPENBSD_PREREQ(5,7))
 #endif
 
 #ifndef HAVE_FDOPENDIR
@@ -753,7 +758,7 @@
 #ifndef HAVE_OPENAT
 #define HAVE_OPENAT \
 	((!__APPLE__ || AG_MACOS_PREREQ(10,10,0) || AG_IPHONE_PREREQ(8,0)) \
-	 && (!__NetBSD__))
+	 && (!__NetBSD__ || AG_NETBSD_PREREQ(7,0,0)))
 #endif
 
 #ifndef HAVE_PACCEPT
@@ -761,7 +766,7 @@
 #endif
 
 #ifndef HAVE_PIPE2
-#define HAVE_PIPE2 (AG_GLIBC_PREREQ(2,9) || AG_FREEBSD_PREREQ(10,0,0) || AG_NETBSD_PREREQ(6,0,0) || AG_UCLIBC_PREREQ(0,9,32) || AG_MUSL_MAYBE || __BIONIC__)
+#define HAVE_PIPE2 (AG_GLIBC_PREREQ(2,9) || AG_FREEBSD_PREREQ(10,0,0) || AG_NETBSD_PREREQ(6,0,0) || AG_UCLIBC_PREREQ(0,9,32) || AG_MUSL_MAYBE || __BIONIC__ || AG_OPENBSD_PREREQ(5,7))
 #endif
 
 #ifndef HAVE_PORT_ALERT
@@ -801,7 +806,7 @@
 #endif
 
 #ifndef HAVE_POSIX_FALLOCATE
-#define HAVE_POSIX_FALLOCATE (AG_GLIBC_PREREQ(2,2) || __sun || AG_MUSL_MAYBE || AG_FREEBSD_PREREQ(9,0,0) || _AIX)
+#define HAVE_POSIX_FALLOCATE (_AIX || AG_FREEBSD_PREREQ(9,0,0) || AG_GLIBC_PREREQ(2,2) || AG_MUSL_MAYBE || AG_NETBSD_PREREQ(7,0,0) || __sun)
 #endif
 
 #ifndef HAVE_SIGNALFD
