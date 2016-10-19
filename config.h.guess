@@ -322,7 +322,7 @@
 #define AG_FREEBSD_2VER(M, m, p) (((M) * 100000) + ((m) * 1000) + (p))
 #define AG_FREEBSD_PREREQ(M, m, p) (__FreeBSD__ > 0 && __FreeBSD_version >= AG_FREEBSD_2VER((M), (m), (p)))
 
-#define AG_IPHONE_2VER(M, m) (((M) * 10000) + ((M) * 100))
+#define AG_IPHONE_2VER(M, m) (((M) * 10000) + ((m) * 100))
 #if defined __IPHONE_OS_VERSION_MIN_REQUIRED
 #define AG_IPHONE_PREREQ(M, m) (AG_IPHONE_2VER((M), (m)) <= __IPHONE_OS_VERSION_MIN_REQUIRED)
 #else
@@ -336,7 +336,7 @@
 #endif
 
 #define AG_MACOS_2VER_10_9(M, m, p) (((M) * 100) + ((m) * 10))
-#define AG_MACOS_2VER_10_10(M, m, p) (((M) * 10000) + ((M) * 100) + (p))
+#define AG_MACOS_2VER_10_10(M, m, p) (((M) * 10000) + ((m) * 100) + (p))
 #define AG_MACOS_PREREQ_10_10(M, m, p) (((M) > 10 || ((M) == 10 && (m) >= 10)) && AG_MACOS_2VER_10_10((M), (m), (p)) <= __MAC_OS_X_VERSION_MIN_REQUIRED)
 #define AG_MACOS_PREREQ_10_9(M, m, p) (((M) == 10 && (m) < 10) && AG_MACOS_2VER_10_9((M), (m), (p)) <= __MAC_OS_X_VERSION_MIN_REQUIRED)
 #if defined __MAC_OS_X_VERSION_MIN_REQUIRED
