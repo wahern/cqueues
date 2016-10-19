@@ -1,3 +1,18 @@
+liblua-cqueues (20161018-0) unstable; urgency=low
+
+  * Support OpenSSL 1.1 API. (@daurnimator)
+  * Support clock_gettime with macOS Sierra / XCode 8.0. (Reported by
+    @ziazon)
+  * Support accept4 and paccept for atomic O_CLOEXEC. (@daurnimator)
+  * Remove assert which aborted process when attempting to resume a dead
+    coroutine as it doesn't necessarily signal process corruption.
+    (@daurnimator)
+  * Enable IPv6 AAAA queries in socket.connect.
+  * Support passing Lua 5.3 integers as arguments to thread.start. (Reported
+    by and preliminary patch from @daurnimator)
+
+ -- William Ahern <william@25thandClement.com>  Wed, 19 Oct 2016 01:38:03 -0700
+
 liblua-cqueues (20160812-0) unstable; urgency=low
 
   * Support older Linux environments lacking signalfd by falling back
