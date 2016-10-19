@@ -519,6 +519,10 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#ifndef HAVE_CLOCKID_T
+#define HAVE_CLOCKID_T (defined CLOCK_MONOTONIC)
+#endif
+
 #ifndef HAVE_STRUCT_SOCKADDR_SA_LEN
 #define HAVE_STRUCT_SOCKADDR_SA_LEN (!__linux__ && !__sun)
 #endif

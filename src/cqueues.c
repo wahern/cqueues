@@ -132,7 +132,7 @@ inline static int setcloexec(int fd) {
  * provides the conversion parameters.
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-#if __APPLE__ && !HAVE_CLOCK_GETTIME
+#if __APPLE__
 
 #include <errno.h>           /* errno EINVAL */
 #include <time.h>            /* struct timespec */
@@ -141,24 +141,26 @@ inline static int setcloexec(int fd) {
 
 #include <mach/mach_time.h>  /* mach_timebase_info_data_t mach_timebase_info() mach_absolute_time() */
 
-
+#if !HAVE_DECL_CLOCK_REALTIME
 #define CLOCK_REALTIME  0
-#define CLOCK_VIRTUAL   1
-#define CLOCK_PROF      2
-#define CLOCK_MONOTONIC 3
+#endif
+#if !HAVE_DECL_CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 6
+#endif
+
+#if !HAVE_CLOCKID_T
+typedef int clockid_t;
+#endif
+
+#if HAVE_CLOCK_GETTIME && !HAVE_DECL_CLOCK_GETTIME
+extern int (clock_gettime)(clockid_t, struct timespec *);
+#endif
 
 static mach_timebase_info_data_t clock_timebase = {
 	.numer = 1, .denom = 1,
 }; /* clock_timebase */
 
-void clock_gettime_init(void) __attribute__((constructor));
-
-void clock_gettime_init(void) {
-	if (mach_timebase_info(&clock_timebase) != KERN_SUCCESS)
-		__builtin_abort();
-} /* clock_gettime_init() */
-
-static int clock_gettime(int clockid, struct timespec *ts) {
+static int compat_clock_gettime(clockid_t clockid, struct timespec *ts) {
 	switch (clockid) {
 	case CLOCK_REALTIME: {
 		struct timeval tv;
@@ -187,6 +189,31 @@ static int clock_gettime(int clockid, struct timespec *ts) {
 		return -1;
 	} /* switch() */
 } /* clock_gettime() */
+
+#define clock_gettime(clockid, ts) clock_gettime_p((clockid), (ts))
+
+static int (*clock_gettime_p)(clockid_t, struct timespec *) = &compat_clock_gettime;
+
+void clock_gettime_init(void) __attribute__((constructor));
+
+void clock_gettime_init(void) {
+#if HAVE_CLOCK_GETTIME
+	/*
+	 * NB: clock_gettime is implemented as a weak symbol which autoconf
+	 * tests will always positively identify when compiling with XCode
+	 * 8.0 or above, regardless of -mmacosx-version-min. Similarly, it
+	 * will always be declared by XCode 8.0 or above.
+	 */
+	if (&clock_gettime) {
+		clock_gettime_p = &clock_gettime;
+		return;
+	}
+#endif
+	if (mach_timebase_info(&clock_timebase) != KERN_SUCCESS)
+		__builtin_abort();
+
+	clock_gettime_p = &compat_clock_gettime;
+} /* clock_gettime_init() */
 
 #endif /* __APPLE__ */
 
