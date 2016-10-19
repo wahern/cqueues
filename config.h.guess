@@ -34,7 +34,7 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #define AG_VENDOR  "william+autoguess@25thandClement.com"
-#define AG_VERSION 20160728L
+#define AG_VERSION 20161018L
 
 
 /*
@@ -475,7 +475,7 @@
 #endif
 
 #ifndef HAVE_SYS_EVENTFD_H
-#define HAVE_SYS_EVENTFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || EFD_CLOEXEC)
+#define HAVE_SYS_EVENTFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined EFD_CLOEXEC)
 #define HAVE_SYS_EVENTFD_H ag_test_include(<sys/eventfd.h>, HAVE_SYS_EVENTFD_H_)
 #endif
 
@@ -484,7 +484,7 @@
 #endif
 
 #ifndef HAVE_SYS_SIGNALFD_H
-#define HAVE_SYS_SIGNALFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || SFD_CLOEXEC)
+#define HAVE_SYS_SIGNALFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined SFD_CLOEXEC)
 #define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, HAVE_SYS_SIGNALFD_H_)
 #endif
 
@@ -501,7 +501,7 @@
 #endif
 
 #ifndef HAVE_SYS_TIMERFD_H
-#define HAVE_SYS_TIMERFD_H_  (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || TFD_CLOEXEC)
+#define HAVE_SYS_TIMERFD_H_  (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined TFD_CLOEXEC)
 #define HAVE_SYS_TIMERFD_H ag_test_include(<sys/timerfd.h>, HAVE_SYS_TIMERFD_H_)
 #endif
 
@@ -569,6 +569,18 @@
 #define HAVE___DECL_LIBC_ENABLE_SECURE 0
 #endif
 
+#ifndef HAVE_DECL_CLOCK_GETTIME
+#define HAVE_DECL_CLOCK_GETTIME HAVE_DECL_CLOCK_MONOTONIC
+#endif
+
+#ifndef HAVE_DECL_CLOCK_MONOTONIC
+#define HAVE_DECL_CLOCK_MONOTONIC (defined CLOCK_MONOTONIC)
+#endif
+
+#ifndef HAVE_DECL_CLOCK_REALTIME
+#define HAVE_DECL_CLOCK_REALTIME (defined CLOCK_REALTIME)
+#endif
+
 #ifndef HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME
 #define HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME (__linux__ && HAVE__GNU_SOURCE)
 #endif
@@ -628,7 +640,7 @@
 #endif
 
 #ifndef HAVE_CLOCK_GETTIME
-#define HAVE_CLOCK_GETTIME (!__APPLE__)
+#define HAVE_CLOCK_GETTIME (!__APPLE__ || AG_MACOS_PREREQ(10,12,0))
 #endif
 
 #ifndef HAVE_DLADDR
@@ -667,7 +679,7 @@
 #endif
 
 #ifndef HAVE_EPOLL_CREATE1
-#define HAVE_EPOLL_CREATE1 (HAVE_EPOLL_CREATE && (EPOLL_CLOEXEC || AG_GLIBC_PREREQ(2,9)))
+#define HAVE_EPOLL_CREATE1 (HAVE_EPOLL_CREATE && (defined EPOLL_CLOEXEC || AG_GLIBC_PREREQ(2,9)))
 #endif
 
 #ifndef HAVE_EPOLL_CTL
@@ -675,7 +687,7 @@
 #endif
 
 #ifndef HAVE_EPOLL_PWAIT
-#define HAVE_EPOLL_PWAIT 0
+#define HAVE_EPOLL_PWAIT (HAVE_EPOLL_WAIT && (AG_GLIBC_PREREQ(2,6) || (!AG_GLIBC_PREREQ(0,0) && defined EPOLL_CLOEXEC)))
 #endif
 
 #ifndef HAVE_EPOLL_WAIT
@@ -711,7 +723,7 @@
 #endif
 
 #ifndef HAVE_INOTIFY_INIT1
-#define HAVE_INOTIFY_INIT1 (HAVE_INOTIFY_INIT && IN_CLOEXEC)
+#define HAVE_INOTIFY_INIT1 (HAVE_INOTIFY_INIT && defined IN_CLOEXEC)
 #endif
 
 #ifndef HAVE_ISSETUGID
@@ -801,7 +813,7 @@
 #endif
 
 #ifndef HAVE_STATIC_ASSERT
-#if AG_GNUC_PREREQ(0,0,0) && !AG_GNUC_PREREQ(4,6,0)
+#if AG_GLIBC_PREREQ(0,0) && !HAVE__STATIC_ASSERT
 #define HAVE_STATIC_ASSERT 0 /* glibc doesn't check GCC version */
 #else
 #define HAVE_STATIC_ASSERT (defined static_assert)

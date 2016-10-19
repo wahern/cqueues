@@ -125,17 +125,17 @@ inline static int setcloexec(int fd) {
 /*
  * clock_gettime()
  *
- * OS X doesn't implement the clock_gettime() POSIX interface, but does
- * provide a monotonic clock through mach_absolute_time(). On i386 and
- * x86_64 architectures this clock is in nanosecond units, but not so on
- * other devices. mach_timebase_info() provides the conversion parameters.
+ * OS X didn't implement the clock_gettime() POSIX interface until macOS
+ * 10.12 (Sierra). But it did provide a monotonic clock through
+ * mach_absolute_time(). On i386 and x86_64 architectures this clock is in
+ * nanosecond units, but not so on other devices. mach_timebase_info()
+ * provides the conversion parameters.
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-#if __APPLE__
-
-#include <time.h>            /* struct timespec */
+#if __APPLE__ && !HAVE_CLOCK_GETTIME
 
 #include <errno.h>           /* errno EINVAL */
+#include <time.h>            /* struct timespec */
 
 #include <sys/time.h>        /* TIMEVAL_TO_TIMESPEC struct timeval gettimeofday(3) */
 
