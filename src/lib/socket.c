@@ -100,14 +100,12 @@ int socket_v_api(void) {
 #endif
 #endif
 
+#ifndef HAVE_OPENSSL11_API
 #define HAVE_OPENSSL11_API (!(OPENSSL_VERSION_NUMBER < 0x10100001L || defined LIBRESSL_VERSION_NUMBER))
-
-#ifndef HAVE_SSL_IS_SERVER
-#define HAVE_SSL_IS_SERVER HAVE_OPENSSL11_API
 #endif
 
-#ifndef HAVE_BIO_CTRL_SET_CONNECTED
-#define HAVE_BIO_CTR_SET_CONNECTED HAVE_OPENSSL11_API
+#ifndef HAVE_BIO_CTRL_SET_CONNECTED_2ARY
+#define HAVE_BIO_CTRL_SET_CONNECTED_2ARY HAVE_OPENSSL11_API
 #endif
 
 #ifndef HAVE_BIO_SET_INIT
@@ -130,13 +128,17 @@ int socket_v_api(void) {
 #define HAVE_BIO_UP_REF HAVE_OPENSSL11_API
 #endif
 
+#ifndef HAVE_SSL_IS_SERVER
+#define HAVE_SSL_IS_SERVER HAVE_OPENSSL11_API
+#endif
+
 
 /*
  * C O M P A T  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#if !HAVE_BIO_CTRL_SET_CONNECTED
+#if !HAVE_BIO_CTRL_SET_CONNECTED_2ARY
 #undef BIO_ctrl_set_connected
 #define BIO_ctrl_set_connected(b, peer) (int)BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, 0, (char *)peer)
 #endif
