@@ -10,6 +10,7 @@ liblua-cqueues (20161018-0) unstable; urgency=low
   * Enable IPv6 AAAA queries in socket.connect.
   * Support passing Lua 5.3 integers as arguments to thread.start. (Reported
     by and preliminary patch from @daurnimator)
+  * Basic SOCK_SEQPACKET support. (@daurnimator)
 
  -- William Ahern <william@25thandClement.com>  Wed, 19 Oct 2016 01:38:03 -0700
 
