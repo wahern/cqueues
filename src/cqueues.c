@@ -142,10 +142,10 @@ inline static int setcloexec(int fd) {
 #include <mach/mach_time.h>  /* mach_timebase_info_data_t mach_timebase_info() mach_absolute_time() */
 
 #if !HAVE_DECL_CLOCK_REALTIME
-#define CLOCK_REALTIME  0
+enum { CLOCK_REALTIME = 0 };
 #endif
 #if !HAVE_DECL_CLOCK_MONOTONIC
-#define CLOCK_MONOTONIC 6
+enum { CLOCK_MONOTONIC = 6 };
 #endif
 
 #if !HAVE_CLOCKID_T
@@ -204,8 +204,8 @@ void clock_gettime_init(void) {
 	 * 8.0 or above, regardless of -mmacosx-version-min. Similarly, it
 	 * will always be declared by XCode 8.0 or above.
 	 */
-	if (&clock_gettime) {
-		clock_gettime_p = &clock_gettime;
+	if (&(clock_gettime)) {
+		clock_gettime_p = &(clock_gettime);
 		return;
 	}
 #endif
