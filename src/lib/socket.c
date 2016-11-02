@@ -1252,11 +1252,6 @@ struct socket {
 
 	struct so_stat st;
 
-	struct {
-		_Bool rd;
-		_Bool wr;
-	} shut;
-
 	struct addrinfo *host;
 
 	short events;
@@ -1638,12 +1633,7 @@ static int so_shutdown_(struct socket *so, int how) {
 	}
 
 	if (how == SHUT_WR || how == SHUT_RDWR) {
-		so->shut.wr = 1;
 		so->st.sent.eof = 1;
-	}
-
-	if (how == SHUT_RD || how == SHUT_RDWR) {
-		so->shut.rd = 1;
 	}
 
 	return 0;
