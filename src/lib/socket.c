@@ -1741,17 +1741,11 @@ exec:
 
 		goto exec;
 	case SO_S_SHUTWR:
-		if ((error = so_shutdown_(so, SHUT_WR)))
-			goto error;
-
-		so->done |= state;
-
-		goto exec;
 	case SO_S_SHUTRD:
-		if ((error = so_shutdown_(so, SHUT_RD)))
+		if ((error = so_shutdown_(so, (so->todo & SO_S_SHUTRD)?(so->todo & SO_S_SHUTWR)?SHUT_RDWR:SHUT_RD:SHUT_WR)))
 			goto error;
 
-		so->done |= state;
+		so->done |= (so->todo & (SO_S_SHUTWR|SO_S_SHUTRD));
 
 		goto exec;
 	} /* so_exec() */
