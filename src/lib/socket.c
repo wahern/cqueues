@@ -1616,17 +1616,6 @@ static int so_rstlowat_(struct socket *so) {
 } /* so_rstlowat_() */
 
 
-static int so_shutwr_(struct socket *so) {
-	if (so->fd != -1 && 0 != shutdown(so->fd, SHUT_WR))
-		return so_soerr();
-
-	so->shut.wr = 1;
-	so->st.sent.eof = 1;
-
-	return 0;
-} /* so_shutwr_() */
-
-
 static _Bool so_isconn(int fd) {
 		struct sockaddr sa;
 		socklen_t slen = sizeof sa;
@@ -1634,8 +1623,8 @@ static _Bool so_isconn(int fd) {
 		return 0 == getpeername(fd, &sa, &slen) || so_soerr() != SO_ENOTCONN;
 } /* so_isconn() */
 
-static int so_shutrd_(struct socket *so) {
-	if (so->fd != -1 && 0 != shutdown(so->fd, SHUT_RD)) {
+static int so_shutdown_(struct socket *so, int how) {
+	if (so->fd != -1 && 0 != shutdown(so->fd, how)) {
 		/*
 		 * NOTE: OS X will fail with ENOTCONN if the requested
 		 * SHUT_RD or SHUT_WR flag is already set, including if the
@@ -1648,7 +1637,14 @@ static int so_shutrd_(struct socket *so) {
 			return SO_ENOTCONN;
 	}
 
-	so->shut.rd = 1;
+	if (how == SHUT_WR || how == SHUT_RDWR) {
+		so->shut.wr = 1;
+		so->st.sent.eof = 1;
+	}
+
+	if (how == SHUT_RD || how == SHUT_RDWR) {
+		so->shut.rd = 1;
+	}
 
 	return 0;
 } /* so_shutrd_() */
@@ -1755,14 +1751,14 @@ exec:
 
 		goto exec;
 	case SO_S_SHUTWR:
-		if ((error = so_shutwr_(so)))
+		if ((error = so_shutdown_(so, SHUT_WR)))
 			goto error;
 
 		so->done |= state;
 
 		goto exec;
 	case SO_S_SHUTRD:
-		if ((error = so_shutrd_(so)))
+		if ((error = so_shutdown_(so, SHUT_RD)))
 			goto error;
 
 		so->done |= state;
