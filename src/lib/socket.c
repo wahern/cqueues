@@ -2140,6 +2140,44 @@ error:
 } /* so_accept() */
 
 
+struct socket *so_accept_socket(struct socket *accept_so, const struct so_options *opts, int *error_) {
+	union sockaddr_any saddr;
+	struct socket *so;
+	int flags, mask, need, error;
+
+	if (!(so = so_make(opts, &error)))
+		goto error;
+
+	if (-1 == (so->fd = so_accept(accept_so, &saddr.sa, &(socklen_t){ sizeof saddr }, &error)))
+		goto error;
+
+	so->mode = S_IFSOCK;
+	so->domain = saddr.sa.sa_family;
+
+	if ((error = so_ftype(so->fd, &so->mode, &so->domain, &so->type, &so->protocol)))
+		goto error;
+
+	flags = so_opts2flags(opts, &mask);
+	mask &= so_type2mask(so->mode, so->domain, so->type, so->protocol);
+	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
+	/* we accept with CLOEXEC set */
+	mask &= ~SO_F_CLOEXEC;
+	/* reuseaddr doesn't matter, the socket is already bound */
+	mask &= ~SO_F_REUSEADDR;
+
+	if ((error = so_rstfl(so->fd, &so->flags, flags, mask, need)))
+		goto error;
+
+	return so;
+error:
+	so_close(so);
+
+	*error_ = error;
+
+	return 0;
+} /* so_accept_socket() */
+
+
 static void so_resetssl(struct socket *so) {
 	ssl_discard(&so->ssl.ctx);
 	so->ssl.state  = 0;

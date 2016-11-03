@@ -551,6 +551,8 @@ int so_listen(struct socket *);
 
 int so_accept(struct socket *, struct sockaddr *, socklen_t *, int *);
 
+struct socket *so_accept_socket(struct socket *, const struct so_options *, int *);
+
 struct so_starttls {
 	SSL_METHOD *method;
 	SSL_CTX *context;
