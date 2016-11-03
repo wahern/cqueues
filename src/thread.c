@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +43,10 @@
 #include "lib/llrb.h"
 
 
+#ifndef ENABLE_PTHREAD_MUTEX_ROBUST
+#define ENABLE_PTHREAD_MUTEX_ROBUST ((HAVE_DECL_PTHREAD_MUTEX_ROBUST+0) || (HAVE_PTHREAD_MUTEX_ROBUST+0))
+#endif
+
 #if defined EOWNERDEAD
 #define CT_EOWNERDEAD EOWNERDEAD
 #else
@@ -50,10 +56,17 @@
 struct cthread_arg {
 	int type;
 	int iscfunction:1;
+	int isinteger:1;
 
+	/*
+	 * NB: The value representation below is not a simple mapping to the
+	 * Lua type. Ex: Lua functions are serialized to a Lua string stored
+	 * in .v.string, but the argument type is still LUA_TFUNCTION.
+	 */
 	union {
 		struct iovec string;
 		lua_Number number;
+		lua_Integer integer;
 		_Bool boolean;
 		void *pointer;
 	} v;
@@ -69,7 +82,7 @@ struct cthread_lib {
 struct cthread_handle {
 	sig_atomic_t held;
 
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	pthread_mutex_t hold;
 #endif
 }; /* struct cthread_handle */
@@ -124,7 +137,7 @@ static int atpanic_trap(lua_State *L NOTUSED) {
 
 
 static int hdl_init(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	pthread_mutexattr_t attr;
 	int error;
 
@@ -154,7 +167,7 @@ error:
 } /* hdl_init() */
 
 static void hdl_destroy(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	pthread_mutex_destroy(&h->hold);
 #else
 	(void)h;
@@ -164,7 +177,7 @@ static void hdl_destroy(struct cthread_handle *h) {
 } /* hdl_destroy() */
 
 static int hdl_hold(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	int error;
 
 	if ((error = pthread_mutex_lock(&h->hold)))
@@ -176,7 +189,7 @@ static int hdl_hold(struct cthread_handle *h) {
 } /* hdl_hold() */
 
 static _Bool hdl_isheld(struct cthread_handle *h) {
-#if HAVE_PTHREAD_MUTEX_ROBUST
+#if ENABLE_PTHREAD_MUTEX_ROBUST
 	int error;
 
 	switch ((error = pthread_mutex_trylock(&h->hold))) {
@@ -367,7 +380,11 @@ static void *ct_enter(void *arg) {
 	for (struct cthread_arg *arg = &ct->tmp.arg[1]; arg < &ct->tmp.arg[ct->tmp.argc]; arg++) {
 		switch (arg->type) {
 		case LUA_TNUMBER:
-			lua_pushnumber(L, arg->v.number);
+			if (arg->isinteger) {
+				lua_pushinteger(L, arg->v.integer);
+			} else {
+				lua_pushnumber(L, arg->v.number);
+			}
 			break;
 		case LUA_TBOOLEAN:
 			lua_pushboolean(L, arg->v.boolean);
@@ -470,7 +487,7 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 		if ((LUA_VERSION_NUM < 502 && info.nups > 0) || info.nups > 1)
 			goto uperr;
 
-		luaL_checkstack(L, 2, NULL);
+		luaL_checkstack(L, 2, "too many arguments");
 
 		/*
 		 * NOTE: Must put luaL_Buffer on a different stack because
@@ -609,6 +626,14 @@ static int ct_start(lua_State *L) {
 			arg->type = LUA_TNIL;
 			break;
 		case LUA_TNUMBER:
+#if LUA_VERSION_NUM >= 503
+			if (lua_isinteger(L, index)) {
+				arg->v.integer = lua_tointeger(L, index);
+				arg->isinteger = 1;
+				arg->type = LUA_TNUMBER;
+				break;
+			}
+#endif
 			arg->v.number = lua_tonumber(L, index);
 			arg->type = LUA_TNUMBER;
 			break;
@@ -636,7 +661,7 @@ static int ct_start(lua_State *L) {
 	}
 
 	/* we may have added more stack objects above the thread object */
-	luaL_checkstack(L, 2, NULL);
+	luaL_checkstack(L, 2, "too many arguments");
 	lua_pushvalue(L, top + 1);
 
 	if (0 != cqs_socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, ct->tmp.fd, O_NONBLOCK|O_CLOEXEC))

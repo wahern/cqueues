@@ -76,20 +76,16 @@
 
 #define UCLIBC_PREREQ(M, m, p) (defined __UCLIBC__ && (__UCLIBC_MAJOR__ > M || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ > m) || (__UCLIBC_MAJOR__ == M && __UCLIBC_MINOR__ == m && __UCLIBC_SUBLEVEL__ >= p)))
 
-#ifndef HAVE_EPOLL
-#define HAVE_EPOLL (__linux)
+#ifndef ENABLE_EPOLL
+#define ENABLE_EPOLL HAVE_EPOLL_CREATE
 #endif
 
-#ifndef HAVE_PORTS
-#define HAVE_PORTS (__sun)
+#ifndef ENABLE_PORTS
+#define ENABLE_PORTS HAVE_PORT_CREATE
 #endif
 
-#ifndef HAVE_KQUEUE
-#define HAVE_KQUEUE (__FreeBSD__ || __NetBSD__ || __OpenBSD__ || __APPLE__ || __DragonFly__)
-#endif
-
-#ifndef HAVE_EVENTFD
-#define HAVE_EVENTFD (__linux && (GLIBC_PREREQ(2, 9) || UCLIBC_PREREQ(0, 9, 33)))
+#ifndef ENABLE_KQUEUE
+#define ENABLE_KQUEUE HAVE_KQUEUE
 #endif
 
 #if __GNUC__
@@ -226,7 +222,7 @@ static inline int cqs_interpose(lua_State *L, const char *mt) {
 static inline void cqs_pushnils(lua_State *L, int n) {
 	int i;
 
-	luaL_checkstack(L, n, NULL);
+	luaL_checkstack(L, n, "too many arguments");
 
 	for (i = 0; i < n; i++)
 		lua_pushnil(L);
@@ -351,6 +347,66 @@ static inline void cqs_setmacros(lua_State *L, int index, const struct cqs_macro
 } /* cqs_setmacros() */
 
 
+#if LUA_VERSION_NUM < 503
+/* convert value at index to proxytable with value at t[2] */
+static inline void cqs__toproxytable(lua_State *L, int index) {
+	index = lua_absindex(L, index);
+	lua_createtable(L, 2, 0);
+	lua_pushlightuserdata(L, (void *)lua_topointer(L, -1));
+	lua_rawseti(L, -2, 1); /* set t[1] == pointer-to-t */
+	lua_pushvalue(L, index);
+	lua_rawseti(L, -2, 2); /* set t[2] == value */
+	lua_replace(L, index);
+} /* cqs__toproxytable() */
+
+/* check whether value at index is a proxytable */
+static inline _Bool cqs__isproxytable(lua_State *L, int index) {
+	const void *tp, *t1p;
+
+	if (!lua_istable(L, index))
+		return 0;
+
+	tp = lua_topointer(L, index);
+	lua_rawgeti(L, index, 1);
+	t1p = lua_topointer(L, -1);
+	lua_pop(L, 1);
+
+	return tp && tp == t1p;
+} /* cqs__isproxytable() */
+#endif
+
+static inline void cqs_setuservalue(lua_State *L, int index) {
+#if LUA_VERSION_NUM >= 503
+	lua_setuservalue(L, index);
+#elif LUA_VERSION_NUM == 502
+	if (!lua_istable(L, -1) && !lua_isnil(L, -1))
+		cqs__toproxytable(L, -1);
+	lua_setuservalue(L, index);
+#else
+	if (!lua_istable(L, -1))
+		cqs__toproxytable(L, -1);
+	lua_setfenv(L, index);
+#endif
+} /* cqs_setuservalue() */
+
+static inline int cqs_getuservalue(lua_State *L, int index) {
+#if LUA_VERSION_NUM >= 503
+	return lua_getuservalue(L, index);
+#else
+#if LUA_VERSION_NUM == 502
+	lua_getuservalue(L, index);
+#else
+	lua_getfenv(L, index);
+#endif
+	if (cqs__isproxytable(L, -1)) {
+		lua_rawgeti(L, -1, 2);
+		lua_replace(L, -2);
+	}
+	return lua_type(L, -1);
+#endif
+} /* cqs_setuservalue() */
+
+
 static inline void cqs_closefd(int *fd) {
 	if (*fd != -1) {
 #if __APPLE__
@@ -388,7 +444,7 @@ static inline int cqs_setfd(int fd, int flags) {
 
 
 static inline int cqs_pipe(int fd[2], int flags) {
-#if __linux
+#if HAVE_PIPE2
 	if (0 != pipe2(fd, flags))
 		return errno;
 
@@ -431,14 +487,6 @@ static inline int cqs_socketpair(int family, int type, int proto, int fd[2], int
 #endif
 } /* cqs_socketpair() */
 
-
-#ifndef HAVE_STATIC_ASSERT
-#define HAVE_STATIC_ASSERT (defined static_assert)
-#endif
-
-#ifndef HAVE__STATIC_ASSERT
-#define HAVE__STATIC_ASSERT (GNUC_PREREQ(4, 6) || __has_feature(c_static_assert) || __has_extension(c_static_assert))
-#endif
 
 #if HAVE_STATIC_ASSERT
 #define cqs_static_assert(cond, msg) static_assert(cond, msg)

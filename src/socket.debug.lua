@@ -139,6 +139,12 @@ debug.units.new("iov_eoh", function()
 	local n = assert(iov_eoh(txt, false))
 	assert(n == #txt - 1)
 
+	-- skips over spaces before colon
+	local txt = "Foo : bar\n\n"
+	local n = assert(iov_eoh(txt, false))
+	print(n)
+	assert(n == #txt - 1)
+
 	-- make sure we handle end-of-headers linebreak
 	local txt = "\n"
 	local n = assert(iov_eoh(txt, false))

@@ -23,6 +23,10 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#if HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stddef.h> /* offsetof size_t */
 #include <limits.h> /* INT_MAX LONG_MAX */
 #include <stdlib.h> /* malloc(3) free(3) */
@@ -35,7 +39,7 @@
 #include <sys/types.h>   /* socklen_t mode_t in_port_t */
 #include <sys/stat.h>    /* fchmod(2) fstat(2) S_IFSOCK S_ISSOCK */
 #include <sys/select.h>  /* FD_ZERO FD_SET fd_set select(2) */
-#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
+#include <sys/socket.h>  /* AF_UNIX AF_INET AF_INET6 SO_TYPE SO_NOSIGPIPE MSG_EOR MSG_NOSIGNAL struct sockaddr_storage socket(2) connect(2) bind(2) listen(2) accept(2) getsockname(2) getpeername(2) */
 #if defined(AF_UNIX)
 #include <sys/un.h>      /* struct sockaddr_un struct unpcbid */
 #endif
@@ -50,10 +54,10 @@
 #include <ucred.h>       /* ucred_t getpeerucred(2) ucred_free(3) */
 #endif
 
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
-
 #include "dns.h"
 #include "socket.h"
 
@@ -94,6 +98,90 @@ int socket_v_api(void) {
 #else
 #define SO_THREAD_SAFE 0
 #endif
+#endif
+
+#ifndef HAVE_OPENSSL11_API
+#define HAVE_OPENSSL11_API (!(OPENSSL_VERSION_NUMBER < 0x10100001L || defined LIBRESSL_VERSION_NUMBER))
+#endif
+
+#ifndef HAVE_BIO_CTRL_SET_CONNECTED_2ARY
+#define HAVE_BIO_CTRL_SET_CONNECTED_2ARY HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_SET_INIT
+#define HAVE_BIO_SET_INIT HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_SET_SHUTDOWN
+#define HAVE_BIO_SET_SHUTDOWN HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_SET_DATA
+#define HAVE_BIO_SET_DATA HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_GET_DATA
+#define HAVE_BIO_GET_DATA HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_BIO_UP_REF
+#define HAVE_BIO_UP_REF HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_SSL_IS_SERVER
+#define HAVE_SSL_IS_SERVER HAVE_OPENSSL11_API
+#endif
+
+
+/*
+ * C O M P A T  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !HAVE_BIO_CTRL_SET_CONNECTED_2ARY
+#undef BIO_ctrl_set_connected
+#define BIO_ctrl_set_connected(b, peer) (int)BIO_ctrl(b, BIO_CTRL_DGRAM_SET_CONNECTED, 0, (char *)peer)
+#endif
+
+#if !HAVE_BIO_SET_INIT
+#define BIO_set_init(bio, val) ((void)((bio)->init = (val)))
+#endif
+
+#if !HAVE_BIO_SET_SHUTDOWN
+#define BIO_set_shutdown(bio, val) ((void)((bio)->shutdown = (val)))
+#endif
+
+#if !HAVE_BIO_SET_DATA
+#define BIO_set_data(bio, val) ((void)((bio)->ptr = (val)))
+#endif
+
+#if !HAVE_BIO_GET_DATA
+#define BIO_get_data(bio) ((bio)->ptr)
+#endif
+
+#if !HAVE_BIO_UP_REF
+#define BIO_up_ref(bio) CRYPTO_add(&(bio)->references, 1, CRYPTO_LOCK_BIO)
+#endif
+
+#if !HAVE_SSL_IS_SERVER
+#undef SSL_is_server
+#define SSL_is_server(ssl) compat_SSL_is_server(ssl)
+
+static _Bool compat_SSL_is_server(SSL *ssl) {
+	const SSL_METHOD *method = SSL_get_ssl_method(ssl);
+
+	/*
+	 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
+	 * OpenSSL's internal ssl_undefined_function().
+	 *
+	 * Server methods such as TLSv1_2_server_method(), etc. should have
+	 * their .ssl_connect method set to this value.
+	 */
+	if (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect)
+		return 1;
+
+	return 0;
+} /* compat_SSL_is_server() */
 #endif
 
 
@@ -1474,7 +1562,7 @@ static int so_starttls_(struct socket *so) {
 				goto error;
 			}
 
-			BIO_ctrl_set_connected(bio, 1, &peer);
+			BIO_ctrl_set_connected(bio, &peer);
 
 			SSL_set_bio(so->ssl.ctx, bio, bio);
 			SSL_set_read_ahead(so->ssl.ctx, 1);
@@ -2022,7 +2110,7 @@ int so_listen(struct socket *so) {
 
 
 int so_accept(struct socket *so, struct sockaddr *saddr, socklen_t *slen, int *error_) {
-	int fd, error;
+	int fd = -1, error;
 
 	if ((error = so_listen(so)))
 		goto error;
@@ -2033,8 +2121,19 @@ int so_accept(struct socket *so, struct sockaddr *saddr, socklen_t *slen, int *e
 	so->events = POLLIN;
 
 retry:
+#if HAVE_ACCEPT4 && defined SOCK_CLOEXEC
+	if (-1 == (fd = accept4(so->fd, saddr, slen, SOCK_CLOEXEC)))
+		goto soerr;
+#elif HAVE_PACCEPT && defined SOCK_CLOEXEC
+	if (-1 == (fd = paccept(so->fd, saddr, slen, NULL, SOCK_CLOEXEC)))
+		goto soerr;
+#else
 	if (-1 == (fd = accept(so->fd, saddr, slen)))
 		goto soerr;
+
+	if ((error = so_cloexec(fd, 1)))
+		goto error;
+#endif
 
 	return fd;
 soerr:
@@ -2054,6 +2153,8 @@ soerr:
 	}
 error:
 	*error_ = error;
+
+	so_closesocket(&fd, NULL);
 
 	return -1;
 } /* so_accept() */
@@ -2126,17 +2227,11 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
-	/*
-	 * NOTE: SSLv23_server_method()->ssl_connect should be a reference to
-	 * OpenSSL's internal ssl_undefined_function().
-	 *
-	 * Server methods such as TLSv1_2_server_method(), etc. should have
-	 * their .ssl_connect method set to this value.
-	 */
-	method = SSL_get_ssl_method(so->ssl.ctx);
-
-	if (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect)
-		so->ssl.accept = 1;
+	if (so_isbool(cfg->accept)) {
+		so->ssl.accept = so_tobool(cfg->accept);
+	} else {
+		so->ssl.accept = SSL_is_server(so->ssl.ctx);
+	}
 
 	if (!so->ssl.accept && so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
 		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))
@@ -2232,6 +2327,7 @@ error:
 
 static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *error) {
 	long count;
+	int flags = 0;
 
 	if (so->st.sent.eof) {
 		*error = EPIPE;
@@ -2239,20 +2335,28 @@ static size_t so_syswrite(struct socket *so, const void *src, size_t len, int *e
 	}
 
 //	so_pipeign(so, 0);
+
+#if _WIN32
+#else
+	if (S_ISSOCK(so->mode)) {
+		#if defined(MSG_NOSIGNAL)
+		if (so->opts.fd_nosigpipe)
+			flags |= MSG_NOSIGNAL;
+		#endif
+		if (so->type == SOCK_SEQPACKET)
+			flags |= MSG_EOR;
+	}
+#endif
 retry:
 #if _WIN32
-	count = send(so->fd, src, SO_MIN(len, LONG_MAX), 0);
+	if (1) {
 #else
-#if defined(MSG_NOSIGNAL)
-	if (S_ISSOCK(so->mode) && so->opts.fd_nosigpipe) {
-		count = send(so->fd, src, SO_MIN(len, LONG_MAX), MSG_NOSIGNAL);
+	if (S_ISSOCK(so->mode)) {
+#endif
+		count = send(so->fd, src, SO_MIN(len, LONG_MAX), flags);
 	} else {
 		count = write(so->fd, src, SO_MIN(len, LONG_MAX));
 	}
-#else
-	count = write(so->fd, src, SO_MIN(len, LONG_MAX));
-#endif
-#endif
 
 	if (count == -1)
 		goto error;
@@ -2299,7 +2403,7 @@ static _Bool bio_nonfatal(int error) {
 } /* bio_nonfatal() */
 
 static int bio_read(BIO *bio, char *dst, int lim) {
-	struct socket *so = bio->ptr;
+	struct socket *so = BIO_get_data(bio);
 	size_t count;
 
 	assert(so);
@@ -2329,7 +2433,7 @@ static int bio_read(BIO *bio, char *dst, int lim) {
 } /* bio_read() */
 
 static int bio_write(BIO *bio, const char *src, int len) {
-	struct socket *so = bio->ptr;
+	struct socket *so = BIO_get_data(bio);
 	size_t count;
 
 	assert(so);
@@ -2374,9 +2478,8 @@ static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
 		 * for example, has a hack to always copy .init and .num.
 		 */
 		BIO *udata = udata_p;
-		udata->init = 0;
-		udata->num = 0;
-		udata->ptr = NULL;
+		BIO_set_init(udata, 0);
+		BIO_set_data(udata, NULL);
 
 		return 1;
 	}
@@ -2394,23 +2497,22 @@ static long bio_ctrl(BIO *bio, int cmd, long udata_i, void *udata_p) {
 } /* bio_ctrl() */
 
 static int bio_create(BIO *bio) {
-	bio->init = 0;
-	bio->shutdown = 0;
-	bio->num = 0;
-	bio->ptr = NULL;
+	BIO_set_init(bio, 0);
+	BIO_set_shutdown(bio, 0);
+	BIO_set_data(bio, NULL);
 
 	return 1;
 } /* bio_create() */
 
 static int bio_destroy(BIO *bio) {
-	bio->init = 0;
-	bio->shutdown = 0;
-	bio->num = 0;
-	bio->ptr = NULL;
+	BIO_set_init(bio, 0);
+	BIO_set_shutdown(bio, 0);
+	BIO_set_data(bio, NULL);
 
 	return 1;
 } /* bio_destroy() */
 
+#if !HAVE_OPENSSL11_API
 static BIO_METHOD bio_methods = {
 	BIO_TYPE_SOURCE_SINK,
 	"struct socket*",
@@ -2424,16 +2526,50 @@ static BIO_METHOD bio_methods = {
 	NULL,
 };
 
+static BIO_METHOD *so_get_bio_methods() {
+	return &bio_methods;
+} /* so_get_bio_methods() */
+#else
+static BIO_METHOD *bio_methods = NULL;
+
+static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
+
+static void bio_methods_init(void) {
+	int type = BIO_get_new_index();
+	if (type == -1)
+		return;
+
+	bio_methods = BIO_meth_new(type|BIO_TYPE_SOURCE_SINK, "struct socket*");
+	if (bio_methods == NULL)
+		return;
+
+	BIO_meth_set_write(bio_methods, bio_write);
+	BIO_meth_set_read(bio_methods, bio_read);
+	BIO_meth_set_puts(bio_methods, bio_puts);
+	BIO_meth_set_ctrl(bio_methods, bio_ctrl);
+	BIO_meth_set_create(bio_methods, bio_create);
+	BIO_meth_set_destroy(bio_methods, bio_destroy);
+} /* bio_methods_init() */
+
+static BIO_METHOD *so_get_bio_methods() {
+	if (bio_methods == NULL) {
+		CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
+	}
+	return bio_methods;
+} /* so_get_bio_methods() */
+#endif
+
 static BIO *so_newbio(struct socket *so, int *error) {
 	BIO *bio;
+	BIO_METHOD *bio_methods = so_get_bio_methods();
 
-	if (!(bio = BIO_new(&bio_methods))) {
+	if (bio_methods == NULL || !(bio = BIO_new(bio_methods))) {
 		*error = SO_EOPENSSL;
 		return NULL;
 	}
 
-	bio->init = 1;
-	bio->ptr = so;
+	BIO_set_init(bio, 1);
+	BIO_set_data(bio, so);
 
 	/*
 	 * NOTE: Applications can acquire a reference to our BIO via the SSL
@@ -2442,12 +2578,12 @@ static BIO *so_newbio(struct socket *so, int *error) {
 	 * and zero any pointer to ourselves here and from so_destroy.
 	 */
 	if (so->bio.ctx) {
-		so->bio.ctx->init = 0;
-		so->bio.ctx->ptr = NULL;
+		BIO_set_init(so->bio.ctx, 0);
+		BIO_set_data(so->bio.ctx, NULL);
 		BIO_free(so->bio.ctx);
 	}
 
-	CRYPTO_add(&bio->references, 1, CRYPTO_LOCK_BIO);
+	BIO_up_ref(bio);
 	so->bio.ctx = bio;
 
 	return bio;

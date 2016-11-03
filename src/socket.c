@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <stddef.h>	/* NULL offsetof size_t */
 #include <stdarg.h>	/* va_list va_start va_arg va_end */
 #include <stdlib.h>	/* strtol(3) */
@@ -31,12 +33,13 @@
 #include <errno.h>	/* EBADF ENOTSOCK EOPNOTSUPP EOVERFLOW EPIPE */
 
 #include <sys/types.h>
-#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_DGRAM SOCK_STREAM PF_UNSPEC socketpair(2) */
+#include <sys/socket.h>	/* AF_UNIX MSG_CMSG_CLOEXEC SOCK_CLOEXEC SOCK_STREAM SOCK_SEQPACKET SOCK_DGRAM PF_UNSPEC socketpair(2) */
 #include <sys/un.h>	/* struct sockaddr_un */
 #include <unistd.h>	/* dup(2) */
 #include <fcntl.h>      /* F_DUPFD_CLOEXEC fcntl(2) */
 #include <arpa/inet.h>	/* ntohs(3) */
 
+#include <openssl/ssl.h> /* SSL_CTX, SSL_CTX_free(), SSL_CTX_up_ref(), SSL, SSL_up_ref() */
 #include <openssl/crypto.h> /* CRYPTO_LOCK_SSL CRYPTO_add() */
 
 #include <lua.h>
@@ -50,12 +53,42 @@
 
 
 /*
+ * F E A T U R E  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define HAVE_OPENSSL11_API (!(OPENSSL_VERSION_NUMBER < 0x10100001L || defined LIBRESSL_VERSION_NUMBER))
+
+#ifndef HAVE_SSL_CTX_UP_REF
+#define HAVE_SSL_CTX_UP_REF HAVE_OPENSSL11_API
+#endif
+
+#ifndef HAVE_SSL_UP_REF
+#define HAVE_SSL_UP_REF HAVE_OPENSSL11_API
+#endif
+
+
+/*
+ * C O M P A T  R O U T I N E S
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if !HAVE_SSL_CTX_UP_REF
+#define SSL_CTX_up_ref(ctx) CRYPTO_add(&(ctx)->references, 1, CRYPTO_LOCK_SSL_CTX)
+#endif
+
+#if !HAVE_SSL_UP_REF
+#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
+#endif
+
+
+/*
  * T E X T  M U N G I N G  R O U T I N E S
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 static inline _Bool mime_isblank(unsigned char ch) {
-	return ch == 32 && ch == 9;
+	return ch == 32 || ch == 9;
 } /* mime_isblank() */
 
 
@@ -113,7 +146,7 @@ static size_t iov_eoh(const struct iovec *iov, _Bool eof, int flags, int *_error
 		return 0; /* not a valid field name */
 
 	while (p < pe && (p = memchr(p, '\n', pe - p))) {
-		if (++p < pe && *p != ' ' && *p != '\t')
+		if (++p < pe && !mime_isblank(*p))
 			return p - tp; /* found */
 	}
 
@@ -875,7 +908,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = lso_checkopts(L, 1);
 
 		lua_getfield(L, 1, "family");
-		family = luaL_optinteger(L, -1, AF_INET);
+		family = luaL_optinteger(L, -1, AF_UNSPEC);
 		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "type");
@@ -895,7 +928,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		opts = *so_opts(.sin_reuseaddr = 0);
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
-		family = luaL_optinteger(L, 3, AF_INET);
+		family = luaL_optinteger(L, 3, AF_UNSPEC);
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
@@ -914,7 +947,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
+		if (!(S->socket = so_open(host, port, 0, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -963,7 +996,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = lso_checkopts(L, 1);
 
 		lua_getfield(L, 1, "family");
-		family = luaL_optinteger(L, -1, AF_INET);
+		family = luaL_optinteger(L, -1, AF_UNSPEC);
 		lua_pop(L, 1);
 
 		lua_getfield(L, 1, "type");
@@ -983,7 +1016,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		opts = *so_opts();
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
-		family = luaL_optinteger(L, 3, AF_INET);
+		family = luaL_optinteger(L, 3, AF_UNSPEC);
 		type = luaL_optinteger(L, 4, SOCK_STREAM);
 	}
 
@@ -1002,7 +1035,7 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 		if (!(S->socket = so_dial((struct sockaddr *)&sun, type, &opts, &error)))
 			goto error;
 	} else {
-		if (!(S->socket = so_open(host, port, DNS_T_A, family, type, &opts, &error)))
+		if (!(S->socket = so_open(host, port, 0, family, type, &opts, &error)))
 			goto error;
 	}
 
@@ -1039,6 +1072,19 @@ static lso_nargs_t lso_listen1(lua_State *L) {
 } /* lso_listen1() */
 
 
+/* luasec compat */
+#define LSEC_MODE_INVALID 0
+#define LSEC_MODE_SERVER  1
+#define LSEC_MODE_CLIENT  2
+
+typedef struct {
+	SSL_CTX *context;
+	lua_State *L;
+	DH *dh_param;
+	int mode;
+} lsec_context;
+
+
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 	SSL_CTX **ctx;
@@ -1052,13 +1098,18 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 	if ((S->todo & LSO_DO_STARTTLS))
 		goto check;
 
-	ctx = luaL_testudata(L, 2, "SSL_CTX*");
+	if ((ctx = luaL_testudata(L, 2, "SSL_CTX*"))) {
+		/* accept-mode check handled by so_starttls() */
+	} else if ((ctx = luaL_testudata(L, 2, "SSL:Context"))) { /* luasec compatability */
+		luaL_argcheck(L, ((lsec_context*)ctx)->mode != LSEC_MODE_INVALID, 2, "invalid mode");
+		so_setbool(&S->tls.config.accept, ((((lsec_context*)ctx)->mode) == LSEC_MODE_SERVER));
+	}
 
 	if (ctx && *ctx && *ctx != S->tls.config.context) {
 		if (S->tls.config.context)
 			SSL_CTX_free(S->tls.config.context);
 
-		CRYPTO_add(&(*ctx)->references, 1, CRYPTO_LOCK_SSL_CTX);
+		SSL_CTX_up_ref(*ctx);
 		S->tls.config.context = *ctx;
 	}
 
@@ -1097,7 +1148,7 @@ static lso_nargs_t lso_checktls(lua_State *L) {
 
 	lua_setmetatable(L, -2);
 
-	CRYPTO_add(&(*ssl)->references, 1, CRYPTO_LOCK_SSL);
+	SSL_up_ref(*ssl);
 
 	return 1;
 } /* lso_checktls() */
@@ -1627,7 +1678,7 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 		if ((count = so_read(S->socket, iov.iov_base, iov.iov_len, &error))) {
 			fifo_update(&S->ibuf.fifo, count);
 
-			if (S->type == SOCK_DGRAM) {
+			if (S->type == SOCK_DGRAM || S->type == SOCK_SEQPACKET) {
 				S->ibuf.eom = 1;
 
 				return 0;
@@ -2642,7 +2693,7 @@ static lso_nargs_t lso_eof(lua_State *L) {
 
 
 static lso_nargs_t lso_accept(lua_State *L) {
-	struct luasocket *A = luaL_checkudata(L, 1, LSO_CLASS);
+	struct luasocket *A = lso_checkself(L, 1);
 	struct so_options opts;
 	int fd, error;
 
@@ -2944,12 +2995,13 @@ static luaL_Reg lso_globals[] = {
 
 lso_nargs_t luaopen__cqueues_socket(lua_State *L) {
 	static const struct cqs_macro macros[] = {
-		{ "AF_UNSPEC",   AF_UNSPEC },
-		{ "AF_INET",     AF_INET },
-		{ "AF_INET6",    AF_INET6 },
-		{ "AF_UNIX",     AF_UNIX },
-		{ "SOCK_STREAM", SOCK_STREAM },
-		{ "SOCK_DGRAM",  SOCK_DGRAM },
+		{ "AF_UNSPEC",      AF_UNSPEC },
+		{ "AF_INET",        AF_INET },
+		{ "AF_INET6",       AF_INET6 },
+		{ "AF_UNIX",        AF_UNIX },
+		{ "SOCK_STREAM",    SOCK_STREAM },
+		{ "SOCK_SEQPACKET", SOCK_SEQPACKET },
+		{ "SOCK_DGRAM",     SOCK_DGRAM },
 	};
 
 	cqs_pushnils(L, LSO_UPVALUES); /* initial upvalues */

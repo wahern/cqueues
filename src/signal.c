@@ -23,11 +23,19 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
-#include <string.h>
+#include "config.h"
+
+#include <errno.h>
 #include <math.h>
 #include <signal.h>
-#include <errno.h>
-
+#include <string.h>
+#if HAVE_SYS_EVENT_H
+#include <sys/event.h>
+#endif
+#if HAVE_SYS_SIGNALFD_H
+#include <sys/signalfd.h>
+#endif
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <lua.h>
@@ -41,20 +49,66 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#if HAVE_EPOLL
-#include <sys/signalfd.h>
-#elif HAVE_PORTS
-#include <port.h>
-#else
-#include <sys/time.h>
-#include <sys/event.h>
+#ifndef ENABLE_SIGNALFD
+#define ENABLE_SIGNALFD HAVE_SIGNALFD
 #endif
 
+#ifndef ENABLE_EVFILT_SIGNAL
+#define ENABLE_EVFILT_SIGNAL (ENABLE_KQUEUE && defined EVFILT_SIGNAL)
+#endif
 
 #define LSL_CLASS "CQS Signal"
 
+#define SIGNAL_SIGNALFD      0x01
+#define SIGNAL_EVFILT_SIGNAL 0x02
+#define SIGNAL_SIGTIMEDWAIT  0x04
+#define SIGNAL_KQUEUE        0x08
+#define SIGNAL_KQUEUE1       0x10
+
+static int signal_features(void) {
+	return 0
+#if ENABLE_SIGNALFD
+	| SIGNAL_SIGNALFD
+#endif
+#if ENABLE_EVFILT_SIGNAL
+	| SIGNAL_EVFILT_SIGNAL
+#endif
+#if HAVE_SIGTIMEDWAIT
+	| SIGNAL_SIGTIMEDWAIT
+#endif
+#if HAVE_KQUEUE
+	| SIGNAL_KQUEUE
+#endif
+#if HAVE_KQUEUE1
+	| SIGNAL_KQUEUE1
+#endif
+	;
+}
+
+static const char *signal_strflag(int flag) {
+	static const char *const table[32] = {
+		[0] = "signalfd", "EVFILT_SIGNAL", "sigtimedwait",
+		      "kqueue", "kqueue1",
+	};
+	int i = ffs(0xFFFFFFFF & flag);
+	return (i)? table[i - 1] : NULL;
+}
+
+static int signal_flags(int *flags) {
+	while (0xFFFFFFFF & *flags) {
+		int flag = 1 << (ffs(0xFFFFFFFF & *flags) - 1);
+		*flags &= ~flag;
+		if (signal_strflag(flag))
+			return flag;
+	}
+
+	return 0;
+}
+
 struct signalfd {
+	int features;
 	int fd;
+
 	sigset_t desired;
 	sigset_t polling;
 	sigset_t pending;
@@ -64,34 +118,62 @@ struct signalfd {
 
 
 static void sfd_preinit(struct signalfd *S) {
+	S->features = 0;
 	S->fd = -1;
 
 	sigemptyset(&S->desired);
 	sigemptyset(&S->polling);
 	sigemptyset(&S->pending);
 
-#if HAVE_PORTS
-	S->timeout = 1.1;
-#else
+#if ENABLE_SIGNALFD || ENABLE_EVFILT_SIGNAL
 	S->timeout = NAN;
+#else
+	S->timeout = 1.1;
 #endif
 } /* sfd_preinit() */
 
 
 static int sfd_init(struct signalfd *S) {
-#if HAVE_EPOLL
+#if ENABLE_SIGNALFD
+	S->features |= SIGNAL_SIGNALFD;
+
 	if (-1 == (S->fd = signalfd(-1, &S->desired, SFD_NONBLOCK|SFD_CLOEXEC)))
 		return errno;
 
 	S->polling = S->desired;
 
 	return 0;
-#elif HAVE_PORTS
-	return 0;
-#else
-	if (-1 == (S->fd = kqueue()))
+#elif ENABLE_EVFILT_SIGNAL && HAVE_KQUEUE1
+	S->features |= SIGNAL_EVFILT_SIGNAL | SIGNAL_KQUEUE1;
+
+	if (-1 == (S->fd = kqueue1(O_CLOEXEC)))
 		return errno;
 
+	return 0;
+#elif ENABLE_EVFILT_SIGNAL
+	int flags, error;
+
+	S->features |= SIGNAL_EVFILT_SIGNAL | SIGNAL_KQUEUE;
+
+	if (-1 == (S->fd = kqueue()))
+		goto syerr;
+	if (-1 == (flags = fcntl(S->fd, F_GETFL)))
+		goto syerr;
+	if (-1 == fcntl(S->fd, F_SETFD, flags|FD_CLOEXEC))
+		goto syerr;
+
+	return 0;
+syerr:
+	error = errno;
+
+	cqs_closefd(&S->fd);
+
+	return error;
+#elif ENABLE_SIGTIMEDWAIT
+	S->features |= SIGNAL_SIGTIMEDWAIT;
+	return 0;
+#else
+	(void)S;
 	return 0;
 #endif
 } /* sfd_init() */
@@ -115,7 +197,7 @@ static int sfd_diff(const sigset_t *a, const sigset_t *b) {
 
 
 static int sfd_update(struct signalfd *S) {
-#if HAVE_EPOLL
+#if ENABLE_SIGNALFD
 	if (sfd_diff(&S->desired, &S->polling)) {
 		if (-1 == signalfd(S->fd, &S->desired, 0))
 			return errno;
@@ -124,9 +206,7 @@ static int sfd_update(struct signalfd *S) {
 	}
 
 	return 0;
-#elif HAVE_PORTS
-	return 0;
-#else
+#elif ENABLE_EVFILT_SIGNAL
 	int signo;
 
 	while ((signo = sfd_diff(&S->desired, &S->polling))) {
@@ -150,12 +230,15 @@ static int sfd_update(struct signalfd *S) {
 	}
 
 	return 0;
+#else
+	(void)S;
+	return 0;
 #endif
 } /* sfd_update() */
 
 
 static int sfd_query(struct signalfd *S) {
-#if HAVE_EPOLL
+#if ENABLE_SIGNALFD
 	struct signalfd_siginfo info;
 	long n;
 
@@ -178,14 +261,7 @@ syerr:
 	}
 
 	return errno;
-#elif HAVE_PORTS
-	int signo;
-
-	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))
-		sigaddset(&S->pending, signo);
-
-	return 0;
-#else
+#elif ENABLE_EVFILT_SIGNAL
 	struct kevent event;
 	int n;
 
@@ -203,6 +279,16 @@ retry:
 	}
 
 	return sfd_update(S);
+#elif HAVE_SIGTIMEDWAIT
+	int signo;
+
+	if (-1 != (signo = sigtimedwait(&S->desired, NULL, &(struct timespec){ 0, 0 })))
+		sigaddset(&S->pending, signo);
+
+	return 0;
+#else
+	(void)S;
+	return EOPNOTSUPP;
 #endif
 } /* sfd_query() */
 
@@ -235,6 +321,15 @@ static int lsl__gc(lua_State *L) {
 
 	return 0;
 } /* lsl__gc() */
+
+
+static int lsl_features(lua_State *L) {
+	struct signalfd *S = luaL_checkudata(L, 1, LSL_CLASS);
+
+	lua_pushinteger(L, S->features);
+
+	return 1;
+} /* lsl_features() */
 
 
 static int lsl_wait(lua_State *L) {
@@ -323,7 +418,59 @@ static int lsl_interpose(lua_State *L) {
 } /* lsl_interpose() */
 
 
+static int lsl_strflag(lua_State *L) {
+	int top = lua_gettop(L), count = 0;
+
+	for (int i = 1; i <= top; i++) {
+		int flags = luaL_checkint(L, i);
+		int flag;
+
+		while ((flag = signal_flags(&flags))) {
+			const char *txt;
+
+			if ((txt = signal_strflag(flag))) {
+				luaL_checkstack(L, 1, "too many results");
+				lua_pushstring(L, txt);
+				count++;
+			}
+		}
+	}
+
+	return count;
+} /* lsl_strflag() */
+
+
+static int lsl_nxtflag(lua_State *L) {
+	int flags = (int)lua_tointeger(L, lua_upvalueindex(1));
+	int flag;
+
+	if ((flag = signal_flags(&flags))) {
+		lua_pushinteger(L, flags);
+		lua_replace(L, lua_upvalueindex(1));
+
+		lua_pushinteger(L, flag);
+
+		return 1;
+	}
+
+	return 0;
+} /* lsl_nxtflag() */
+
+static int lsl_flags(lua_State *L) {
+	int i, flags = 0;
+
+	for (i = 1; i <= lua_gettop(L); i++)
+		flags |= luaL_checkint(L, i);
+
+	lua_pushinteger(L, flags);
+	lua_pushcclosure(L, &lsl_nxtflag, 1);
+
+	return 1;
+} /* lsl_flags() */
+
+
 static const luaL_Reg lsl_methods[] = {
+	{ "features",   &lsl_features },
 	{ "wait",       &lsl_wait },
 	{ "pollfd",     &lsl_pollfd },
 	{ "events",     &lsl_events },
@@ -467,6 +614,9 @@ static const luaL_Reg ls_globals[] = {
 	{ "listen",    &lsl_listen },
 	{ "type",      &lsl_type },
 	{ "interpose", &lsl_interpose },
+	{ "strflag",   &lsl_strflag },
+	{ "flags",     &lsl_flags },
+	{ "interpose", &lsl_interpose },
 	{ "ignore",    &ls_ignore },
 	{ "default",   &ls_default },
 	{ "discard",   &ls_discard },
@@ -493,6 +643,12 @@ int luaopen__cqueues_signal(lua_State *L) {
 		{ "SIGTERM", SIGTERM },
 		{ "SIGUSR1", SIGUSR1 },
 		{ "SIGUSR2", SIGUSR2 },
+	}, flag[] = {
+		{ "SIGNALFD",      SIGNAL_SIGNALFD },
+		{ "EVFILT_SIGNAL", SIGNAL_EVFILT_SIGNAL },
+		{ "SIGTIMEDWAIT",  SIGNAL_SIGTIMEDWAIT },
+		{ "KQUEUE",        SIGNAL_KQUEUE },
+		{ "KQUEUE1",       SIGNAL_KQUEUE1 },
 	};
 	unsigned i;
 
@@ -506,16 +662,24 @@ int luaopen__cqueues_signal(lua_State *L) {
 	luaL_newlib(L, ls_globals);
 
 	for (i = 0; i < sizeof siglist / sizeof *siglist; i++) {
-		lua_pushstring(L, siglist[i].name);
 		lua_pushinteger(L, siglist[i].value);
-		lua_settable(L, -3);
+		lua_setfield(L, -2, siglist[i].name);
 
-		lua_pushinteger(L, siglist[i].value);
 		lua_pushstring(L, siglist[i].name);
-		lua_settable(L, -3);
+		lua_rawseti(L, -2, siglist[i].value);
 	}
+
+	for (i = 0; i < sizeof flag / sizeof *flag; i++) {
+		lua_pushinteger(L, flag[i].value);
+		lua_setfield(L, -2, flag[i].name);
+
+		lua_pushstring(L, flag[i].name);
+		lua_rawseti(L, -2, flag[i].value);
+	}
+
+	lua_pushinteger(L, signal_features());
+	lua_setfield(L, -2, "FEATURES");
 
 	return 1;
 } /* luaopen__cqueues_signal() */
-
 

@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <limits.h>	/* NAME_MAX */
 #include <stddef.h>	/* offsetof */
 #include <stdint.h>	/* intptr_t */
@@ -46,32 +48,16 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#ifndef HAVE_INOTIFY
-#define HAVE_INOTIFY (defined __linux__)
+#ifndef ENABLE_INOTIFY
+#define ENABLE_INOTIFY HAVE_INOTIFY_INIT
 #endif
 
-#ifndef HAVE_INOTIFY_INIT1
-#define HAVE_INOTIFY_INIT1 (HAVE_IN_CLOEXEC)
+#ifndef ENABLE_FEN
+#define ENABLE_FEN HAVE_PORT_H
 #endif
 
-#ifndef HAVE_FEN
-#define HAVE_FEN (defined __sun)
-#endif
-
-#ifndef HAVE_KQUEUE
-#define HAVE_KQUEUE (!HAVE_INOTIFY && !HAVE_FEN)
-#endif
-
-#ifndef HAVE_KQUEUE1
-#define HAVE_KQUEUE1 (__NetBSD_Version__ >= 600000000)
-#endif
-
-#ifndef HAVE_OPENAT
-#define HAVE_OPENAT (!__NetBSD__ && !__APPLE__)
-#endif
-
-#ifndef HAVE_FDOPENDIR
-#define HAVE_FDOPENDIR (!__NetBSD__ && !__APPLE__)
+#ifndef ENABLE_KQUEUE
+#define ENABLE_KQUEUE HAVE_KQUEUE
 #endif
 
 #ifndef HAVE_O_CLOEXEC
@@ -90,11 +76,11 @@
 #define HAVE_IN_NONBLOCK (defined IN_NONBLOCK)
 #endif
 
-#if HAVE_INOTIFY
+#if ENABLE_INOTIFY
 
 #include <sys/inotify.h>
 
-#elif HAVE_FEN
+#elif ENABLE_FEN
 
 #include <sys/stat.h>
 #include <sys/port.h>
@@ -114,10 +100,10 @@
 
 int notify_features(void) {
 	return 0
-#if HAVE_INOTIFY
+#if ENABLE_INOTIFY
 	| NOTIFY_INOTIFY
 #endif
-#if HAVE_FEN
+#if ENABLE_FEN
 	| NOTIFY_FEN
 #endif
 #if HAVE_KQUEUE
@@ -362,7 +348,7 @@ static DIR *nfy_opendir(const char *path, int *error) {
 #endif
 
 
-#if HAVE_FEN
+#if ENABLE_FEN
 static void fenfo_init(struct file_obj *fo, char *path) {
 	struct stat st;
 
@@ -385,7 +371,7 @@ static void fenfo_init(struct file_obj *fo, char *path) {
 struct file {
 	int fd;
 
-#if HAVE_FEN
+#if ENABLE_FEN
 	struct file_obj fo;
 #endif
 
@@ -401,7 +387,7 @@ struct file {
 	LIST_ENTRY(file) le, sle;
 	LLRB_ENTRY(file) rbe;
 
-#if HAVE_FEN
+#if ENABLE_FEN
 	char *name;
 	size_t namelen;
 
@@ -435,11 +421,11 @@ struct notify {
 
 	_Bool dirty;
 
-#if HAVE_INOTIFY
+#if ENABLE_INOTIFY
 	_Bool critical;
 #endif
 
-#if HAVE_FEN
+#if ENABLE_FEN
 	struct file_obj dirfo;
 #endif
 
@@ -453,7 +439,7 @@ LLRB_GENERATE_STATIC(files, file, rbe, filecmp)
 
 
 static struct file *lookup(struct notify *nfy, const char *name, size_t namelen) {
-#if HAVE_FEN
+#if ENABLE_FEN
 	struct file key = { .name = (char *)name, .namelen = namelen };
 
 	return LLRB_FIND(files, &nfy->files, &key);
@@ -514,7 +500,7 @@ static void status(struct notify *nfy, struct file *file, enum status status) {
 static void discard(struct notify *nfy, struct file *file) {
 	closefd(&file->fd);
 
-#if HAVE_FEN
+#if ENABLE_FEN
 	port_dissociate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&file->fo);
 #endif
 
@@ -551,7 +537,7 @@ struct notify *notify_opendir(const char *dirpath, int flags, int *_error) {
 	nfy->dirlen = dirlen;
 	memcpy(nfy->dirpath, dirpath, dirlen);
 
-#if HAVE_INOTIFY
+#if ENABLE_INOTIFY
 #if HAVE_INOTIFY_INIT1 && HAVE_IN_NONBLOCK && HAVE_IN_CLOEXEC
 	if (-1 == (nfy->fd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC)))
 		goto syerr;
@@ -568,7 +554,7 @@ struct notify *notify_opendir(const char *dirpath, int flags, int *_error) {
 
 	if (-1 == (nfy->dirwd = inotify_add_watch(nfy->fd, nfy->dirpath, IN_ATTRIB|IN_CREATE|IN_DELETE|IN_DELETE_SELF|IN_MODIFY|IN_MOVE|IN_MOVE_SELF|IN_ONLYDIR)))
 		goto syerr;
-#elif HAVE_FEN
+#elif ENABLE_FEN
 	if (-1 == (nfy->fd = port_create())) {
 		if (errno == EAGAIN)
 			errno = EMFILE;
@@ -635,7 +621,7 @@ void notify_close(struct notify *nfy) {
 	closefd(&nfy->fd);
 	closefd(&nfy->dirfd);
 
-#if HAVE_FEN
+#if ENABLE_FEN
 	port_dissociate(nfy->fd, PORT_SOURCE_FILE, (intptr_t)&nfy->dirfo);
 #endif
 
@@ -657,7 +643,7 @@ int notify_timeout(struct notify *nfy) {
 
 
 static int decode(int flags) {
-#if HAVE_INOTIFY
+#if ENABLE_INOTIFY
 	static const int table[][2] = {
 		{ IN_ATTRIB,      NOTIFY_ATTRIB },
 		{ IN_CREATE,      NOTIFY_CREATE },
@@ -668,7 +654,7 @@ static int decode(int flags) {
 		{ IN_MOVED_FROM,  NOTIFY_DELETE },
 		{ IN_MOVED_TO,    NOTIFY_CREATE },
 	};
-#elif HAVE_FEN
+#elif ENABLE_FEN
 	static const int table[][2] = {
 		{ FILE_MODIFIED,    NOTIFY_MODIFY },
 		{ FILE_ATTRIB,      NOTIFY_ATTRIB },
@@ -704,7 +690,7 @@ static int decode(int flags) {
 #define ms2ts(ms) (((ms) >= 0)? &(struct timespec){ (ms) / 1000, (((ms) % 1000) * 1000000) } : NULL)
 
 
-#if HAVE_INOTIFY
+#if ENABLE_INOTIFY
 #define NFY_STEP in_step
 #define NFY_POST in_post
 
@@ -812,7 +798,7 @@ static int in_post(struct notify *nfy) {
 } /* in_post() */
 
 
-#elif HAVE_FEN
+#elif ENABLE_FEN
 #define NFY_STEP fen_step
 #define NFY_POST fen_post
 
@@ -1093,7 +1079,7 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	if ((file = lookup(nfy, name, namelen)))
 		return 0;
 
-#if HAVE_FEN
+#if ENABLE_FEN
 	size_t pathlen = nfy->dirlen + 1 + namelen;
 
 	if (!(file = calloc(1, offsetof(struct file, path) + pathlen + 1)))
@@ -1119,13 +1105,13 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	LIST_INSERT_HEAD(&nfy->defunct, file, sle);
 	LLRB_INSERT(files, &nfy->files, file);
 
-#if HAVE_KQUEUE
+#if ENABLE_KQUEUE
 	if ((error = kq_readd(nfy, file)))
 		goto error;
 
 	NFY_LIST_MOVE(&nfy->dormant, file, le);
 	nfy->changes = 0;
-#elif HAVE_FEN
+#elif ENABLE_FEN
 	if ((error = fen_readd(nfy, file)))
 		goto error;
 

@@ -23,6 +23,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  * ==========================================================================
  */
+#include "config.h"
+
 #include <limits.h>	/* INT_MAX LONG_MAX */
 #include <float.h>	/* FLT_RADIX */
 #include <stdarg.h>	/* va_list va_start va_end */
@@ -61,7 +63,7 @@
 #endif
 
 #ifndef CQUEUES_VERSION
-#define CQUEUES_VERSION 20150907L
+#define CQUEUES_VERSION 20161018L
 #endif
 
 
@@ -123,40 +125,42 @@ inline static int setcloexec(int fd) {
 /*
  * clock_gettime()
  *
- * OS X doesn't implement the clock_gettime() POSIX interface, but does
- * provide a monotonic clock through mach_absolute_time(). On i386 and
- * x86_64 architectures this clock is in nanosecond units, but not so on
- * other devices. mach_timebase_info() provides the conversion parameters.
+ * OS X didn't implement the clock_gettime() POSIX interface until macOS
+ * 10.12 (Sierra). But it did provide a monotonic clock through
+ * mach_absolute_time(). On i386 and x86_64 architectures this clock is in
+ * nanosecond units, but not so on other devices. mach_timebase_info()
+ * provides the conversion parameters.
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 #if __APPLE__
 
-#include <time.h>            /* struct timespec */
-
 #include <errno.h>           /* errno EINVAL */
+#include <time.h>            /* struct timespec */
 
 #include <sys/time.h>        /* TIMEVAL_TO_TIMESPEC struct timeval gettimeofday(3) */
 
 #include <mach/mach_time.h>  /* mach_timebase_info_data_t mach_timebase_info() mach_absolute_time() */
 
+#if !HAVE_DECL_CLOCK_REALTIME
+enum { CLOCK_REALTIME = 0 };
+#endif
+#if !HAVE_DECL_CLOCK_MONOTONIC
+enum { CLOCK_MONOTONIC = 6 };
+#endif
 
-#define CLOCK_REALTIME  0
-#define CLOCK_VIRTUAL   1
-#define CLOCK_PROF      2
-#define CLOCK_MONOTONIC 3
+#if !HAVE_CLOCKID_T
+typedef int clockid_t;
+#endif
+
+#if HAVE_CLOCK_GETTIME && !HAVE_DECL_CLOCK_GETTIME
+extern int (clock_gettime)(clockid_t, struct timespec *);
+#endif
 
 static mach_timebase_info_data_t clock_timebase = {
 	.numer = 1, .denom = 1,
 }; /* clock_timebase */
 
-void clock_gettime_init(void) __attribute__((constructor));
-
-void clock_gettime_init(void) {
-	if (mach_timebase_info(&clock_timebase) != KERN_SUCCESS)
-		__builtin_abort();
-} /* clock_gettime_init() */
-
-static int clock_gettime(int clockid, struct timespec *ts) {
+static int compat_clock_gettime(clockid_t clockid, struct timespec *ts) {
 	switch (clockid) {
 	case CLOCK_REALTIME: {
 		struct timeval tv;
@@ -185,6 +189,31 @@ static int clock_gettime(int clockid, struct timespec *ts) {
 		return -1;
 	} /* switch() */
 } /* clock_gettime() */
+
+#define clock_gettime(clockid, ts) clock_gettime_p((clockid), (ts))
+
+static int (*clock_gettime_p)(clockid_t, struct timespec *) = &compat_clock_gettime;
+
+void clock_gettime_init(void) __attribute__((constructor));
+
+void clock_gettime_init(void) {
+#if HAVE_CLOCK_GETTIME
+	/*
+	 * NB: clock_gettime is implemented as a weak symbol which autoconf
+	 * tests will always positively identify when compiling with XCode
+	 * 8.0 or above, regardless of -mmacosx-version-min. Similarly, it
+	 * will always be declared by XCode 8.0 or above.
+	 */
+	if (&(clock_gettime)) {
+		clock_gettime_p = &(clock_gettime);
+		return;
+	}
+#endif
+	if (mach_timebase_info(&clock_timebase) != KERN_SUCCESS)
+		__builtin_abort();
+
+	clock_gettime_p = &compat_clock_gettime;
+} /* clock_gettime_init() */
 
 #endif /* __APPLE__ */
 
@@ -387,15 +416,17 @@ static void *pool_get(struct pool *P, int *_error) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 #include <sys/epoll.h>	/* struct epoll_event epoll_create(2) epoll_ctl(2) epoll_wait(2) */
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 #include <port.h>
-#else
+#elif ENABLE_KQUEUE
 #include <sys/event.h>	/* EVFILT_READ EVFILT_WRITE EV_SET EV_ADD EV_DELETE struct kevent kqueue(2) kevent(2) */
+#else
+#error "No polling backend available"
 #endif
 
-#if HAVE_EVENTFD
+#if HAVE_SYS_EVENTFD_H
 #include <sys/eventfd.h> /* eventfd(2) */
 #endif
 
@@ -404,11 +435,11 @@ static void *pool_get(struct pool *P, int *_error) {
 
 #define KPOLL_MAXWAIT 32
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 typedef struct epoll_event kpoll_event_t;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 typedef port_event_t kpoll_event_t;
-#else
+#elif ENABLE_KQUEUE
 /* NetBSD uses intptr_t, others use void *, for .udata */
 #define KP_P2UDATA(p) ((__typeof__(((struct kevent *)0)->udata))(p))
 #define KP_UDATA2P(udata) ((void *)(udata))
@@ -447,7 +478,7 @@ static int kpoll_ctl(struct kpoll *, int, short *, short, void *);
 static int alert_rearm(struct kpoll *);
 
 static int alert_init(struct kpoll *kp) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	(void)kp;
 	return 0;
 #elif HAVE_EVENTFD
@@ -472,7 +503,7 @@ static int alert_init(struct kpoll *kp) {
 } /* alert_init() */
 
 static void alert_destroy(struct kpoll *kp) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	(void)kp;
 #else
 	for (size_t i = 0; i < countof(kp->alert.fd); i++)
@@ -481,7 +512,7 @@ static void alert_destroy(struct kpoll *kp) {
 } /* alert_destroy() */
 
 static int alert_rearm(struct kpoll *kp) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	return 0;
 #else
 	return kpoll_ctl(kp, kp->alert.fd[0], &kp->alert.state, POLLIN, &kp->alert);
@@ -492,7 +523,7 @@ static int alert_rearm(struct kpoll *kp) {
 static int kpoll_init(struct kpoll *kp) {
 	int error;
 
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 #if defined EPOLL_CLOEXEC
 	(void)error;
 	if (-1 == (kp->fd = epoll_create1(EPOLL_CLOEXEC)))
@@ -504,13 +535,13 @@ static int kpoll_init(struct kpoll *kp) {
 	if ((error = setcloexec(kp->fd)))
 		return error;
 #endif
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	if (-1 == (kp->fd = port_create()))
 		return errno;
 
 	if ((error = setcloexec(kp->fd)))
 		return error;
-#else
+#elif ENABLE_KQUEUE
 	if (-1 == (kp->fd = kqueue()))
 		return errno;
 
@@ -530,29 +561,29 @@ static void kpoll_destroy(struct kpoll *kp) {
 
 
 static inline void *kpoll_udata(const kpoll_event_t *event) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	return event->data.ptr;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	return event->portev_user;
-#else
+#elif ENABLE_KQUEUE
 	return KP_UDATA2P(event->udata);
 #endif
 } /* kpoll_udata() */
 
 
 static inline short kpoll_pending(const kpoll_event_t *event) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	return event->events;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	return event->portev_events;
-#else
+#elif ENABLE_KQUEUE
 	return (event->filter == EVFILT_READ)? POLLIN : (event->filter == EVFILT_WRITE)? POLLOUT : 0;
 #endif
 } /* kpoll_pending() */
 
 
 static inline short kpoll_diff(const kpoll_event_t *event NOTUSED, short ostate NOTUSED) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	/* Solaris Event Ports aren't persistent. */
 	return 0;
 #else
@@ -562,7 +593,7 @@ static inline short kpoll_diff(const kpoll_event_t *event NOTUSED, short ostate 
 
 
 static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void *udata) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	struct epoll_event event;
 	int op;
 
@@ -582,7 +613,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 	*state = events;
 
 	return 0;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	if (*state == events)
 		return 0;
 
@@ -597,7 +628,7 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 	*state = events;
 
 	return 0;
-#else
+#elif ENABLE_KQUEUE
 	struct kevent changelist[2];
 	int nchanges = 0;
 
@@ -657,7 +688,7 @@ static int kpoll_alert(struct kpoll *kp) {
 	/* initialization may have been delayed */
 	if ((error = alert_init(kp)))
 		return error;
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	if (0 != port_send(kp->fd, POLLIN, &kp->alert)) {
 		if (errno != EBUSY)
 			return errno;
@@ -693,7 +724,7 @@ static int kpoll_alert(struct kpoll *kp) {
 static int kpoll_calm(struct kpoll *kp) {
 	int error;
 
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	/* each PORT_SOURCE_USER event is discrete */
 #elif HAVE_EVENTFD
 	uint64_t n;
@@ -731,7 +762,7 @@ static int kpoll_calm(struct kpoll *kp) {
 
 
 static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) {
-#if HAVE_PORTS
+#if ENABLE_PORTS
 	return event->portev_source == PORT_SOURCE_USER;
 #else
 	return kpoll_udata(event) == &kp->alert;
@@ -740,7 +771,7 @@ static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) 
 
 
 static int kpoll_wait(struct kpoll *kp, double timeout) {
-#if HAVE_EPOLL
+#if ENABLE_EPOLL
 	int n;
 
 	if (-1 == (n = epoll_wait(kp->fd, kp->pending.event, (int)countof(kp->pending.event), f2ms(timeout))))
@@ -749,7 +780,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	kp->pending.count = n;
 
 	return 0;
-#elif HAVE_PORTS
+#elif ENABLE_PORTS
 	kpoll_event_t *ke;
 	uint_t n = 1;
 
@@ -761,7 +792,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 	kp->pending.count = n;
 
 	return 0;
-#else
+#elif ENABLE_KQUEUE
 	int n;
 
 	if (-1 == (n = kevent(kp->fd, NULL, 0, kp->pending.event, (int)countof(kp->pending.event), f2ts(timeout))))
@@ -1125,7 +1156,6 @@ struct timer {
 
 
 struct thread {
-	auxref_t ref;
 	lua_State *L; /* only for coroutines */
 
 	TAILQ_HEAD(, event) events;
@@ -1145,15 +1175,13 @@ struct thread {
 struct cqueue {
 	struct kpoll kp;
 
-	auxref_t registry; /* ephemeron table global registry index */
-
 	struct {
 		LLRB_HEAD(table, fileno) table;
 		LIST_HEAD(, fileno) polling, outstanding, inactive;
 	} fileno;
 
 	struct {
-		struct pool wakecb, fileno, thread, event;
+		struct pool wakecb, fileno, event;
 	} pool;
 
 	struct {
@@ -1196,11 +1224,10 @@ static void cstack_push(struct cstack *, struct stackinfo *);
 static void cstack_pop(struct cstack *);
 static _Bool cstack_isrunning(const struct cstack *, const struct cqueue *);
 
-#define CALLINFO_INITIALIZER { 0, 0, { 0, 0, 0, 0, -1 } }
+#define CALLINFO_INITIALIZER { 0, { 0, 0, 0, 0, -1 } }
 
 struct callinfo {
 	cqs_index_t self; /* stack index of cqueue object */
-	cqs_index_t registry; /* stack index of ephemeron registry table */
 
 	struct {
 		cqs_index_t value;
@@ -1222,12 +1249,6 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 
 	I->self = lua_absindex(L, index);
 
-	lua_rawgeti(L, LUA_REGISTRYINDEX, Q->registry);
-	lua_pushvalue(L, I->self);
-	lua_gettable(L, -2);
-	lua_replace(L, -2);
-	I->registry = lua_absindex(L, -1);
-
 	I->error.value = 0;
 	I->error.code = 0;
 	I->error.thread = 0;
@@ -1245,19 +1266,6 @@ static cqs_error_t cqueue_tryalert(struct cqueue *Q) {
 		return 0;
 	}
 } /* cqueue_tryalert() */
-
-
-static int cqueue_ref(lua_State *L, struct callinfo *I, int index) {
-	lua_pushvalue(L, index);
-	return luaL_ref(L, I->registry);
-} /* cqueue_ref() */
-
-
-static void cqueue_unref(lua_State *L, struct callinfo *I, auxref_t *ref) {
-	luaL_unref(L, I->registry, *ref);
-	*ref = LUA_NOREF;
-} /* cqueue_unref() */
-
 
 static void err_setvfstring(lua_State *L, struct callinfo *I, const char *fmt, va_list ap) {
 	lua_pushvfstring(L, fmt, ap);
@@ -1344,7 +1352,7 @@ static const char *err_pushvalue(lua_State *L, struct callinfo *I) {
 static cqs_nargs_t err_pushinfo(lua_State *L, struct callinfo *I) {
 	int nargs = 0;
 
-	luaL_checkstack(L, 5, NULL);
+	luaL_checkstack(L, 5, "too many arguments");
 
 	err_pushvalue(L, I);
 	nargs = 1;
@@ -1391,11 +1399,8 @@ static void cqueue_preinit(struct cqueue *Q) {
 
 	Q->thread.current = NULL;
 
-	Q->registry = LUA_NOREF;
-
 	pool_init(&Q->pool.wakecb, sizeof (struct wakecb));
 	pool_init(&Q->pool.fileno, sizeof (struct fileno));
-	pool_init(&Q->pool.thread, sizeof (struct thread));
 	pool_init(&Q->pool.event, sizeof (struct event));
 } /* cqueue_preinit() */
 
@@ -1411,26 +1416,10 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 		luaL_error(L, "unable to initialize continuation queue: %s", cqs_strerror(error));
 
 	/*
-	 * create ephemeron table
+	 * give ourselves an empty table of threads
 	 */
 	lua_newtable(L);
-	lua_newtable(L);
-	lua_pushstring(L, "k");
-	lua_setfield(L, -2, "__mode");
-	lua_setmetatable(L, -2);
-
-	/*
-	 * create our registry table, indexed in our ephemeron table by
-	 * a reference to our self.
-	 */
-	lua_pushvalue(L, index);
-	lua_newtable(L);
-	lua_settable(L, -3);
-
-	/*
-	 * anchor our ephemeron table in the global registry
-	 */
-	Q->registry = luaL_ref(L, LUA_REGISTRYINDEX);
+	cqs_setuservalue(L, index);
 
 	/*
 	 * associate ourselves with global continuation stack
@@ -1468,12 +1457,8 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	kpoll_destroy(&Q->kp);
 
 	pool_destroy(&Q->pool.event);
-	pool_destroy(&Q->pool.thread);
 	pool_destroy(&Q->pool.fileno);
 	pool_destroy(&Q->pool.wakecb);
-
-	luaL_unref(L, LUA_REGISTRYINDEX, Q->registry);
-	Q->registry = LUA_NOREF;
 } /* cqueue_destroy() */
 
 
@@ -1857,30 +1842,30 @@ static double thread_timeout(struct thread *T) {
 } /* thread_timeout() */
 
 
-static cqs_error_t thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
+static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int index) {
 	struct thread *T;
-	int error;
 
 	index = lua_absindex(L, index);
 
-	if (!(T = pool_get(&Q->pool.thread, &error)))
-		return error;
-
+	T = lua_newuserdata(L, sizeof *T);
 	memset(T, 0, sizeof *T);
-
-	T->ref = LUA_NOREF;
 	TAILQ_INIT(&T->events);
-
 	timer_init(&T->timer);
 
-	T->ref = cqueue_ref(L, I, index);
+	/* anchor new lua_State to our thread context */
+	lua_pushvalue(L, index);
+	cqs_setuservalue(L, -2);
 	T->L = lua_tothread(L, index);
+
+	/* anchor thread context to cqueue object */
+	cqs_getuservalue(L, I->self);
+	lua_pushvalue(L, -2);
+	lua_rawsetp(L, -2, T);
+	lua_pop(L, 2);
 
 	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
 	T->threads = &Q->thread.pending;
 	Q->thread.count++;
-
-	return 0;
 } /* thread_add() */
 
 
@@ -1890,16 +1875,32 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 	while ((event = TAILQ_FIRST(&T->events))) {
 		event_del(Q, event);
 	}
-
 	timer_destroy(Q, &T->timer);
-
-	cqueue_unref(L, I, &T->ref);
-	T->L = NULL;
-
 	LIST_REMOVE(T, le);
 	Q->thread.count--;
 
-	pool_put(&Q->pool.thread, T);
+	/*
+	 * XXX: These lua operations are documented as able to longjmp on
+	 * OOM. However, inspection of the lua source suggests that when used
+	 * as below they won't throw.
+	 *   - In lua5.1 pushing a lightuserdata doesn't allocate (they're
+	 *     stack allocated)
+	 *   - rawset doesn't allocate if the key already exists in the table
+	 *     (which it always does for this function)
+	 */
+	cqs_getuservalue(L, I->self);
+
+	/* set thread's uservalue (it's thread) to nil */
+	lua_rawgetp(L, -1, T);
+	lua_pushnil(L);
+	cqs_setuservalue(L, -2);
+	lua_pop(L, 1);
+	T->L = NULL;
+
+	/* remove thread from cqueues's thread table */
+	lua_pushnil(L);
+	lua_rawsetp(L, -2, T);
+	lua_pop(L, 1);
 } /* thread_del() */
 
 
@@ -2015,8 +2016,8 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 	} else {
 		nargs = lua_gettop(T->L);
 		if (status != LUA_YIELD) {
-			nargs -= 1;
-			assert(nargs >= 0);
+			if (nargs > 0)
+				nargs -= 1; /* exclude function */
 		}
 	}
 
@@ -2243,40 +2244,38 @@ static int cqueue_step(lua_State *L) {
 		return luaL_error(L, "cannot step live cqueue");
 	}
 
-	if (Q->thread.count) {
-		if (LIST_EMPTY(&Q->thread.pending)) {
-			timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
-		} else {
-			timeout = 0.0;
-		}
+	if (Q->thread.count && LIST_EMPTY(&Q->thread.pending)) {
+		timeout = mintimeout(luaL_optnumber(L, 2, NAN), cqueue_timeout_(Q));
+	} else {
+		timeout = 0.0;
+	}
 
-		if ((error = kpoll_wait(&Q->kp, timeout))) {
-			err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
-			err_setcode(L, &I, error);
-			goto oops;
-		}
+	if ((error = kpoll_wait(&Q->kp, timeout))) {
+		err_setfstring(L, &I, "error polling: %s", cqs_strerror(error));
+		err_setcode(L, &I, error);
+		goto oops;
+	}
 
-		switch(cqueue_process(L, Q, &I)) {
-		case LUA_OK:
-			break;
-		case LUA_YIELD:
-			/* clear everything off the stack except for cqueue object; `I` now invalid */
-			lua_settop(L, 1);
+	switch(cqueue_process(L, Q, &I)) {
+	case LUA_OK:
+		break;
+	case LUA_YIELD:
+		/* clear everything off the stack except for cqueue object; `I` now invalid */
+		lua_settop(L, 1);
 #if LUA_VERSION_NUM >= 502
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return lua_yieldk(L, nargs, 0, cqueue_step_cont);
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return lua_yieldk(L, nargs, 0, cqueue_step_cont);
 #else
-			lua_pushliteral(L, "yielded");
-			/* move arguments onto 'main' stack to return them from this yield */
-			nargs = lua_gettop(Q->thread.current->L);
-			lua_xmove(Q->thread.current->L, L, nargs);
-			return nargs+1;
+		lua_pushliteral(L, "yielded");
+		/* move arguments onto 'main' stack to return them from this yield */
+		nargs = lua_gettop(Q->thread.current->L);
+		lua_xmove(Q->thread.current->L, L, nargs);
+		return nargs+1;
 #endif
-		default:
-			goto oops;
-		}
+	default:
+		goto oops;
 	}
 
 	lua_pushboolean(L, 1);
@@ -2299,8 +2298,7 @@ static int cqueue_attach(lua_State *L) {
 	Q = cqueue_enter(L, &I, 1);
 	luaL_checktype(L, 2, LUA_TTHREAD);
 
-	if ((error = thread_add(L, Q, &I, 2)))
-		goto error;
+	thread_add(L, Q, &I, 2);
 
 	if ((error = cqueue_tryalert(Q)))
 		goto error;
@@ -2329,13 +2327,11 @@ static int cqueue_wrap(lua_State *L) {
 	luaL_checktype(L, 2, LUA_TFUNCTION);
 
 	newL = lua_newthread(L);
-	for (i = 2; i <= top; i++) {
-		lua_pushvalue(L, i);
-	}
+	lua_insert(L, 2);
+	luaL_checkstack(newL, top - 1, "too many arguments");
 	lua_xmove(L, newL, top - 1);
 
-	if ((error = thread_add(L, Q, &I, -1)))
-		goto error;
+	thread_add(L, Q, &I, -1);
 
 	if ((error = cqueue_tryalert(Q)))
 		goto error;
@@ -2350,6 +2346,25 @@ error:
 
 	return 3;
 } /* cqueue_wrap() */
+
+
+static int cqueue_alert(lua_State *L) {
+	struct cqueue *Q = cqueue_checkself(L, 1);
+	int error;
+
+	if ((error = kpoll_alert(&Q->kp)))
+		goto error;
+
+	lua_pushvalue(L, 1);
+
+	return 1;
+error:
+	lua_pushnil(L);
+	lua_pushstring(L, cqs_strerror(error));
+	lua_pushinteger(L, error);
+
+	return 3;
+} /* cqueue_alert() */
 
 
 static int cqueue_empty(lua_State *L) {
@@ -2812,6 +2827,7 @@ static const luaL_Reg cqueue_methods[] = {
 #endif
 	{ "attach",  &cqueue_attach },
 	{ "wrap",    &cqueue_wrap },
+	{ "alert",   &cqueue_alert },
 	{ "empty",   &cqueue_empty },
 	{ "count",   &cqueue_count },
 	{ "cancel",  &cqueue_cancel },

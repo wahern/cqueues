@@ -1,3 +1,56 @@
+liblua-cqueues (20161018-0) unstable; urgency=low
+
+  * Support OpenSSL 1.1 API. (@daurnimator)
+  * Support clock_gettime with macOS Sierra / XCode 8.0. (Reported by
+    @ziazon)
+  * Support accept4 and paccept for atomic O_CLOEXEC. (@daurnimator)
+  * Remove assert which aborted process when attempting to resume a dead
+    coroutine as it doesn't necessarily signal process corruption.
+    (@daurnimator)
+  * Enable IPv6 AAAA queries in socket.connect.
+  * Support passing Lua 5.3 integers as arguments to thread.start. (Reported
+    by and preliminary patch from @daurnimator)
+  * Basic SOCK_SEQPACKET support. (@daurnimator)
+
+ -- William Ahern <william@25thandClement.com>  Wed, 19 Oct 2016 01:38:03 -0700
+
+liblua-cqueues (20160812-0) unstable; urgency=low
+
+  * Support older Linux environments lacking signalfd by falling back
+    to sigtimedwait as we do for Solaris.
+  * On BSDs set FD_CLOEXEC on the signal.c kqueue descriptor.
+
+ -- William Ahern <william@25thandClement.com>  Fri, 12 Aug 2016 13:20:05 -0700
+
+liblua-cqueues (20160808-0) unstable; urgency=low
+
+  * Use userdata values (userdata environments in Lua 5.1) instead of relying
+    on ephemeron tables.
+  * Update dns.c with various bug fixes.
+  * Immediately put resolvers back into resolver pool. (@torhve)
+
+ -- William Ahern <william@25thandClement.com>  Mon, 08 Aug 2016 20:22:04 -0700
+
+liblua-cqueues (20160318-0) unstable; urgency=low
+
+  * Refactor build framework to make it easier to avoid automatic Lua
+    dependency checks. But also improve automatic Lua detection by
+    automatically selecting the Lua APIs to build against.
+  * Move most system feature detection to config.h from various source files.
+
+ -- William Ahern <william@25thandClement.com>  Fri, 18 Mar 2016 20:17:46 -0700
+
+liblua-cqueues (20160316-0) unstable; urgency=low
+
+  * Allow yielding through cqueues:step. (daurnimator)
+  * Use SSLv23_server_method instead of SSLv3_server_method when guessing
+    the TLS handshake mode--server or client--as many OpenSSL forks have
+    deprecated or removed SSLv3-specific APIs. (daurnimator)
+  * Support SO_BROADCAST. (daurnimator)
+  * Fix v6only flag. (daurnimator)
+
+ -- William Ahern <william@25thandClement.com>  Wed, 16 Mar 2016 18:34:51 -0700
+
 liblua-cqueues (20150907-0) unstable; urgency=low
 
   * Fix bugs with getsockname and getpeername--AF_UNIX sockaddr length
