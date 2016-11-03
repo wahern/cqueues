@@ -2692,9 +2692,9 @@ static lso_nargs_t lso_eof(lua_State *L) {
 
 
 static lso_nargs_t lso_accept(lua_State *L) {
-	struct luasocket *A = lso_checkself(L, 1);
+	struct luasocket *A = lso_checkself(L, 1), *S;
 	struct so_options opts;
-	int fd, error;
+	int fd = -1, error;
 
 	if (lua_istable(L, 2)) {
 		opts = lso_checkopts(L, 2);
@@ -2702,16 +2702,27 @@ static lso_nargs_t lso_accept(lua_State *L) {
 		opts = *so_opts();
 	}
 
+	S = lso_newsocket(L, A->type);
+
+	opts.fd_close.arg = S;
+	opts.fd_close.cb = &lso_closefd;
+
 	so_clear(A->socket);
 
 	if (-1 == (fd = so_accept(A->socket, 0, 0, &error)))
 		goto error;
 
-	if ((error = cqs_socket_fdopen(L, fd, &opts)))
+	if ((error = lso_prepsocket(S)))
+		goto error;
+
+	if (!(S->socket = so_fdopen(fd, &opts, &error)))
 		goto error;
 
 	return 1;
+syerr:
+	error = errno;
 error:
+	cqs_closefd(&fd);
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
 
