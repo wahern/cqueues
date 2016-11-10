@@ -2719,8 +2719,6 @@ static lso_nargs_t lso_accept(lua_State *L) {
 		goto error;
 
 	return 1;
-syerr:
-	error = errno;
 error:
 	cqs_closefd(&fd);
 	lua_pushnil(L);
