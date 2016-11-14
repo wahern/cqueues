@@ -880,6 +880,11 @@ static lso_error_t lso_checktodo(struct luasocket *S) {
 				error = so_starttls(S->socket, NULL);
 			}
 
+			if (S->tls.config.instance) {
+				SSL_free(S->tls.config.instance);
+				S->tls.config.instance = NULL;
+			}
+
 			if (S->tls.config.context) {
 				SSL_CTX_free(S->tls.config.context);
 				S->tls.config.context = NULL;
@@ -1087,7 +1092,8 @@ typedef struct {
 
 static lso_nargs_t lso_starttls(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
-	SSL_CTX **ctx;
+	SSL_CTX **ctx = NULL;
+	SSL **ssl = NULL;
 	int error;
 
 	/*
@@ -1098,11 +1104,22 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 	if ((S->todo & LSO_DO_STARTTLS))
 		goto check;
 
-	if ((ctx = luaL_testudata(L, 2, "SSL_CTX*"))) {
+	if ((ssl = luaL_testudata(L, 2, "SSL*"))) {
+		luaL_argcheck(L, SSL_get0_session(*ssl) == NULL, 2, "SSL object already has session");
+		/* accept-mode check handled by so_starttls() */
+	} else if ((ctx = luaL_testudata(L, 2, "SSL_CTX*"))) {
 		/* accept-mode check handled by so_starttls() */
 	} else if ((ctx = luaL_testudata(L, 2, "SSL:Context"))) { /* luasec compatability */
 		luaL_argcheck(L, ((lsec_context*)ctx)->mode != LSEC_MODE_INVALID, 2, "invalid mode");
 		so_setbool(&S->tls.config.accept, ((((lsec_context*)ctx)->mode) == LSEC_MODE_SERVER));
+	}
+
+	if (ssl && *ssl && *ssl != S->tls.config.instance) {
+		if (S->tls.config.instance)
+			SSL_free(S->tls.config.instance);
+
+		SSL_up_ref(*ssl);
+		S->tls.config.instance = *ssl;
 	}
 
 	if (ctx && *ctx && *ctx != S->tls.config.context) {
@@ -2865,6 +2882,11 @@ static lso_nargs_t lso_stat(lua_State *L) {
 
 static void lso_destroy(lua_State *L, struct luasocket *S) {
 	cqs_unref(L, &S->onerror);
+
+	if (S->tls.config.instance) {
+		SSL_free(S->tls.config.instance);
+		S->tls.config.instance = NULL;
+	}
 
 	if (S->tls.config.context) {
 		SSL_CTX_free(S->tls.config.context);
