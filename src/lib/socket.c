@@ -2144,6 +2144,7 @@ static void so_resetssl(struct socket *so) {
 
 int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	SSL_CTX *ctx, *tmp = NULL;
+	SSL *ssl = NULL;
 	const SSL_METHOD *method;
 	int error;
 
@@ -2185,22 +2186,25 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 			goto eossl;
 	}
 
-	if (!(so->ssl.ctx = SSL_new(ctx)))
+	if (!(ssl = SSL_new(ctx)))
 		goto eossl;
 
-	SSL_set_mode(so->ssl.ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-	SSL_set_mode(so->ssl.ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
+	SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+	SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
 	if (so_isbool(cfg->accept)) {
 		so->ssl.accept = so_tobool(cfg->accept);
 	} else {
-		so->ssl.accept = SSL_is_server(so->ssl.ctx);
+		so->ssl.accept = SSL_is_server(ssl);
 	}
 
 	if (!so->ssl.accept && so->opts.tls_sendname && so->opts.tls_sendname != SO_OPTS_TLS_HOSTNAME) {
-		if (!SSL_set_tlsext_host_name(so->ssl.ctx, so->opts.tls_sendname))
+		if (!SSL_set_tlsext_host_name(ssl, so->opts.tls_sendname))
 			goto eossl;
 	}
+
+	so->ssl.ctx = ssl;
+	ssl = NULL;
 
 	if (tmp)
 		SSL_CTX_free(tmp);
@@ -2216,6 +2220,9 @@ error:
 	 * so_listen(), but we still need to replay the error.
 	 */
 	so->ssl.error = error;
+
+	if (ssl)
+		SSL_free(ssl);
 
 	if (tmp)
 		SSL_CTX_free(tmp);
