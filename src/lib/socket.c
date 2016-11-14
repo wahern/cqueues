@@ -2201,9 +2201,6 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 			goto eossl;
 	}
 
-	SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-	SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
-
 	if (so_isbool(cfg->accept)) {
 		so->ssl.accept = so_tobool(cfg->accept);
 	} else {
@@ -2214,6 +2211,9 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 		if (!SSL_set_tlsext_host_name(ssl, so->opts.tls_sendname))
 			goto eossl;
 	}
+
+	SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+	SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
 	so->ssl.ctx = ssl;
 	ssl = NULL;
