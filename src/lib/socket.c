@@ -132,6 +132,10 @@ int socket_v_api(void) {
 #define HAVE_SSL_IS_SERVER HAVE_OPENSSL11_API
 #endif
 
+#ifndef HAVE_SSL_UP_REF
+#define HAVE_SSL_UP_REF HAVE_OPENSSL11_API
+#endif
+
 
 /*
  * C O M P A T  R O U T I N E S
@@ -182,6 +186,10 @@ static _Bool compat_SSL_is_server(SSL *ssl) {
 
 	return 0;
 } /* compat_SSL_is_server() */
+#endif
+
+#if !HAVE_SSL_UP_REF
+#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
 #endif
 
 
@@ -2179,15 +2187,19 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 
 	ERR_clear_error();
 
-	if (!(ctx = cfg->context)) {
-		method = (cfg->method)? cfg->method : SSLv23_method();
+	if ((ssl = cfg->instance)) {
+		SSL_up_ref(ssl);
+	} else {
+		if (!(ctx = cfg->context)) {
+			method = (cfg->method)? cfg->method : SSLv23_method();
 
-		if (!(ctx = tmp = SSL_CTX_new((SSL_METHOD *)method)))
+			if (!(ctx = tmp = SSL_CTX_new((SSL_METHOD *)method)))
+				goto eossl;
+		}
+
+		if (!(ssl = SSL_new(ctx)))
 			goto eossl;
 	}
-
-	if (!(ssl = SSL_new(ctx)))
-		goto eossl;
 
 	SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 	SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
