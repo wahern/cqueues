@@ -1235,8 +1235,14 @@ struct callinfo {
 }; /* struct callinfo */
 
 
+static struct cqueue *cqueue_checkvalid(lua_State *L, int index, struct cqueue *Q) {
+	luaL_argcheck(L, !!Q->cstack, index, "cqueue closed");
+	return Q;
+} /* cqueue_checkvalid() */
+
+
 static struct cqueue *cqueue_checkself(lua_State *L, int index) {
-	return cqs_checkudata(L, index, 1, CQUEUE_CLASS);
+	return cqueue_checkvalid(L, index, cqs_checkudata(L, index, 1, CQUEUE_CLASS));
 } /* cqueue_checkself() */
 
 
