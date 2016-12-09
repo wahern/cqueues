@@ -1482,11 +1482,13 @@ static int cqueue_new(lua_State *L) {
 
 static int cqueue__gc(lua_State *L) {
 	struct callinfo I;
-	struct cqueue *Q;
+	struct cqueue *Q = cqs_checkudata(L, 1, 1, CQUEUE_CLASS);
 
-	Q = cqueue_enter(L, &I, 1);
+	if (!!Q->cstack) {
+		Q = cqueue_enter(L, &I, 1);
 
-	cqueue_destroy(L, Q, &I);
+		cqueue_destroy(L, Q, &I);
+	}
 
 	return 0;
 } /* cqueue__gc() */
