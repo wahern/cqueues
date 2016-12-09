@@ -2840,6 +2840,7 @@ static const luaL_Reg cqueue_methods[] = {
 	{ "pollfd",  &cqueue_pollfd },
 	{ "events",  &cqueue_events },
 	{ "timeout", &cqueue_timeout },
+	{ "close",   &cqueue__gc },
 	{ NULL,      NULL }
 }; /* cqueue_methods[] */
 
