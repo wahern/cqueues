@@ -502,12 +502,12 @@ static int alert_init(struct kpoll *kp) {
 #endif
 } /* alert_init() */
 
-static void alert_destroy(struct kpoll *kp) {
+static void alert_destroy(struct kpoll *kp, void(*closefd)(void*, int*), void *cb_udata) {
 #if ENABLE_PORTS
 	(void)kp;
 #else
 	for (size_t i = 0; i < countof(kp->alert.fd); i++)
-		cqs_closefd(&kp->alert.fd[i]);
+		closefd(cb_udata, &kp->alert.fd[i]);
 #endif
 } /* alert_destroy() */
 
@@ -553,9 +553,9 @@ static int kpoll_init(struct kpoll *kp) {
 } /* kpoll_init() */
 
 
-static void kpoll_destroy(struct kpoll *kp) {
-	alert_destroy(kp);
-	(void)close(kp->fd);
+static void kpoll_destroy(struct kpoll *kp, void(*closefd)(void*, int*), void *cb_udata) {
+	alert_destroy(kp, closefd, cb_udata);
+	closefd(cb_udata, &kp->fd);
 	kpoll_preinit(kp);
 } /* kpoll_destroy() */
 
@@ -1433,6 +1433,12 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 static void thread_del(lua_State *, struct cqueue *, struct callinfo *, struct thread *);
 static int fileno_del(struct cqueue *, struct fileno *, _Bool);
 static void cstack_del(struct cqueue *);
+void cqs_cancelfd(lua_State *L, int fd);
+
+static void cancel_and_close(lua_State *L, int *fd) {
+	cqs_cancelfd(L, *fd);
+	cqs_closefd(fd);
+}
 
 static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 	struct thread *thread;
@@ -1456,7 +1462,7 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 		fileno_del(Q, fileno, 0);
 	}
 
-	kpoll_destroy(&Q->kp);
+	kpoll_destroy(&Q->kp, (void(*)(void*, int*))cancel_and_close, L);
 
 	pool_destroy(&Q->pool.event);
 	pool_destroy(&Q->pool.fileno);
@@ -1941,8 +1947,6 @@ error:
 
 
 static cqs_error_t cqueue_reboot(lua_State *L, struct cqueue *Q, _Bool stop, _Bool restart) {
-	(void)L;
-
 	if (stop) {
 		struct fileno *fileno;
 		struct thread *thread;
@@ -1960,7 +1964,7 @@ static cqs_error_t cqueue_reboot(lua_State *L, struct cqueue *Q, _Bool stop, _Bo
 			thread_move(thread, &Q->thread.pending);
 		}
 
-		kpoll_destroy(&Q->kp);
+		kpoll_destroy(&Q->kp, (void(*)(void*, int*))cancel_and_close, L);
 	}
 
 	if (restart) {
