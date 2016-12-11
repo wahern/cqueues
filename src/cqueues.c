@@ -1940,7 +1940,9 @@ error:
 } /* cqueue_update() */
 
 
-static cqs_error_t cqueue_reboot(struct cqueue *Q, _Bool stop, _Bool restart) {
+static cqs_error_t cqueue_reboot(lua_State *L, struct cqueue *Q, _Bool stop, _Bool restart) {
+	(void)L;
+
 	if (stop) {
 		struct fileno *fileno;
 		struct thread *thread;
@@ -2439,7 +2441,7 @@ static int cqueue_reset(lua_State *L) {
 	struct cqueue *Q = cqueue_checkself(L, 1);
 	int error;
 
-	if ((error = cqueue_reboot(Q, 1, 1)))
+	if ((error = cqueue_reboot(L, Q, 1, 1)))
 		return luaL_error(L, "unable to reset continuation queue: %s", cqs_strerror(error));
 
 	return 0;
@@ -2768,11 +2770,11 @@ static int cstack_reset(lua_State *L) {
 	int error;
 
 	LIST_FOREACH(Q, &CS->cqueues, le) {
-		cqueue_reboot(Q, 1, 0);
+		cqueue_reboot(L, Q, 1, 0);
 	}
 
 	LIST_FOREACH(Q, &CS->cqueues, le) {
-		if ((error = cqueue_reboot(Q, 0, 1)))
+		if ((error = cqueue_reboot(L, Q, 0, 1)))
 			return luaL_error(L, "unable to reset continuation queue: %s", cqs_strerror(error));
 	}
 
