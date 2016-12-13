@@ -1443,7 +1443,7 @@ static int cstack_onclosefd(int *, void *);
  * and cstack_del().
  */
 static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
-	struct cstack *CS = Q->cstack;
+	struct cstack *cstack = Q->cstack;
 	struct thread *thread;
 	struct fileno *fileno;
 	void *next;
@@ -1465,7 +1465,7 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 		fileno_del(Q, fileno, 0);
 	}
 
-	kpoll_destroy(&Q->kp, &cstack_onclosefd, CS);
+	kpoll_destroy(&Q->kp, &cstack_onclosefd, cstack);
 
 	pool_destroy(&Q->pool.event);
 	pool_destroy(&Q->pool.fileno);
