@@ -180,6 +180,15 @@ static _Bool compat_SSL_is_server(SSL *ssl) {
 	 *
 	 * Server methods such as TLSv1_2_server_method(), etc. should have
 	 * their .ssl_connect method set to this value.
+	 *
+	 * WARNING: SSL_is_server in OpenSSL 1.1 defaults to server mode
+	 * when both connect and accept methods are present (e.g. as
+	 * returned by SSLv23_method()), whereas we always defaulted to
+	 * client mode. We keep our old logic to avoid breaking any existing
+	 * code that relies on our behavior. Such code will break when
+	 * moving to OpenSSL 1.1, but it would be even more surprising if
+	 * their code broke when the only change was a minor version of
+	 * something using this library.
 	 */
 	if (!method->ssl_connect || method->ssl_connect == SSLv23_server_method()->ssl_connect)
 		return 1;
@@ -2218,6 +2227,7 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 	if (so_isbool(cfg->accept)) {
 		so->ssl.accept = so_tobool(cfg->accept);
 	} else {
+		/* NB: see WARNING at compat_SSL_is_server() */
 		so->ssl.accept = SSL_is_server(ssl);
 	}
 
