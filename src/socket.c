@@ -1105,7 +1105,6 @@ static lso_nargs_t lso_starttls(lua_State *L) {
 		goto check;
 
 	if ((ssl = luaL_testudata(L, 2, "SSL*"))) {
-		luaL_argcheck(L, SSL_get0_session(*ssl) == NULL, 2, "SSL object already has session");
 		/* accept-mode check handled by so_starttls() */
 	} else if ((ctx = luaL_testudata(L, 2, "SSL_CTX*"))) {
 		/* accept-mode check handled by so_starttls() */
