@@ -2667,8 +2667,14 @@ static int cqueue_timeout(lua_State *L) {
 
 
 static int cqueue_type(lua_State *L) {
-	if (cqs_testudata(L, 1, 1)) {
-		lua_pushstring(L, "controller");
+	struct cqueue *Q;
+
+	if ((Q = cqs_testudata(L, 1, 1))) {
+		if (Q->cstack) {
+			lua_pushstring(L, "controller");
+		} else {
+			lua_pushstring(L, "closed controller");
+		}
 	} else {
 		lua_pushnil(L);
 	}
