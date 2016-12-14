@@ -554,7 +554,7 @@ int so_accept(struct socket *, struct sockaddr *, socklen_t *, int *);
 struct so_starttls {
 	SSL_METHOD *method;
 	SSL_CTX *context;
-	SSL *instance; /* TODO */
+	SSL *instance;
 
 	struct iovec pushback;
 
