@@ -502,12 +502,12 @@ static int alert_init(struct kpoll *kp) {
 #endif
 } /* alert_init() */
 
-static void alert_destroy(struct kpoll *kp, void(*closefd)(void*, int*), void *cb_udata) {
+static void alert_destroy(struct kpoll *kp, int (*closefd)(int *, void *), void *cb_udata) {
 #if ENABLE_PORTS
 	(void)kp;
 #else
 	for (size_t i = 0; i < countof(kp->alert.fd); i++)
-		closefd(cb_udata, &kp->alert.fd[i]);
+		closefd(&kp->alert.fd[i], cb_udata);
 #endif
 } /* alert_destroy() */
 
@@ -553,9 +553,9 @@ static int kpoll_init(struct kpoll *kp) {
 } /* kpoll_init() */
 
 
-static void kpoll_destroy(struct kpoll *kp, void(*closefd)(void*, int*), void *cb_udata) {
+static void kpoll_destroy(struct kpoll *kp, int (*closefd)(int *, void *), void *cb_udata) {
 	alert_destroy(kp, closefd, cb_udata);
-	closefd(cb_udata, &kp->fd);
+	closefd(&kp->fd, cb_udata);
 	kpoll_preinit(kp);
 } /* kpoll_destroy() */
 
@@ -1246,9 +1246,7 @@ static struct cqueue *cqueue_checkself(lua_State *L, int index) {
 } /* cqueue_checkself() */
 
 
-static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) {
-	struct cqueue *Q = cqueue_checkself(L, index);
-
+static struct cqueue *cqueue_enter_nothrow(lua_State *L, struct callinfo *I, int index, struct cqueue *Q) {
 	I->self = lua_absindex(L, index);
 
 	I->error.value = 0;
@@ -1258,6 +1256,11 @@ static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) 
 	I->error.fd = -1;
 
 	return Q;
+} /* cqueue_enter_nothrow() */
+
+
+static struct cqueue *cqueue_enter(lua_State *L, struct callinfo *I, int index) {
+	return cqueue_enter_nothrow(L, I, index, cqueue_checkself(L, index));
 } /* cqueue_enter() */
 
 
@@ -1433,14 +1436,14 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 static void thread_del(lua_State *, struct cqueue *, struct callinfo *, struct thread *);
 static int fileno_del(struct cqueue *, struct fileno *, _Bool);
 static void cstack_del(struct cqueue *);
-void cqs_cancelfd(lua_State *L, int fd);
+static int cstack_onclosefd(int *, void *);
 
-static void cancel_and_close(lua_State *L, int *fd) {
-	cqs_cancelfd(L, *fd);
-	cqs_closefd(fd);
-}
-
+/*
+ * NOTE: Q->cstack can be NULL if cqueue_init() OOM'd. See cstack_closefd()
+ * and cstack_del().
+ */
 static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
+	struct cstack *CS = Q->cstack;
 	struct thread *thread;
 	struct fileno *fileno;
 	void *next;
@@ -1462,7 +1465,7 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 		fileno_del(Q, fileno, 0);
 	}
 
-	kpoll_destroy(&Q->kp, (void(*)(void*, int*))cancel_and_close, L);
+	kpoll_destroy(&Q->kp, &cstack_onclosefd, CS);
 
 	pool_destroy(&Q->pool.event);
 	pool_destroy(&Q->pool.fileno);
@@ -1490,11 +1493,9 @@ static int cqueue__gc(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q = cqs_checkudata(L, 1, 1, CQUEUE_CLASS);
 
-	if (!!Q->cstack) {
-		Q = cqueue_enter(L, &I, 1);
+	cqueue_enter_nothrow(L, &I, 1, Q);
 
-		cqueue_destroy(L, Q, &I);
-	}
+	cqueue_destroy(L, Q, &I);
 
 	return 0;
 } /* cqueue__gc() */
@@ -1946,7 +1947,7 @@ error:
 } /* cqueue_update() */
 
 
-static cqs_error_t cqueue_reboot(lua_State *L, struct cqueue *Q, _Bool stop, _Bool restart) {
+static cqs_error_t cqueue_reboot(struct cqueue *Q, _Bool stop, _Bool restart) {
 	if (stop) {
 		struct fileno *fileno;
 		struct thread *thread;
@@ -1964,7 +1965,7 @@ static cqs_error_t cqueue_reboot(lua_State *L, struct cqueue *Q, _Bool stop, _Bo
 			thread_move(thread, &Q->thread.pending);
 		}
 
-		kpoll_destroy(&Q->kp, (void(*)(void*, int*))cancel_and_close, L);
+		kpoll_destroy(&Q->kp, &cstack_onclosefd, Q->cstack);
 	}
 
 	if (restart) {
@@ -2445,7 +2446,7 @@ static int cqueue_reset(lua_State *L) {
 	struct cqueue *Q = cqueue_checkself(L, 1);
 	int error;
 
-	if ((error = cqueue_reboot(L, Q, 1, 1)))
+	if ((error = cqueue_reboot(Q, 1, 1)))
 		return luaL_error(L, "unable to reset continuation queue: %s", cqs_strerror(error));
 
 	return 0;
@@ -2733,11 +2734,38 @@ static void cstack_add(lua_State *L, struct cqueue *Q) {
 
 
 static void cstack_del(struct cqueue *Q) {
+	/* NB: Q->cstack can be NULL. See cqueue_destroy(). */
 	if (Q->cstack) {
 		LIST_REMOVE(Q, le);
 		Q->cstack = NULL;
 	}
 } /* cstack_del() */
+
+
+static void cstack_cancelfd(struct cstack *CS, int fd) {
+	struct cqueue *Q;
+
+	LIST_FOREACH(Q, &CS->cqueues, le) {
+		cqueue_cancelfd(Q, fd);
+	}
+} /* cstack_cancelfd() */
+
+
+static void cstack_closefd(struct cstack *CS, int *fd) {
+	/* NB: CS can be NULL. See cqueue_destroy(). */
+	if (CS) {
+		cstack_cancelfd(CS, *fd);
+	}
+
+	cqs_closefd(fd);
+} /* cstack_closefd() */
+
+
+/* NB: libevent-style prototype similar to dns.c and socket.c close handlers */
+static int cstack_onclosefd(int *fd, void *CS) {
+	cstack_closefd(CS, fd);
+	return 0;
+} /* cstack_onclosefd() */
 
 
 static int cstack_cancel(lua_State *L) {
@@ -2748,10 +2776,7 @@ static int cstack_cancel(lua_State *L) {
 
 	for (index = 1; index <= lua_gettop(L); index++) {
 		fd = cqueue_checkfd(L, &I, index);
-
-		LIST_FOREACH(Q, &CS->cqueues, le) {
-			cqueue_cancelfd(Q, fd);
-		}
+		cstack_cancelfd(CS, fd);
 	}
 
 	return 0;
@@ -2759,12 +2784,7 @@ static int cstack_cancel(lua_State *L) {
 
 
 void cqs_cancelfd(lua_State *L, int fd) {
-	struct cstack *CS = cstack_self(L);
-	struct cqueue *Q;
-
-	LIST_FOREACH(Q, &CS->cqueues, le) {
-		cqueue_cancelfd(Q, fd);
-	}
+	cstack_cancelfd(cstack_self(L), fd);
 } /* cqs_cancelfd() */
 
 
@@ -2774,11 +2794,11 @@ static int cstack_reset(lua_State *L) {
 	int error;
 
 	LIST_FOREACH(Q, &CS->cqueues, le) {
-		cqueue_reboot(L, Q, 1, 0);
+		cqueue_reboot(Q, 1, 0);
 	}
 
 	LIST_FOREACH(Q, &CS->cqueues, le) {
-		if ((error = cqueue_reboot(L, Q, 0, 1)))
+		if ((error = cqueue_reboot(Q, 0, 1)))
 			return luaL_error(L, "unable to reset continuation queue: %s", cqs_strerror(error));
 	}
 
