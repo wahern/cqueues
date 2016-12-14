@@ -189,7 +189,15 @@ static _Bool compat_SSL_is_server(SSL *ssl) {
 #endif
 
 #if !HAVE_SSL_UP_REF
-#define SSL_up_ref(ssl) CRYPTO_add(&(ssl)->references, 1, CRYPTO_LOCK_SSL)
+#define SSL_up_ref(...) compat_SSL_up_ref(__VA_ARGS__)
+
+static int compat_SSL_up_ref(SSL *ssl) {
+	/* our caller should already have had a proper reference */
+	if (CRYPTO_add(&ssl->references, 1, CRYPTO_LOCK_SSL) < 2)
+		return 0; /* fail */
+
+	return 1;
+} /* compat_SSL_up_ref() */
 #endif
 
 
