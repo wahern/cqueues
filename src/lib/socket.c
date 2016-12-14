@@ -3149,7 +3149,7 @@ void parseurl(const char *url) {
 	regex_t re;
 	regmatch_t match[16];
 	char errstr[128];
-	int error, i;
+	int error;
 	struct { const char *name; char *dst; size_t lim; } part[16] = {
 		[2]  = { "scheme:   ", MAIN.url.scheme,    sizeof MAIN.url.scheme },
 		[4]  = { "authority:", MAIN.url.authority, sizeof MAIN.url.authority },
@@ -3166,7 +3166,7 @@ void parseurl(const char *url) {
 	if ((error = regexec(&re, url, countof(match), match, 0)))
 		goto error;
 
-	for (i = 0; i < countof(match); i++) {
+	for (size_t i = 0; i < countof(match); i++) {
 		if (match[i].rm_so == -1)
 			continue;
 
@@ -3214,7 +3214,7 @@ int httpget(const char *url) {
 				errx(EXIT_FAILURE, "so_starttls: %s", so_strerror(error));
 		}
 #else
-		so_starttls(so, ctx);
+		so_starttls(so, &(struct so_starttls){ .context = ctx });
 #endif
 	}
 
@@ -3292,7 +3292,7 @@ int echo(void) {
 	struct socket *srv0, *srv, *cli;
 	struct fifo out, in;
 	char obuf[512], ibuf[512];
-	long olen, len;
+	size_t olen, len;
 	struct iovec iov;
 	int fd, error;
 
