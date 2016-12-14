@@ -2199,7 +2199,13 @@ int so_starttls(struct socket *so, const struct so_starttls *cfg) {
 		SSL_up_ref(ssl);
 	} else {
 		if (!(ctx = cfg->context)) {
-			method = (cfg->method)? cfg->method : SSLv23_method();
+			if (!(method = cfg->method)) {
+				if (so_isbool(cfg->accept)) {
+					method = SSLv23_method();
+				} else {
+					method = SSLv23_client_method();
+				}
+			}
 
 			if (!(ctx = tmp = SSL_CTX_new((SSL_METHOD *)method)))
 				goto eossl;
@@ -3206,7 +3212,7 @@ int httpget(const char *url) {
 	so_connect(so);
 
 	if (!strcasecmp("https", MAIN.url.scheme)) {
-		SSL_CTX *ctx = SSL_CTX_new(SSLv23_method());
+		SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());
 
 #if 0 /* example code if waiting for SSL negotiation */
 		while ((error = so_starttls(so, ctx))) {
