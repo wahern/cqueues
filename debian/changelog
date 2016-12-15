@@ -1,3 +1,15 @@
+liblua-cqueues (20161214-0) unstable; urgency=low
+
+  * Accept SSL instance in socket:starttls. (@daurnimator)
+  * Support cqueue:close. (@daurnimator)
+  * Correctly cancel any controller descriptors before destroying a
+    controller. (@daurnimator)
+  * Fix OpenSSL 1.1 support by correctly defaulting to client connect mode
+    in socket:starttls when neither accept nor connect mode is explicitly
+    specified.
+
+ -- William Ahern <william@25thandClement.com>  Wed, 14 Dec 2016 16:06:26 -0800
+
 liblua-cqueues (20161018-0) unstable; urgency=low
 
   * Support OpenSSL 1.1 API. (@daurnimator)

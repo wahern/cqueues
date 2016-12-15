@@ -63,7 +63,7 @@
 #endif
 
 #ifndef CQUEUES_VERSION
-#define CQUEUES_VERSION 20161018L
+#define CQUEUES_VERSION 20161214L
 #endif
 
 
