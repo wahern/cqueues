@@ -1489,12 +1489,25 @@ static int cqueue_new(lua_State *L) {
 } /* cqueue_new() */
 
 
-static int cqueue__gc(lua_State *L) {
-	struct callinfo I;
+static int cqueue_close(lua_State *L) {
 	struct cqueue *Q = cqs_checkudata(L, 1, 1, CQUEUE_CLASS);
+	struct callinfo I;
+
+	/* disallow :close when invoked from a thread resumed by cqueue_step */
+	luaL_argcheck(L, !Q->cstack || !cstack_isrunning(Q->cstack, Q), 1, "cqueue running");
 
 	cqueue_enter_nothrow(L, &I, 1, Q);
+	cqueue_destroy(L, Q, &I);
 
+	return 0;
+} /* cqueue_close() */
+
+
+static int cqueue__gc(lua_State *L) {
+	struct cqueue *Q = cqs_checkudata(L, 1, 1, CQUEUE_CLASS);
+	struct callinfo I;
+
+	cqueue_enter_nothrow(L, &I, 1, Q);
 	cqueue_destroy(L, Q, &I);
 
 	return 0;
@@ -2872,7 +2885,7 @@ static const luaL_Reg cqueue_methods[] = {
 	{ "pollfd",  &cqueue_pollfd },
 	{ "events",  &cqueue_events },
 	{ "timeout", &cqueue_timeout },
-	{ "close",   &cqueue__gc },
+	{ "close",   &cqueue_close },
 	{ NULL,      NULL }
 }; /* cqueue_methods[] */
 
