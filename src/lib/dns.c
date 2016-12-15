@@ -5161,7 +5161,7 @@ int dns_nssconf_loadfile(struct dns_resolv_conf *resconf, FILE *fp) {
 			dns_anyconf_skip(" \t", fp);
 
 			if ('[' == dns_anyconf_peek(fp)) {
-				dns_anyconf_skip("[ \t", fp);
+				dns_anyconf_skip("[! \t", fp);
 
 				while (dns_anyconf_scan(&cf, "%w_", fp, &error)) {
 					dns_anyconf_skip("= \t", fp);
