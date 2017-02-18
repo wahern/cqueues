@@ -118,14 +118,7 @@ local loader = function(loader, ...)
 			if cache_len > 0 then
 				res = self.cache[cache_len]
 				self.cache[cache_len] = nil
-				if res then
-					break
-				else
-					if deadline and deadline <= monotime() then
-						return nil, ETIMEDOUT
-					end
-					self.condvar:wait(totimeout(deadline))
-				end
+				break
 			elseif self.alive.n < self.hiwat then
 				local why
 				res, why = resolver.new(self.resconf, self.hosts, self.hints)
@@ -133,6 +126,9 @@ local loader = function(loader, ...)
 					return nil, why
 				end
 				break
+			end
+			if not self.condvar:wait(totimeout(deadline)) then
+				return nil, ETIMEDOUT
 			end
 		end
 		self.alive:add(res)
