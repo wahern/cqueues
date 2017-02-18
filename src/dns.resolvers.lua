@@ -115,7 +115,7 @@ local loader = function(loader, ...)
 		local res
 		while true do
 			local cache_len = #self.cache
-			if cache_len > 1 then
+			if cache_len > 0 then
 				res = self.cache[cache_len]
 				self.cache[cache_len] = nil
 				if res then
