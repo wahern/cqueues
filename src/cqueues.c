@@ -452,7 +452,8 @@ struct kpoll {
 	int fd;
 
 	struct {
-		kpoll_event_t event[KPOLL_MAXWAIT];
+		kpoll_event_t *event;
+		size_t events_allocated;
 		size_t count;
 	} pending;
 
@@ -466,6 +467,8 @@ struct kpoll {
 
 static void kpoll_preinit(struct kpoll *kp) {
 	kp->fd = -1;
+	kp->pending.event = NULL;
+	kp->pending.events_allocated = 0;
 	kp->pending.count = 0;
 	for (size_t i = 0; i < countof(kp->alert.fd); i++)
 		kp->alert.fd[i] = -1;
@@ -523,6 +526,11 @@ static int alert_rearm(struct kpoll *kp) {
 static int kpoll_init(struct kpoll *kp) {
 	int error;
 
+	kp->pending.event = calloc(KPOLL_MAXWAIT, sizeof(kpoll_event_t));
+	if (NULL == kp->pending.event)
+		return ENOMEM;
+	kp->pending.events_allocated = KPOLL_MAXWAIT;
+
 #if ENABLE_EPOLL
 #if defined EPOLL_CLOEXEC
 	(void)error;
@@ -556,6 +564,7 @@ static int kpoll_init(struct kpoll *kp) {
 static void kpoll_destroy(struct kpoll *kp, int (*closefd)(int *, void *), void *cb_udata) {
 	alert_destroy(kp, closefd, cb_udata);
 	closefd(&kp->fd, cb_udata);
+	free(kp->pending.event);
 	kpoll_preinit(kp);
 } /* kpoll_destroy() */
 
@@ -770,7 +779,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 #if ENABLE_EPOLL
 	int n;
 
-	if (-1 == (n = epoll_wait(kp->fd, kp->pending.event, (int)countof(kp->pending.event), f2ms(timeout))))
+	if (-1 == (n = epoll_wait(kp->fd, kp->pending.event, (int)kp->pending.events_allocated, f2ms(timeout))))
 		return (errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
@@ -782,7 +791,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 
 	kp->pending.count = 0;
 
-	if (0 != port_getn(kp->fd, kp->pending.event, countof(kp->pending.event), &n, f2ts(timeout)))
+	if (0 != port_getn(kp->fd, kp->pending.event, kp->pending.events_allocated, &n, f2ts(timeout)))
 		return (errno == ETIME || errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
@@ -791,7 +800,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 #elif ENABLE_KQUEUE
 	int n;
 
-	if (-1 == (n = kevent(kp->fd, NULL, 0, kp->pending.event, (int)countof(kp->pending.event), f2ts(timeout))))
+	if (-1 == (n = kevent(kp->fd, NULL, 0, kp->pending.event, (int)kp->pending.events_allocated, f2ts(timeout))))
 		return (errno == EINTR)? 0 : errno;
 
 	kp->pending.count = n;
