@@ -776,40 +776,47 @@ static inline short kpoll_isalert(struct kpoll *kp, const kpoll_event_t *event) 
 
 
 static int kpoll_wait(struct kpoll *kp, double timeout) {
+	kpoll_event_t *result = kp->pending.event;
+	size_t max_events = kp->pending.events_allocated;
+
+	kp->pending.count = 0;
+
 	while (1) {
 #if ENABLE_EPOLL
 		int n;
 
-		if (-1 == (n = epoll_wait(kp->fd, kp->pending.event, (int)kp->pending.events_allocated, f2ms(timeout))))
+		if (-1 == (n = epoll_wait(kp->fd, result, (int)max_events, f2ms(timeout))))
 			return (errno == EINTR)? 0 : errno;
 #elif ENABLE_PORTS
 		uint_t n = 1;
 
-		if (0 != port_getn(kp->fd, kp->pending.event, kp->pending.events_allocated, &min_events, f2ts(timeout)))
+		if (0 != port_getn(kp->fd, result, max_events, &min_events, f2ts(timeout)))
 			return (errno == ETIME || errno == EINTR)? 0 : errno;
 #elif ENABLE_KQUEUE
 		int n;
 
-		if (-1 == (n = kevent(kp->fd, NULL, 0, kp->pending.event, (int)kp->pending.events_allocated, f2ts(timeout))))
+		if (-1 == (n = kevent(kp->fd, NULL, 0, result, (int)max_events, f2ts(timeout))))
 			return (errno == EINTR)? 0 : errno;
 #endif
 
-		kp->pending.count = n;
+		kp->pending.count += n;
 
-		if ((size_t)n < kp->pending.events_allocated)
+		if ((size_t)n < max_events)
 			break;
 
 		/* If max events was reached, try and get more events: use no timeout. */
 		/* prevent overflow on multiply below */
 		if (kp->pending.events_allocated >= ((__SIZE_MAX__>>2)/sizeof(kpoll_event_t)))
 			return EOVERFLOW;
+		/* multiply by 4 as events may be level-triggered and hence we'll get them again */
 		size_t newsize = kp->pending.events_allocated << 2;
 		void *tmp;
 		if (NULL == (tmp = realloc(kp->pending.event, newsize*sizeof(kpoll_event_t))))
 			return ENOMEM;
 		kp->pending.events_allocated = newsize;
 		kp->pending.event = tmp;
-		timeout = 0;
+		result = kp->pending.event + kp->pending.count;
+		max_events = kp->pending.events_allocated - kp->pending.count;
 	}
 
 	return 0;
