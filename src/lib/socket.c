@@ -2697,7 +2697,7 @@ retry:
 			goto error;
 	}
 
-	so_trace(SO_T_WRITE, so->fd, so->host, src, (size_t)count, "sent %zu bytes", (size_t)len);
+	so_trace(SO_T_WRITE, so->fd, so->host, src, (size_t)count, "sent %zu bytes", (size_t)count);
 	st_update(&so->st.sent, count, &so->opts);
 
 	so_pipeok(so, 0);
