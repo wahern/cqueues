@@ -2487,6 +2487,14 @@ static int cqueue_pollset(lua_State *L) {
 			lua_rawseti(L, -2, ++p);
 		}
 	}
+
+	lua_pushinteger(L, r);
+	lua_setfield(L, -4, "n");
+	lua_pushinteger(L, w);
+	lua_setfield(L, -3, "n");
+	lua_pushinteger(L, p);
+	lua_setfield(L, -2, "n");
+
 	return 3;
 } /* cqueue_pollset() */
 
