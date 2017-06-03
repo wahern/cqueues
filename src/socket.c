@@ -2432,7 +2432,6 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	struct msghdr *msg;
 	struct cmsghdr *cmsg;
 	struct iovec iov;
-	struct so_options opts;
 	int fd = -1, error;
 
 	if ((error = lso_preprcv(L, S)))
