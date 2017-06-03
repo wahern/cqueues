@@ -1699,12 +1699,10 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 				return 0;
 			}
 		} else {
-			switch (error) {
-			case EPIPE:
+			if (error == EPIPE)
 				S->ibuf.eof = 1;
-			default:
-				return error;
-			} /* switch() */
+
+			return error;
 		}
 	}
 
