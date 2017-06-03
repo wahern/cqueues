@@ -1572,6 +1572,7 @@ static int so_starttls_(struct socket *so) {
 
 		so->ssl.state++;
 	}
+	/* FALL THROUGH */
 	case 1:
 		rval = SSL_do_handshake(so->ssl.ctx);
 
@@ -1588,6 +1589,7 @@ static int so_starttls_(struct socket *so) {
 		} /* (rval) */
 
 		so->ssl.state++;
+		/* FALL THROUGH */
 	case 2:
 		/*
 		 * NOTE: Must call SSL_get_peer_certificate() first, which
@@ -1599,6 +1601,7 @@ static int so_starttls_(struct socket *so) {
 		x509_discard(&peer);
 
 		so->ssl.state++;
+		/* FALL THROUGH */
 	case 3:
 		if (so->opts.tls_verify && !so->ssl.vrfd) {
 			error = SO_ENOTVRFD;
@@ -1607,6 +1610,7 @@ static int so_starttls_(struct socket *so) {
 		}
 
 		so->ssl.state++;
+		/* FALL THROUGH */
 	case 4:
 		break;
 	} /* switch(so->ssl.state) */

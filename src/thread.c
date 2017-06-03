@@ -554,12 +554,16 @@ error:
 	switch (progress) {
 	case 4:
 		hdl_destroy(&ct->handle);
+		/* FALL THROUGH */
 	case 3:
 		pthread_attr_destroy(&ct->attr);
+		/* FALL THROUGH */
 	case 2:
 		pthread_cond_destroy(&ct->cond);
+		/* FALL THROUGH */
 	case 1:
 		pthread_mutex_destroy(&ct->mutex);
+		/* FALL THROUGH */
 	case 0:
 		break;
 	}
