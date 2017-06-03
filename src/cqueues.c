@@ -519,6 +519,14 @@ static int alert_rearm(struct kpoll *kp) {
 #endif
 } /* alert_rearm() */
 
+static int alert_pollfd(struct kpoll *kp) {
+#if ENABLE_PORTS
+	return kp->fd;
+#else
+	return kp->alert.fd[0];
+#endif
+} /* alert_pollfd() */
+
 
 static int kpoll_init(struct kpoll *kp) {
 	int error;
@@ -2473,6 +2481,11 @@ static int cqueue_pollset(lua_State *L) {
 	lua_newtable(L); /* POLLIN */
 	lua_newtable(L); /* POLLOUT */
 	lua_newtable(L); /* POLLPRI */
+
+	/* the fd woken by conditions */
+	lua_pushinteger(L, alert_pollfd(&Q->kp));
+	lua_rawseti(L, -4, ++r);
+
 	LIST_FOREACH(fileno, &Q->fileno.polling, le) {
 		if (fileno->state & POLLIN) {
 			lua_pushinteger(L, fileno->fd);

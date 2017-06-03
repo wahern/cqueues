@@ -21,7 +21,7 @@ assert(cq:step(0))
 check(pre_poll and not post_poll)
 
 local r, w, p = cq:pollset()
-check(r.n == 1 and r[1] == rd:pollfd(), "read set doesn't contain expected values")
+check(r.n == 1 and r[2] == rd:pollfd(), "read set doesn't contain expected values")
 check(w.n == 0, "write set doesn't contain expected values")
 check(p.n == 0, "priority set doesn't contain expected values")
 
