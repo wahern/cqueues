@@ -28,10 +28,12 @@
 #define LUA_OK 0
 
 
+#if !defined(luaL_newlibtable)
 static void luaL_setmetatable(lua_State *L, const char *tname) {
 	luaL_getmetatable(L, tname);
 	lua_setmetatable(L, -2);
 } /* luaL_setmetatable() */
+#endif
 
 
 static int lua_absindex(lua_State *L, int idx) {
@@ -39,6 +41,7 @@ static int lua_absindex(lua_State *L, int idx) {
 } /* lua_absindex() */
 
 
+#if !defined(luaL_newlibtable)
 static void *luaL_testudata(lua_State *L, int arg, const char *tname) {
 	void *p = lua_touserdata(L, arg);
 	int eq;
@@ -52,8 +55,9 @@ static void *luaL_testudata(lua_State *L, int arg, const char *tname) {
 
 	return (eq)? p : 0;
 } /* luaL_testudate() */
+#endif
 
-
+#if !defined(luaL_newlibtable)
 static void luaL_setfuncs(lua_State *L, const luaL_Reg *l, int nup) {
 	int i, t = lua_absindex(L, -1 - nup);
 
@@ -73,7 +77,7 @@ static void luaL_setfuncs(lua_State *L, const luaL_Reg *l, int nup) {
 
 #define luaL_newlib(L, l) \
 	(luaL_newlibtable((L), (l)), luaL_setfuncs((L), (l), 0))
-
+#endif
 
 static int luaL_getsubtable(lua_State *L, int index, const char *tname) {
 	lua_getfield(L, index, tname);
