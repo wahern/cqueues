@@ -40,9 +40,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
-#if LUA_VERSION_NUM < 502
-#include "compat52.h"
-#endif
+#include "../vendor/compat53/c-api/compat-5.3.h"
 
 
 /*

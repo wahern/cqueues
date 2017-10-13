@@ -498,11 +498,7 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 		T = lua_newthread(L);
 		luaL_buffinit(T, &B);
 		lua_pushvalue(L, index);
-#if LUA_VERSION_NUM >= 503
 		lua_dump(L, &dump_add, &B, 0);
-#else
-		lua_dump(L, &dump_add, &B);
-#endif
 		luaL_pushresult(&B);
 
 		arg->v.string.iov_base = (char *)luaL_checklstring(T, -1, &arg->v.string.iov_len);

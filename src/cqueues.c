@@ -810,12 +810,7 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #if LUA_VERSION_NUM >= 502
-
-#if LUA_VERSION_NUM >= 503
-static int auxlib_tostringk(lua_State *L NOTUSED, int status NOTUSED, lua_KContext ctx NOTUSED) {
-#else
-static int auxlib_tostringk(lua_State *L NOTUSED) {
-#endif
+LUA_KFUNCTION(auxlib_tostringk) {
 	if (luaL_getmetafield(L, 1, "__tostring")) {
 		lua_pushfstring(L, "%s: %p", luaL_typename(L, 1), lua_topointer(L, 1));
 	} else {
@@ -833,11 +828,7 @@ static int auxlib_tostring(lua_State *L) {
 		lua_settop(L, 2);
 		lua_callk(L, 1, 1, 0, &auxlib_tostringk);
 
-#if LUA_VERSION_NUM >= 503
 		return auxlib_tostringk(L, LUA_OK, 0);
-#else
-		return auxlib_tostringk(L);
-#endif
 	} else {
 		luaL_tolstring(L, 1, NULL);
 
@@ -2199,10 +2190,10 @@ static double cqueue_timeout_(struct cqueue *Q) {
 } /* cqueue_timeout_() */
 
 
-#if LUA_VERSION_NUM <= 502
-static int cqueue_step_cont(lua_State *L) {
+#if LUA_VERSION_NUM >= 502
+LUA_KFUNCTION(cqueue_step_cont) {
 #else
-static int cqueue_step_cont(lua_State *L, int status NOTUSED, lua_KContext ctx NOTUSED) {
+static int cqueue_step_cont(lua_State *L) {
 #endif
 	int nargs = lua_gettop(L);
 	struct callinfo I = CALLINFO_INITIALIZER;
