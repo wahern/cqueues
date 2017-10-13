@@ -391,11 +391,7 @@ static inline int cqs_getuservalue(lua_State *L, int index) {
 #if LUA_VERSION_NUM >= 503
 	return lua_getuservalue(L, index);
 #else
-#if LUA_VERSION_NUM == 502
 	lua_getuservalue(L, index);
-#else
-	lua_getfenv(L, index);
-#endif
 	if (cqs__isproxytable(L, -1)) {
 		lua_rawgeti(L, -1, 2);
 		lua_replace(L, -2);
