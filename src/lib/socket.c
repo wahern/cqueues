@@ -2424,6 +2424,13 @@ static int bio_read(BIO *bio, char *dst, int lim) {
 		memcpy(dst, so->bio.ahead.p, count);
 		so->bio.ahead.p += count;
 
+		if (so->bio.ahead.p == so->bio.ahead.pe) {
+			free(so->bio.ahead.data);
+			so->bio.ahead.data = NULL;
+			so->bio.ahead.p = NULL;
+			so->bio.ahead.pe = NULL;
+		}
+
 		return count;
 	}
 

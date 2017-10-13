@@ -312,19 +312,10 @@ end)
 --
 -- Smarter socket:checktls
 --
-local havessl, whynossl
-
 local _checktls; _checktls = socket.interpose("checktls", function(self)
+	local havessl, whynossl = pcall(require, "openssl.ssl")
 	if not havessl then
-		if havessl == false then
-			return nil, whynossl
-		end
-
-		local havessl, whynossl = pcall(require, "openssl.ssl")
-
-		if not havessl then
-			return nil, whynossl
-		end
+		return nil, whynossl
 	end
 
 	return _checktls(self)
