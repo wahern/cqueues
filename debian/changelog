@@ -1,3 +1,11 @@
+liblua-cqueues (20171014) unstable; urgency=low
+
+  * Fix compilation with GCC 7
+  * Fix some compiler warnings
+  * Fix compilation with LuaJIT 2.1-beta3
+
+ -- Daurnimator <quae@daurnimator.com>  Fri, 14 Oct 2017 16:39:49 -0700
+
 liblua-cqueues (20161215-0) unstable; urgency=low
 
   * Disallow :close when invoked from a thread resumed by cqueue_step.
