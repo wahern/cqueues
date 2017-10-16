@@ -2845,7 +2845,8 @@ static int cstack_running(lua_State *L) {
 	if (CS->running) {
 		lua_pushvalue(CS->running->L, CS->running->self);
 		lua_xmove(CS->running->L, L, 1);
-		lua_pushboolean(L, CS->running->T == L);
+		lua_pushthread(CS->running->T);
+		lua_xmove(CS->running->T, L, 1);
 	} else {
 		lua_pushnil(L);
 		lua_pushboolean(L, 0);
