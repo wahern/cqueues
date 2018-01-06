@@ -172,6 +172,15 @@ int socket_v_api(void) {
 #define SSL_is_server(ssl) compat_SSL_is_server(ssl)
 
 static _Bool compat_SSL_is_server(SSL *ssl) {
+#if defined LIBRESSL_VERSION_NUMBER && LIBRESSL_VERSION_NUMBER >= 0x2050100fL
+	/*
+	 * NOTE: LibreSSL 2.5.1 made the SSL structure partially opaque
+	 * without providing the SSL_is_server accessor.
+	 * See libressl mailing list thread '[PATCH] add SSL_is_server'
+	 * https://marc.info/?t=149253819800003
+	 */
+	return ssl->server;
+#else
 	const SSL_METHOD *method = SSL_get_ssl_method(ssl);
 
 	/*
@@ -194,6 +203,7 @@ static _Bool compat_SSL_is_server(SSL *ssl) {
 		return 1;
 
 	return 0;
+#endif
 } /* compat_SSL_is_server() */
 #endif
 
