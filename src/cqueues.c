@@ -1532,14 +1532,14 @@ static cqs_error_t fileno_signal(struct cqueue *Q, struct fileno *fileno, short 
 	int error = 0, _error;
 
 	LIST_FOREACH(event, &fileno->events, fle) {
-		/* XXX: If POLLPRI should we always mark as pending? */
-		if (event->events & events)
+		if (event->events & events) {
 			event->pending = 1;
 
-		thread_move(event->thread, &Q->thread.pending);
+			thread_move(event->thread, &Q->thread.pending);
 
-		if ((_error = cqueue_tryalert(Q)))
-			error = _error;
+			if ((_error = cqueue_tryalert(Q)))
+				error = _error;
+		}
 	}
 
 	return error;
