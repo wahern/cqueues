@@ -2294,6 +2294,8 @@ static int res_stat(lua_State *L) {
 	setboth(st->tcp.rcvd, "rcvd");
 	lua_setfield(L, -2, "tcp");
 
+#undef setboth
+
 	return 1;
 } /* res_stat() */
 
