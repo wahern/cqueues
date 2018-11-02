@@ -1420,10 +1420,10 @@ cq:wrap(function()
 	for con in srv:clients(wait) do
 		cq:wrap(function()
 			for ln in con:lines("*L") do
-				cq:write(ln)
+				con:write(ln)
 			end
 
-			cq:shutdown("w")
+			con:shutdown("w")
 		end)
 	end
 end)
