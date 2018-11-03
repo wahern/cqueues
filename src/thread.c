@@ -755,6 +755,31 @@ static int ct_timeout(lua_State *L) {
 	return 0;
 } /* ct_timeout() */
 
+static int ct_setname(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+	char  *name = luaL_checkstring(L, 2);
+	int rc = pthread_setname_np(ct->id, name);
+	if(rc == ERANGE) {
+		lua_pushboolean(L, 0);
+		lua_pushliteral(L, "thread name too long");
+		return 2;
+	}
+	lua_pushboolean(L, 1);
+	return 1;
+} /* ct_setname() */
+
+static int ct_getname(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+	char   buf[64];
+	int rc = pthread_getname_np(ct->id, buf, 64);
+	if(rc == ERANGE) {
+		lua_pushboolean(L, 0);
+		lua_pushliteral(L, "thread name too long");
+		return 2;
+	}
+	lua_pushstring(L, buf);
+	return 1;
+} /* ct_setname() */
 
 static int ct__eq(lua_State *L) {
 	struct cthread **a = luaL_testudata(L, 1, CQS_THREAD);
@@ -804,6 +829,8 @@ static const luaL_Reg ct_methods[] = {
 	{ "pollfd",  &ct_pollfd },
 	{ "events",  &ct_events },
 	{ "timeout", &ct_timeout },
+	{ "setname", &ct_setname },
+	{ "getname", &ct_getname },
 	{ NULL,      NULL }
 };
 
