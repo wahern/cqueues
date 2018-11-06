@@ -804,12 +804,14 @@ Wait for the thread to terminate. Calling the equivalent of thread.self():join()
 Returns a boolean and error value. If false, error value is an error code describing a local error, usually \errno{EAGAIN} or \errno{ETIMEDOUT}. If true, error value is 1) an error code describing a system error which the thread encountered, 2) an error message string returned by the new Lua instance, or 3) nil if completed successfully.
 
 \subsubsection[\fn{thread:setname}]{\fn{thread:setname(name)}}
-Set a name for the thread. The name must be a string not exceeding 15 characters in length.
+Set a name for the thread. The name must be a string not exceeding 15 characters in length. Supported on Linux, FreeBSD, NetBSD, OpenBSD. \& Mac OS X. On OS X this function only works from inside the thread.
 
-Returns true on success, false and an error if the name is too long.
+Returns true on success, false and an error if the name is too long or if the platform does not support this function.
 
 \subsubsection[\fn{thread:getname}]{\fn{thread:getname(name)}}
-Get the name of the thread. Returns the name string.
+Get the name of the thread. Supported on Linux, NetBSD \& Mac OS X.
+
+Returns the name string, or nil and an error if the platform does not support this function.
 
 \end{Module}
 
