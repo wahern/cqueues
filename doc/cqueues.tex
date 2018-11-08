@@ -806,12 +806,12 @@ Returns a boolean and error value. If false, error value is an error code descri
 \subsubsection[\fn{thread:setname}]{\fn{thread:setname(name)}}
 Set a name for the thread. The name must be a string not exceeding 15 characters in length. Supported on Linux, FreeBSD, NetBSD, OpenBSD. \& Mac OS X. On OS X this function only works from inside the thread.
 
-Returns true on success, false and an error if the name is too long or if the platform does not support this function.
+Returns true on success, false, an error string, an error string and the errno if the name is too long or if the platform does not support this function.
 
 \subsubsection[\fn{thread:getname}]{\fn{thread:getname(name)}}
 Get the name of the thread. Supported on Linux, NetBSD \& Mac OS X.
 
-Returns the name string, or nil and an error if the platform does not support this function.
+Returns the name string, or nil, an error string and the errno if the platform does not support this function.
 
 \end{Module}
 

@@ -858,7 +858,7 @@
 #endif
 
 #ifndef HAVE_NETBSD_PTHREAD
-//5.0.0 has setname() but no getname(). let's not support it for now.
+/*5.0.0 has setname() but no getname(). let's not support it for now.*/
 #define HAVE_NETBSD_PTHREAD (AG_NETBSD_PREREQ(6,0,0))
 #endif
 
