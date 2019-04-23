@@ -14,8 +14,6 @@ RELPATH=${0%/*}
 CHANGELOG=${RELPATH}/../debian/changelog
 ROOTDIR=${RELPATH}/..
 
-GIT="$(command -v git)"
-
 
 changelog() {
 	if [ ! -f ${CHANGELOG} ]; then
@@ -78,6 +76,7 @@ author)
 	'
 	;;
 commit)
+	GIT="$(command -v git)"
 	test -n "${GIT}" -a -d ${ROOTDIR}/.git || exit 1
 
 	cd ${ROOTDIR}
