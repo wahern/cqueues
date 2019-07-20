@@ -434,6 +434,13 @@ field & type:default & description\\\hline
 \subsubsection[\fn{socket.listen}]{\fn{socket.listen\{ $\ldots$ \}}}
 	Like \fn{socket.listen} with list arguments, but takes a table of named arguments. See also \fn{socket.connect\{\}}.
 
+\subsubsection[\fn{socket.dup}]{\fn{socket.dup(fd)}}
+	Return a new socket using a duplicate of an existing file-descriptor (integer).
+
+\subsubsection[\fn{socket.fdopen}]{\fn{socket.fdopen(fd)}}
+	Like \fn{socket.dup(fd)}, but takes ownership of the file-descriptor itself instead of duplicating it.
+	This is useful e.g. for listening on sockets passed from systemd.
+
 \subsubsection[\fn{socket.pair}]{\fn{socket.pair([type])}}
 	Returns two bound sockets. Type should be the system type number, e.g. \fn{socket.SOCK\_STREAM} or \fn{socket.SOCK\_DGRAM}.
 
