@@ -54,7 +54,11 @@
 #endif
 
 #ifndef ENABLE_EVFILT_SIGNAL
-#define ENABLE_EVFILT_SIGNAL (ENABLE_KQUEUE && defined EVFILT_SIGNAL)
+#ifdef EVFILT_SIGNAL
+#define ENABLE_EVFILT_SIGNAL ENABLE_KQUEUE
+#else
+#define ENABLE_EVFILT_SIGNAL 0
+#endif
 #endif
 
 #define LSL_CLASS "CQS Signal"

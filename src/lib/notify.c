@@ -61,19 +61,35 @@
 #endif
 
 #ifndef HAVE_O_CLOEXEC
-#define HAVE_O_CLOEXEC (defined O_CLOEXEC)
+#ifdef O_CLOEXEC
+#define HAVE_O_CLOEXEC 1
+#else
+#define HAVE_O_CLOEXEC 0
+#endif
 #endif
 
 #ifndef HAVE_O_DIRECTORY
-#define HAVE_O_DIRECTORY (defined O_DIRECTORY)
+#ifdef O_DIRECTORY
+#define HAVE_O_DIRECTORY 1
+#else
+#define HAVE_O_DIRECTORY 0
+#endif
 #endif
 
 #ifndef HAVE_IN_CLOEXEC
-#define HAVE_IN_CLOEXEC (defined IN_CLOEXEC)
+#ifdef IN_CLOEXEC
+#define HAVE_IN_CLOEXEC 1
+#else
+#define HAVE_IN_CLOEXEC 0
+#endif
 #endif
 
 #ifndef HAVE_IN_NONBLOCK
-#define HAVE_IN_NONBLOCK (defined IN_NONBLOCK)
+#ifdef IN_NONBLOCK
+#define HAVE_IN_NONBLOCK 1
+#else
+#define HAVE_IN_NONBLOCK 0
+#endif
 #endif
 
 #if ENABLE_INOTIFY

@@ -224,7 +224,11 @@ static inline void so_setbool(so_optional *v, _Bool b) {
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define SA_UNIX defined(AF_UNIX) && !_WIN32
+#if defined(AF_UNIX)
+#define SA_UNIX (!_WIN32)
+#else
+#define SA_UNIX 0
+#endif
 
 union sockaddr_any {
 	struct sockaddr sa;

@@ -131,11 +131,19 @@
 #endif
 
 #ifndef HAVE_C___HAS_EXTENSION
-#define HAVE_C___HAS_EXTENSION (defined __has_extension)
+#ifdef __has_extension
+#define HAVE_C___HAS_EXTENSION 1
+#else
+#define HAVE_C___HAS_EXTENSION 0
+#endif
 #endif
 
 #ifndef HAVE_C___HAS_INCLUDE
-#define HAVE_C___HAS_INCLUDE (defined __has_include)
+#ifdef __has_include
+#define HAVE_C___HAS_INCLUDE 1
+#else
+#define HAVE_C___HAS_INCLUDE 0
+#endif
 #endif
 
 #ifndef HAVE_C___EXTENSION__
@@ -163,7 +171,11 @@
 #endif
 
 #ifndef HAVE___ATOMIC_FETCH_ADD
-#define HAVE___ATOMIC_FETCH_ADD (defined __ATOMIC_RELAXED)
+#ifdef __ATOMIC_RELAXED
+#define HAVE___ATOMIC_FETCH_ADD 1
+#else
+#define HAVE___ATOMIC_FETCH_ADD 0
+#endif
 #endif
 
 #ifndef HAVE___ATOMIC_FETCH_SUB
@@ -525,7 +537,11 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE_CLOCKID_T
-#define HAVE_CLOCKID_T (defined CLOCK_MONOTONIC)
+#ifdef CLOCK_MONOTONIC
+#define HAVE_CLOCKID_T 1
+#else
+#define HAVE_CLOCKID_T 0
+#endif
 #endif
 
 #ifndef HAVE_STRUCT_SOCKADDR_SA_LEN
@@ -583,11 +599,19 @@
 #endif
 
 #ifndef HAVE_DECL_CLOCK_MONOTONIC
-#define HAVE_DECL_CLOCK_MONOTONIC (defined CLOCK_MONOTONIC)
+#ifdef CLOCK_MONOTONIC
+#define HAVE_DECL_CLOCK_MONOTONIC 1
+#else
+#define HAVE_DECL_CLOCK_MONOTONIC 0
+#endif
 #endif
 
 #ifndef HAVE_DECL_CLOCK_REALTIME
-#define HAVE_DECL_CLOCK_REALTIME (defined CLOCK_REALTIME)
+#ifdef CLOCK_REALTIME
+#define HAVE_DECL_CLOCK_REALTIME 1
+#else
+#define HAVE_DECL_CLOCK_REALTIME 0
+#endif
 #endif
 
 #ifndef HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME
@@ -595,7 +619,11 @@
 #endif
 
 #ifndef HAVE_DECL_PTHREAD_MUTEX_ROBUST
-#define HAVE_DECL_PTHREAD_MUTEX_ROBUST (defined PTHREAD_MUTEX_ROBUST || AG_GLIBC_PREREQ(2,12))
+#ifdef PTHREAD_MUTEX_ROBUST
+#define HAVE_DECL_PTHREAD_MUTEX_ROBUST 1
+#else
+#define HAVE_DECL_PTHREAD_MUTEX_ROBUST AG_GLIBC_PREREQ(2,12)
+#endif
 #endif
 
 #ifndef HAVE_DECL_STRERROR_R
@@ -631,7 +659,11 @@
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #ifndef HAVE_ACCEPT4
-#define HAVE_ACCEPT4 (defined SOCK_CLOEXEC && !__NetBSD__)
+#ifdef SOCK_CLOEXEC
+#define HAVE_ACCEPT4 !__NetBSD__
+#else
+#define HAVE_ACCEPT4 0
+#endif
 #endif
 
 #ifndef HAVE_ARC4RANDOM
@@ -688,7 +720,11 @@
 #endif
 
 #ifndef HAVE_EPOLL_CREATE1
-#define HAVE_EPOLL_CREATE1 (HAVE_EPOLL_CREATE && (defined EPOLL_CLOEXEC || AG_GLIBC_PREREQ(2,9)))
+#if HAVE_EPOLL_CREATE && (defined EPOLL_CLOEXEC || AG_GLIBC_PREREQ(2,9))
+#define HAVE_EPOLL_CREATE1 1
+#else
+#define HAVE_EPOLL_CREATE1 0
+#endif
 #endif
 
 #ifndef HAVE_EPOLL_CTL
@@ -696,7 +732,11 @@
 #endif
 
 #ifndef HAVE_EPOLL_PWAIT
-#define HAVE_EPOLL_PWAIT (HAVE_EPOLL_WAIT && (AG_GLIBC_PREREQ(2,6) || (!AG_GLIBC_PREREQ(0,0) && defined EPOLL_CLOEXEC)))
+#if HAVE_EPOLL_WAIT && (AG_GLIBC_PREREQ(2,6) || (!AG_GLIBC_PREREQ(0,0) && defined EPOLL_CLOEXEC))
+#define HAVE_EPOLL_PWAIT 1
+#else
+#define HAVE_EPOLL_PWAIT 0
+#endif
 #endif
 
 #ifndef HAVE_EPOLL_WAIT
@@ -732,7 +772,11 @@
 #endif
 
 #ifndef HAVE_INOTIFY_INIT1
-#define HAVE_INOTIFY_INIT1 (HAVE_INOTIFY_INIT && defined IN_CLOEXEC)
+#if HAVE_INOTIFY_INIT && defined IN_CLOEXEC
+#define HAVE_INOTIFY_INIT1 1
+#else
+#define HAVE_INOTIFY_INIT1 0
+#endif
 #endif
 
 #ifndef HAVE_ISSETUGID
@@ -744,7 +788,11 @@
 #endif
 
 #ifndef HAVE_KEVENT
-#define HAVE_KEVENT (defined EV_SET)
+#ifdef EV_SET
+#define HAVE_KEVENT 1
+#else
+#define HAVE_KEVENT 0
+#endif
 #endif
 
 #ifndef HAVE_KQUEUE
@@ -822,10 +870,11 @@
 #endif
 
 #ifndef HAVE_STATIC_ASSERT
-#if AG_GLIBC_PREREQ(0,0) && !HAVE__STATIC_ASSERT
-#define HAVE_STATIC_ASSERT 0 /* glibc doesn't check GCC version */
+/* glibc doesn't check GCC version */
+#if (AG_GLIBC_PREREQ(0,0) && !HAVE__STATIC_ASSERT) || (!defined static_assert)
+#define HAVE_STATIC_ASSERT 0
 #else
-#define HAVE_STATIC_ASSERT (defined static_assert)
+#define HAVE_STATIC_ASSERT 1
 #endif
 #endif
 
