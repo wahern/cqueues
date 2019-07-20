@@ -1712,12 +1712,10 @@ static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 				return 0;
 			}
 		} else {
-			switch (error) {
-			case EPIPE:
+			if (error == EPIPE)
 				S->ibuf.eof = 1;
-			default:
-				return error;
-			} /* switch() */
+
+			return error;
 		}
 	}
 
@@ -2445,7 +2443,6 @@ static lso_nargs_t lso_recvfd2(lua_State *L) {
 	struct msghdr *msg;
 	struct cmsghdr *cmsg;
 	struct iovec iov;
-	struct so_options opts;
 	int fd = -1, error;
 
 	if ((error = lso_preprcv(L, S)))

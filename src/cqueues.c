@@ -2334,7 +2334,7 @@ static int cqueue_wrap(lua_State *L) {
 	struct callinfo I;
 	struct cqueue *Q;
 	struct lua_State *newL;
-	int top, i, error;
+	int top, error;
 
 	top = lua_gettop(L);
 
@@ -2781,7 +2781,6 @@ static int cstack_onclosefd(int *fd, void *CS) {
 static int cstack_cancel(lua_State *L) {
 	struct callinfo I = CALLINFO_INITIALIZER;
 	struct cstack *CS = cstack_self(L);
-	struct cqueue *Q;
 	int index, fd;
 
 	for (index = 1; index <= lua_gettop(L); index++) {
