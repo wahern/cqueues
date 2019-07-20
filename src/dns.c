@@ -843,7 +843,7 @@ static int pkt_interpose(lua_State *L) {
 
 
 static int pkt_qid(lua_State *L) {
-	struct dns_packet *P = lua_touserdata(L, 1);
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
 
 	lua_pushinteger(L, ntohs(dns_header(P)->qid));
 
@@ -864,7 +864,7 @@ static int pkt_setqid(lua_State *L) {
 
 
 static int pkt_flags(lua_State *L) {
-	struct dns_packet *P = lua_touserdata(L, 1);
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
 	struct dns_header *hdr = dns_header(P);
 
 	lua_newtable(L);
@@ -955,7 +955,7 @@ static int pkt_setflags(lua_State *L) {
 
 
 static int pkt_push(lua_State *L) {
-	struct dns_packet *P = lua_touserdata(L, 1);
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
 	int section = luaL_checkint(L, 2);
 	size_t namelen;
 	const char *name = luaL_checklstring(L, 3, &namelen);
@@ -975,7 +975,7 @@ static int pkt_push(lua_State *L) {
 
 
 static int pkt_count(lua_State *L) {
-	struct dns_packet *P = lua_touserdata(L, 1);
+	struct dns_packet *P = luaL_checkudata(L, 1, PACKET_CLASS);
 	int flags = luaL_optint(L, 2, DNS_S_ALL);
 
 	lua_pushinteger(L, dns_p_count(P, flags));
@@ -2293,6 +2293,8 @@ static int res_stat(lua_State *L) {
 	setboth(st->tcp.sent, "sent");
 	setboth(st->tcp.rcvd, "rcvd");
 	lua_setfield(L, -2, "tcp");
+
+#undef setboth
 
 	return 1;
 } /* res_stat() */
