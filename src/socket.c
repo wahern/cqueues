@@ -57,14 +57,22 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define HAVE_OPENSSL11_API (!(OPENSSL_VERSION_NUMBER < 0x10100001L || defined LIBRESSL_VERSION_NUMBER))
+#ifdef LIBRESSL_VERSION_NUMBER
+#define OPENSSL_PREREQ(M, m, p) (0)
+#define LIBRESSL_PREREQ(M, m, p) \
+	(LIBRESSL_VERSION_NUMBER >= (((M) << 28) | ((m) << 20) | ((p) << 12)))
+#else
+#define OPENSSL_PREREQ(M, m, p) \
+	(OPENSSL_VERSION_NUMBER >= (((M) << 28) | ((m) << 20) | ((p) << 12)))
+#define LIBRESSL_PREREQ(M, m, p) (0)
+#endif
 
 #ifndef HAVE_SSL_CTX_UP_REF
-#define HAVE_SSL_CTX_UP_REF HAVE_OPENSSL11_API
+#define HAVE_SSL_CTX_UP_REF (OPENSSL_PREREQ(1,1,0) || LIBRESSL_PREREQ(2,7,0))
 #endif
 
 #ifndef HAVE_SSL_UP_REF
-#define HAVE_SSL_UP_REF HAVE_OPENSSL11_API
+#define HAVE_SSL_UP_REF (OPENSSL_PREREQ(1,1,0) || LIBRESSL_PREREQ(2,7,0))
 #endif
 
 
