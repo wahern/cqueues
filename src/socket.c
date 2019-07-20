@@ -579,34 +579,47 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 	/* TODO: Support explicit interface name via .if_name/.name */
 	if (lso_altfield(L, index, "bind", "sa_bind")) {
 		static const int regindex;
-		struct sockaddr_storage *ss = lso_singleton(L, &regindex, NULL, sizeof *ss);
+		struct sockaddr *sa;
 		const char *addr = NULL;
+		size_t plen;
+		const char *path = NULL;
 		int port = -1, error;
 
 		if (lua_istable(L, -1)) {
-			if (lso_altfield(L, -1, "addr", "address", "sin_addr", "sin6_addr") || lso_rawgeti(L, -1, 1)) {
-				addr = luaL_checkstring(L, -1);
+			if (lso_altfield(L, -1, "path", "sun_path") || lso_rawgeti(L, -1, 1)) {
+				path = luaL_checklstring(L, -1, &plen);
 				lua_pop(L, 1);
-			}
+			} else {
+				if (lso_altfield(L, -1, "addr", "address", "sin_addr", "sin6_addr") || lso_rawgeti(L, -1, 1)) {
+					addr = luaL_checkstring(L, -1);
+					lua_pop(L, 1);
+				}
 
-			if (lso_altfield(L, -1, "port", "sin_port", "sin6_port") || lso_rawgeti(L, -1, 2)) {
-				port = luaL_checkint(L, -1);
-				lua_pop(L, 1);
+				if (lso_altfield(L, -1, "port", "sin_port", "sin6_port") || lso_rawgeti(L, -1, 2)) {
+					port = luaL_checkint(L, -1);
+					lua_pop(L, 1);
+				}
 			}
-
 		} else {
 			addr = luaL_checkstring(L, -1);
 		}
 
-		luaL_argcheck(L, addr != NULL, index, "no bind address specified");
+		luaL_argcheck(L, path != NULL || addr != NULL, index, "no bind address specified");
 
-		if (!sa_pton(ss, sizeof *ss, addr, NULL, &error))
-			luaL_argerror(L, index, lua_pushfstring(L, "%s: unable to parse bind address (%s)", addr, cqs_strerror(error)));
+		if (path) {
+			sa = lso_singleton(L, &regindex, NULL, sizeof(struct sockaddr_un));
+			sa->sa_family = AF_UNIX;
+			memcpy(((struct sockaddr_un*)sa)->sun_path, path, MIN(plen, sizeof(((struct sockaddr_un*)sa)->sun_path)));
+		} else {
+			sa = lso_singleton(L, &regindex, NULL, sizeof(struct sockaddr_storage));
+			if (!sa_pton(sa, sizeof(struct sockaddr_storage), addr, NULL, &error))
+				luaL_argerror(L, index, lua_pushfstring(L, "%s: unable to parse bind address (%s)", addr, cqs_strerror(error)));
 
-		if (port >= 0)
-			*sa_port(ss, &(unsigned short){ 0 }, NULL) = htons((unsigned short)port);
+			if (port >= 0)
+				*sa_port(sa, &(unsigned short){ 0 }, NULL) = htons((unsigned short)port);
+		}
 
-		opts.sa_bind = ss;
+		opts.sa_bind = sa;
 
 		lua_pop(L, 1);
 	}
