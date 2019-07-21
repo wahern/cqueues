@@ -615,11 +615,11 @@ static struct so_options lso_checkopts(lua_State *L, int index) {
 		luaL_argcheck(L, path != NULL || addr != NULL, index, "no bind address specified");
 
 		if (path) {
-			sa = lso_singleton(L, &regindex, NULL, sizeof(struct sockaddr_un));
+			sa = lso_singleton(L, CQS_UNIQUE_LIGHTUSERDATA_MASK(&regindex), NULL, sizeof(struct sockaddr_un));
 			sa->sa_family = AF_UNIX;
 			memcpy(((struct sockaddr_un*)sa)->sun_path, path, MIN(plen, sizeof(((struct sockaddr_un*)sa)->sun_path)));
 		} else {
-			sa = lso_singleton(L, &regindex, NULL, sizeof(struct sockaddr_storage));
+			sa = lso_singleton(L, CQS_UNIQUE_LIGHTUSERDATA_MASK(&regindex), NULL, sizeof(struct sockaddr_storage));
 			if (!sa_pton(sa, sizeof(struct sockaddr_storage), addr, NULL, &error))
 				luaL_argerror(L, index, lua_pushfstring(L, "%s: unable to parse bind address (%s)", addr, cqs_strerror(error)));
 
@@ -810,7 +810,7 @@ static void lso_pushmode(lua_State *L, int mode, int mask, _Bool libc) {
 static struct luasocket *lso_prototype(lua_State *L) {
 	static const int regindex;
 
-	return lso_singleton(L, &regindex, &lso_initializer, sizeof lso_initializer);
+	return lso_singleton(L, CQS_UNIQUE_LIGHTUSERDATA_MASK(&regindex), &lso_initializer, sizeof lso_initializer);
 } /* lso_prototype() */
 
 

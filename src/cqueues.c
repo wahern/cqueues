@@ -1875,7 +1875,7 @@ static void thread_add(lua_State *L, struct cqueue *Q, struct callinfo *I, int i
 	/* anchor thread context to cqueue object */
 	cqs_getuservalue(L, I->self);
 	lua_pushvalue(L, -2);
-	lua_rawsetp(L, -2, T);
+	lua_rawsetp(L, -2, CQS_UNIQUE_LIGHTUSERDATA_MASK(T));
 	lua_pop(L, 2);
 
 	LIST_INSERT_HEAD(&Q->thread.pending, T, le);
@@ -1906,7 +1906,7 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 	cqs_getuservalue(L, I->self);
 
 	/* set thread's uservalue (it's thread) to nil */
-	lua_rawgetp(L, -1, T);
+	lua_rawgetp(L, -1, CQS_UNIQUE_LIGHTUSERDATA_MASK(T));
 	lua_pushnil(L);
 	cqs_setuservalue(L, -2);
 	lua_pop(L, 1);
@@ -1914,7 +1914,7 @@ static void thread_del(lua_State *L, struct cqueue *Q, struct callinfo *I, struc
 
 	/* remove thread from cqueues's thread table */
 	lua_pushnil(L);
-	lua_rawsetp(L, -2, T);
+	lua_rawsetp(L, -2, CQS_UNIQUE_LIGHTUSERDATA_MASK(T));
 	lua_pop(L, 1);
 } /* thread_del() */
 
@@ -2717,7 +2717,7 @@ static struct cstack *cstack_self(lua_State *L) {
 	static const int index = 47;
 	struct cstack *CS;
 
-	lua_rawgetp(L, LUA_REGISTRYINDEX, &index);
+	lua_rawgetp(L, LUA_REGISTRYINDEX, CQS_UNIQUE_LIGHTUSERDATA_MASK(&index));
 
 	CS = lua_touserdata(L, -1);
 
@@ -2731,7 +2731,7 @@ static struct cstack *cstack_self(lua_State *L) {
 
 	LIST_INIT(&CS->cqueues);
 
-	lua_rawsetp(L, LUA_REGISTRYINDEX, &index);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, CQS_UNIQUE_LIGHTUSERDATA_MASK(&index));
 
 	return CS;
 } /* cstack_self() */

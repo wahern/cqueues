@@ -118,7 +118,23 @@
 #define CQS_NOTIFY "CQS Notify"
 #define CQS_CONDITION "CQS Condition"
 
-#define CQUEUE__POLL ((void *)&cqueue__poll)
+#ifndef CQS_USE_47BIT_LIGHTUSERDATA_HACK
+/* LuaJIT only supports pointers with the low 47 bits set */
+#if defined(LUA_JITLIBNAME) && (defined(_LP64) || defined(_LLP64) || defined(__arch64__) || defined (__arm64__) || defined (__aarch64__) || defined(_WIN64))
+#define CQS_USE_47BIT_LIGHTUSERDATA_HACK 1
+#else
+#define CQS_USE_47BIT_LIGHTUSERDATA_HACK 0
+#endif
+#endif
+
+#if CQS_USE_47BIT_LIGHTUSERDATA_HACK
+#define CQS_UNIQUE_LIGHTUSERDATA_MASK(p) ((void *)((intptr_t)(p) & ((1UL<<47)-1)))
+#else
+#define CQS_UNIQUE_LIGHTUSERDATA_MASK(p) ((void *)(p))
+#endif
+
+#define CQUEUE__POLL CQS_UNIQUE_LIGHTUSERDATA_MASK(&cqueue__poll)
+
 const char *cqueue__poll; // signals multilevel yield
 
 cqs_nargs_t luaopen__cqueues(lua_State *);

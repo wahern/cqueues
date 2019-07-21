@@ -370,7 +370,7 @@ static void *ct_enter(void *arg) {
 	*ud = ct;
 
 	lua_pushvalue(L, -1);
-	lua_rawsetp(L, LUA_REGISTRYINDEX, &selfindex);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, CQS_UNIQUE_LIGHTUSERDATA_MASK(&selfindex));
 
 	if ((error = cqs_socket_fdopen(L, ct->tmp.fd[1], NULL)))
 		goto error;
@@ -797,7 +797,7 @@ static int ct_interpose(lua_State *L) {
 
 
 static int ct_self(lua_State *L) {
-	lua_rawgetp(L, LUA_REGISTRYINDEX, &selfindex);
+	lua_rawgetp(L, LUA_REGISTRYINDEX, CQS_UNIQUE_LIGHTUSERDATA_MASK(&selfindex));
 
 	return 1;
 } /* ct_self() */
