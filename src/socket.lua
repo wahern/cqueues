@@ -1,4 +1,4 @@
-local loader = function(loader, ...)
+local loader = function(loader)
 
 local socket = require("_cqueues.socket")
 local cqueues = require("cqueues")
@@ -92,13 +92,17 @@ local function def_onerror(self, op, why, lvl)
 end -- def_onerror
 
 
-local _onerror = socket.onerror; socket.onerror = function(...)
-	return _onerror(...) or def_onerror
+do
+	local _onerror = socket.onerror; socket.onerror = function(...)
+		return _onerror(...) or def_onerror
+	end
 end
 
-local _onerror; _onerror = socket.interpose("onerror", function(...)
-	return _onerror(...) or def_onerror
-end)
+do
+	local _onerror; _onerror = socket.interpose("onerror", function(...)
+		return _onerror(...) or def_onerror
+	end)
+end
 
 
 --
@@ -174,8 +178,8 @@ end
 --
 -- Throwable socket:setbufsiz
 --
-local _setbufsiz; _setbufsiz = socket.interpose("setbufsiz", function(self, input, output)
-	local input, output, why = _setbufsiz(self, input, output)
+local _setbufsiz; _setbufsiz = socket.interpose("setbufsiz", function(self, input_, output_)
+	local input, output, why = _setbufsiz(self, input_, output_)
 
 	if not input then
 		return nil, nil, oops(self, "setbufsiz", why)
@@ -189,7 +193,9 @@ end)
 -- Yielding socket:listen
 --
 local _listen; _listen = socket.interpose("listen", function(self, timeout)
-	local timeout = timeout or self:timeout()
+	if not timeout then
+		timeout = self:timeout()
+	end
 	local deadline = timeout and (monotime() + timeout)
 	local ok, why = _listen(self)
 
@@ -250,7 +256,9 @@ end)
 -- Yielding socket:connect
 --
 local _connect; _connect = socket.interpose("connect", function(self, timeout)
-	local timeout = timeout or self:timeout()
+	if not timeout then
+		timeout = self:timeout()
+	end
 	local deadline = timeout and (monotime() + timeout)
 	local ok, why = _connect(self)
 
@@ -320,7 +328,7 @@ local _checktls; _checktls = socket.interpose("checktls", function(self)
 			return nil, whynossl
 		end
 
-		local havessl, whynossl = pcall(require, "openssl.ssl")
+		havessl, whynossl = pcall(require, "openssl.ssl")
 
 		if not havessl then
 			return nil, whynossl
@@ -491,14 +499,13 @@ end)
 local unpack = assert(table.unpack or unpack)
 
 socket.interpose("lines", function (self, mode, ...)
-	local args = select("#", ...) > 0 and { ... }
-
 	if mode then
-		if select("#", ...) > 0 then
+		local n = select("#", ...)
+		if n > 0 then
 			local args = { ... }
 
 			return function ()
-				return read(self, "lines", mode, unpack(args))
+				return read(self, "lines", mode, unpack(args, 1, n))
 			end
 		end
 	else
@@ -511,22 +518,13 @@ socket.interpose("lines", function (self, mode, ...)
 end)
 
 
---
--- Smarter socket:read
---
-local function xswap(arg1, arg2)
+-- returns mode, timeout
+local function xopts(arg1, arg2)
 	if tonumber(arg1) then
 		return arg2, arg1
 	else
 		return arg1, arg2
 	end
-end -- xswap
-
-
-local function xopts(self, ...)
-	local mode, timeout = xswap(...)
-
-	return mode, timeout
 end -- xopts
 
 
@@ -537,8 +535,11 @@ local function xdeadline(self, timeout)
 end -- xdeadline
 
 
+--
+-- Smarter socket:read
+--
 socket.interpose("xread", function (self, what, ...)
-	local mode, timeout = xopts(self, ...)
+	local mode, timeout = xopts(...)
 
 	local data, why = self:recv(what, mode)
 
@@ -568,7 +569,7 @@ end) -- xread
 -- Smarter socket:write
 --
 socket.interpose("xwrite", function (self, data, ...)
-	local mode, timeout = xopts(self, ...)
+	local mode, timeout = xopts(...)
 	local i = 1
 
 	--
@@ -607,7 +608,7 @@ end)
 -- Smarter socket:lines
 --
 socket.interpose("xlines", function (self, what, ...)
-	local mode, timeout = xopts(self, ...)
+	local mode, timeout = xopts(...)
 
 	return function ()
 		return self:xread(what, mode, timeout)
@@ -619,7 +620,9 @@ end)
 -- Yielding socket:sendfd
 --
 local _sendfd; _sendfd = socket.interpose("sendfd", function (self, msg, fd, timeout)
-	local timeout = timeout or self:timeout()
+	if not timeout then
+		timeout = self:timeout()
+	end
 	local deadline = timeout and (monotime() + timeout)
 	local ok, why
 
@@ -645,7 +648,9 @@ end)
 -- Yielding socket:recvfd
 --
 local _recvfd; _recvfd = socket.interpose("recvfd", function (self, prepbufsiz, timeout)
-	local timeout = timeout or self:timeout()
+	if not timeout then
+		timeout = self:timeout()
+	end
 	local deadline = timeout and (monotime() + timeout)
 	local msg, fd, why
 
@@ -728,7 +733,9 @@ local _fill; _fill = socket.interpose("fill", function (self, size, timeout)
 	local ok, why = _fill(self, size)
 
 	if not ok then
-		local timeout = timeout or self:timeout()
+		if not timeout then
+			timeout = self:timeout()
+		end
 		local deadline = timeout and (monotime() + timeout)
 
 		repeat
@@ -782,4 +789,4 @@ return socket
 
 end -- loader
 
-return loader(loader, ...)
+return loader(loader)
