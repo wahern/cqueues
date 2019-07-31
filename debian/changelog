@@ -1,3 +1,12 @@
+liblua-cqueues (20190731) unstable; urgency=low
+
+  * Fix compilation in GCC 9 (#224)
+  * Fix dns.c aliasing issue (#200)
+  * Add support for passing bind.path for a unix socket (#195)
+  * Introduce workarounds for LuaJIT 47bit userdata (#225)
+
+ -- Daurnimator <quae@daurnimator.com>  Wed, 31 Jul 2019 23:47:34 +1000
+
 liblua-cqueues (20171014) unstable; urgency=low
 
   * Fix compilation with GCC 7
