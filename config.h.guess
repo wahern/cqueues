@@ -492,8 +492,11 @@
 #endif
 
 #ifndef HAVE_SYS_EVENTFD_H
-#define HAVE_SYS_EVENTFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined EFD_CLOEXEC)
-#define HAVE_SYS_EVENTFD_H ag_test_include(<sys/eventfd.h>, HAVE_SYS_EVENTFD_H_)
+#if (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined EFD_CLOEXEC)
+#define HAVE_SYS_EVENTFD_H ag_test_include(<sys/eventfd.h>, 1)
+#else
+#define HAVE_SYS_EVENTFD_H ag_test_include(<sys/eventfd.h>, 0)
+#endif
 #endif
 
 #ifndef HAVE_SYS_INOTIFY_H
@@ -501,8 +504,11 @@
 #endif
 
 #ifndef HAVE_SYS_SIGNALFD_H
-#define HAVE_SYS_SIGNALFD_H_ (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined SFD_CLOEXEC)
-#define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, HAVE_SYS_SIGNALFD_H_)
+#if (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined SFD_CLOEXEC)
+#define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, 1)
+#else
+#define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, 0)
+#endif
 #endif
 
 #ifndef HAVE_SYS_SOCKET_H
@@ -522,8 +528,11 @@
 #endif
 
 #ifndef HAVE_SYS_TIMERFD_H
-#define HAVE_SYS_TIMERFD_H_  (AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined TFD_CLOEXEC)
-#define HAVE_SYS_TIMERFD_H ag_test_include(<sys/timerfd.h>, HAVE_SYS_TIMERFD_H_)
+#if AG_GLIBC_PREREQ(2,8) || (!AG_GLIBC_PREREQ(0,0) && __linux__) || defined TFD_CLOEXEC
+#define HAVE_SYS_TIMERFD_H ag_test_include(<sys/timerfd.h>, 1)
+#else
+#define HAVE_SYS_TIMERFD_H ag_test_include(<sys/timerfd.h>, 0)
+#endif
 #endif
 
 #ifndef HAVE_SYS_TYPES_H
@@ -558,7 +567,11 @@
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_ATIM
-#define HAVE_STRUCT_STAT_ST_ATIM (defined st_atime && ((!__APPLE__ && (!__NetBSD__ || AG_NETBSD_PREREQ(7,0,0))) || !HAVE_STRUCT_STAT_ST_ATIMESPEC))
+#ifdef st_atime
+#define HAVE_STRUCT_STAT_ST_ATIM ((!__APPLE__ && (!__NetBSD__ || AG_NETBSD_PREREQ(7,0,0))) || !HAVE_STRUCT_STAT_ST_ATIMESPEC)
+#else
+#define HAVE_STRUCT_STAT_ST_ATIM 0
+#endif
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_CTIM
@@ -570,7 +583,11 @@
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_ATIMESPEC
-#define HAVE_STRUCT_STAT_ST_ATIMESPEC (__APPLE__ || defined st_atimespec || defined st_atimensec)
+#if __APPLE__ || defined st_atimespec || defined st_atimensec
+#define HAVE_STRUCT_STAT_ST_ATIMESPEC 1
+#else
+#define HAVE_STRUCT_STAT_ST_ATIMESPEC 0
+#endif
 #endif
 
 #ifndef HAVE_STRUCT_STAT_ST_CTIMESPEC
@@ -867,7 +884,11 @@
 #endif
 
 #ifndef HAVE_POSIX_FADVISE
-#define HAVE_POSIX_FADVISE (defined POSIX_FADV_NORMAL || AG_GLIBC_PREREQ(2,2) || __sun || AG_MUSL_MAYBE || AG_FREEBSD_PREREQ(9,0,0))
+#if (defined POSIX_FADV_NORMAL || AG_GLIBC_PREREQ(2,2) || __sun || AG_MUSL_MAYBE || AG_FREEBSD_PREREQ(9,0,0))
+#define HAVE_POSIX_FADVISE 1
+#else
+#define HAVE_POSIX_FADVISE 0
+#endif
 #endif
 
 #ifndef HAVE_POSIX_FALLOCATE
