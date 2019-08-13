@@ -536,6 +536,8 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#include <time.h> /* CLOCK_MONOTONIC, CLOCK_REALTIME */
+
 #ifndef HAVE_CLOCKID_T
 #ifdef CLOCK_MONOTONIC
 #define HAVE_CLOCKID_T 1
