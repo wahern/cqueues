@@ -505,6 +505,10 @@
 #define HAVE_SYS_SIGNALFD_H ag_test_include(<sys/signalfd.h>, HAVE_SYS_SIGNALFD_H_)
 #endif
 
+#ifndef HAVE_SYS_SOCKET_H
+#define HAVE_SYS_SOCKET_H ag_test_include(<sys/socket.h>, 1)
+#endif
+
 #ifndef HAVE_SYS_SOCKIO_H
 #define HAVE_SYS_SOCKIO_H ag_test_include(<sys/sockio.h>, (__sun || BSD))
 #endif
@@ -536,6 +540,9 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#if HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
 #include <time.h> /* CLOCK_MONOTONIC, CLOCK_REALTIME */
 
 #ifndef HAVE_CLOCKID_T
@@ -620,6 +627,10 @@
 #define HAVE_DECL_PROGRAM_INVOCATION_SHORT_NAME (__linux__ && HAVE__GNU_SOURCE)
 #endif
 
+#if HAVE_PTHREAD_H
+#include <pthread.h>
+#endif
+
 #ifndef HAVE_DECL_PTHREAD_MUTEX_ROBUST
 #ifdef PTHREAD_MUTEX_ROBUST
 #define HAVE_DECL_PTHREAD_MUTEX_ROBUST 1
@@ -659,6 +670,10 @@
  * F U N C T I O N  D E T E C T I O N
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#if HAVE_SYS_SOCKET_H
+#include <sys/socket.h>
+#endif
 
 #ifndef HAVE_ACCEPT4
 #ifdef SOCK_CLOEXEC
