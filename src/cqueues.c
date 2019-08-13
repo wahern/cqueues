@@ -1403,13 +1403,13 @@ static void cqueue_preinit(struct cqueue *Q) {
 
 static void cstack_add(lua_State *, struct cqueue *);
 
-static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
+static int cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	int error;
 
 	index = lua_absindex(L, index);
 
 	if ((error = kpoll_init(&Q->kp)))
-		luaL_error(L, "unable to initialize continuation queue: %s", cqs_strerror(error));
+		return error;
 
 	/*
 	 * give ourselves an empty table of threads
@@ -1421,6 +1421,8 @@ static void cqueue_init(lua_State *L, struct cqueue *Q, int index) {
 	 * associate ourselves with global continuation stack
 	 */
 	cstack_add(L, Q);
+
+	return 0;
 } /* cqueue_init() */
 
 
@@ -1464,8 +1466,9 @@ static void cqueue_destroy(lua_State *L, struct cqueue *Q, struct callinfo *I) {
 } /* cqueue_destroy() */
 
 
-static int cqueue_new(lua_State *L) {
+static int cqueue_create(lua_State *L) {
 	struct cqueue *Q;
+	int error;
 
 	Q = lua_newuserdata(L, sizeof *Q);
 
@@ -1474,9 +1477,17 @@ static int cqueue_new(lua_State *L) {
 	luaL_getmetatable(L, CQUEUE_CLASS);
 	lua_setmetatable(L, -2);
 
-	cqueue_init(L, Q, -1);
+	if ((error = cqueue_init(L, Q, -1)))
+		goto error;
 
 	return 1;
+
+error:
+	lua_pushnil(L);
+	lua_pushstring(L, cqs_strerror(error));
+	lua_pushinteger(L, error);
+
+	return 3;
 } /* cqueue_new() */
 
 
@@ -2887,7 +2898,7 @@ static const luaL_Reg cqueue_metatable[] = {
 
 
 static const luaL_Reg cqueues_globals[] = {
-	{ "new",       &cqueue_new },
+	{ "create",    &cqueue_create },
 	{ "type",      &cqueue_type },
 	{ "interpose", &cqueue_interpose },
 	{ "monotime",  &cqueue_monotime },
