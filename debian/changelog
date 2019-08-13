@@ -1,3 +1,9 @@
+liblua-cqueues (20190813) unstable; urgency=low
+
+  * Fix feature detection (#227)
+
+ -- Daurnimator <quae@daurnimator.com>  Tue, 13 Aug 2019 16:23:44 +1000
+
 liblua-cqueues (20190731) unstable; urgency=low
 
   * Fix compilation in GCC 9 (#224)
