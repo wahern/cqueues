@@ -135,7 +135,7 @@
 
 #define CQUEUE__POLL CQS_UNIQUE_LIGHTUSERDATA_MASK(&cqueue__poll)
 
-const char *cqueue__poll; // signals multilevel yield
+extern const char *cqueue__poll; // signals multilevel yield
 
 cqs_nargs_t luaopen__cqueues(lua_State *);
 
