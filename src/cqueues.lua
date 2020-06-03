@@ -17,6 +17,14 @@ local loader = function(loader, ...)
 	local notsupp = {}
 	setmetatable(core, { __index = notsupp })
 
+	function core.new()
+		local cq, err = core.create()
+		if not cq then
+			error("unable to initialize continuation queue: " .. err)
+		end
+		return cq
+	end
+
 	--
 	-- core.poll
 	--
