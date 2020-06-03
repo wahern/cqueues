@@ -1,3 +1,10 @@
+liblua-cqueues (20200603) unstable; urgency=low
+
+  * Fix compilation with GCC 10 (#233)
+  * Add cqueues.create as non-throwing variant of cqueues.new (#229)
+
+ -- Daurnimator <quae@daurnimator.com>  Wed, 03 Jun 2020 16:56:37 +1000
+
 liblua-cqueues (20190813) unstable; urgency=low
 
   * Fix feature detection (#227)
