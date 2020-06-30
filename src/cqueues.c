@@ -2050,8 +2050,12 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 	timer_del(Q, &T->timer);
 
 	cstack_push(Q->cstack, &(struct stackinfo){ Q, L, I->self, T->L });
-
+#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM >= 504
+	int nres;
+	status = lua_resume(T->L, L, nargs, &nres);
+#else
 	status = lua_resume(T->L, L, nargs);
+#endif
 
 	cstack_pop(Q->cstack);
 
