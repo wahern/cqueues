@@ -12,7 +12,7 @@ all: # default target
 #
 # G N U  M A K E  F U N C T I O N S
 #
-KNOWN_APIS = 5.1 5.2 5.3
+KNOWN_APIS = 5.1 5.2 5.3 5.4
 
 # template for invoking luapath script
 LUAPATH := $(d)/mk/luapath
@@ -40,6 +40,9 @@ lua52cpath ?= $(libdir)/lua/5.2
 lua52path ?= $(datadir)/lua/5.2
 lua53cpath ?= $(libdir)/lua/5.3
 lua53path ?= $(datadir)/lua/5.3
+lua54cpath ?= $(libdir)/lua/5.4
+lua54path ?= $(datadir)/lua/5.4
+
 
 AR ?= ar
 RANLIB ?= ranlib
@@ -64,7 +67,7 @@ PRINT_$(d) = printf "%s = %s\n" '$(1)' '$(subst ',\\',$(2))' | $(TEE_A) '$(3)'
 
 LAZY_$(d) = \
 	prefix includedir libdir datadir bindir \
-	lua51cpath lua51path lua52cpath lua52path lua53cpath lua53path \
+	lua51cpath lua51path lua52cpath lua52path lua53cpath lua53path lua54cpath lua54path \
 	CC ALL_CPPFLAGS CPPFLAGS ALL_CFLAGS CFLAGS ALL_LDFLAGS LDFLAGS \
 	ALL_SOFLAGS SOFLAGS ALL_LIB LIBS \
 	$(foreach API,$(KNOWN_APIS),ALL_LUA$(subst .,,$(API))_CPPFLAGS) \
@@ -96,7 +99,7 @@ endif
 
 # set LUA_APIS if empty or "?"
 ifeq ($(or $(strip $(LUA_APIS)),?),?)
-override LUA_APIS := $(call HAVE_API_FN,5.1) $(call HAVE_API_FN,5.2) $(call HAVE_API_FN,5.3)
+override LUA_APIS := $(call HAVE_API_FN,5.1) $(call HAVE_API_FN,5.2) $(call HAVE_API_FN,5.3) $(call HAVE_API_FN,5.4)
 endif
 
 define LUAXY_template
@@ -131,6 +134,7 @@ endef # LUAXY_template
 $(eval $(call LUAXY_template,5.1))
 $(eval $(call LUAXY_template,5.2))
 $(eval $(call LUAXY_template,5.3))
+$(eval $(call LUAXY_template,5.4))
 
 #
 # A U T O D E T E C T  C O M P I L A T I O N  F L A G S
