@@ -1,8 +1,8 @@
 package = "compat53"
-version = "scm-0"
+version = "0.8-1"
 source = {
-   url = "https://github.com/keplerproject/lua-compat-5.3/archive/master.zip",
-   dir = "lua-compat-5.3-master",
+   url = "https://github.com/keplerproject/lua-compat-5.3/archive/v0.8.zip",
+   dir = "lua-compat-5.3-0.8",
 }
 description = {
    summary = "Compatibility module providing Lua-5.3-style APIs for Lua 5.2 and 5.1",

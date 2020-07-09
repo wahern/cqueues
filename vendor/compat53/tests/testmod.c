@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include "compat-5.3.h"
 
 
@@ -59,6 +60,21 @@ static int test_getseti (lua_State *L) {
   }
   lua_pushinteger(L, n+1);
   lua_seti(L, 1, k);
+  return 1;
+}
+
+
+#ifndef LUA_EXTRASPACE
+#define LUA_EXTRASPACE (sizeof(void*))
+#endif
+
+static int test_getextraspace (lua_State *L) {
+  size_t len = 0;
+  char const* s = luaL_optlstring(L, 1, NULL, &len);
+  char* p = (char*)lua_getextraspace(L);
+  lua_pushstring(L, p);
+  if (s)
+    memcpy(p, s, len > LUA_EXTRASPACE-1 ? LUA_EXTRASPACE-1 : len+1);
   return 1;
 }
 
@@ -152,7 +168,8 @@ static int test_tointeger (lua_State *L) {
     lua_pushnil(L);
   else
     lua_pushinteger(L, n);
-  return 1;
+  lua_pushinteger(L, lua_tointeger(L, 1));
+  return 2;
 }
 
 static int test_len (lua_State *L) {
@@ -225,9 +242,9 @@ static int test_uservalue (lua_State *L) {
   int ui = lua_gettop(L);
   lua_newtable(L);
   lua_setuservalue(L, ui);
-  lua_getuservalue(L, ui);
+  lua_pushinteger(L, lua_getuservalue(L, ui));
   (void)udata;
-  return 1;
+  return 2;
 }
 
 static int test_upvalues (lua_State *L) {
@@ -269,6 +286,7 @@ static int test_buffer (lua_State *L) {
 
 static int test_exec (lua_State *L) {
   const char *cmd = luaL_checkstring(L, 1);
+  errno = 0;
   return luaL_execresult(L, system(cmd));
 }
 
@@ -306,6 +324,7 @@ static const luaL_Reg funcs[] = {
   { "strtonum", test_str2num },
   { "requiref", test_requiref },
   { "getseti", test_getseti },
+  { "extraspace", test_getextraspace },
   { "newproxy", test_newproxy },
   { "arith", test_arith },
   { "compare", test_compare },
