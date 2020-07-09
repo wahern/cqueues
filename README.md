@@ -35,7 +35,7 @@ require("compat53")
 a meaningful return value, so the usual idiom of storing the return of
 `require` in a local variable makes no sense.
 
-When run under Lua 5.3, this module does nothing.
+When run under Lua 5.3+, this module does nothing.
 
 When run under Lua 5.2 or 5.1, it replaces some of your standard
 functions and adds new ones to bring your environment closer to that
@@ -125,6 +125,7 @@ For Lua 5.1 additionally:
 * `lua_KContext` (see [here][14])
 * `lua_KFunction` (see [here][14])
 * `lua_dump` (extra `strip` parameter, ignored, see [here][15])
+* `lua_getextraspace` (limited compatibilitiy, see [here][24])
 * `lua_getfield` (return value)
 * `lua_geti` and `lua_seti`
 * `lua_getglobal` (return value)
@@ -186,7 +187,6 @@ For Lua 5.1 additionally:
   [`lua-compat-5.2`][2] for a detailed list.
 * the following C API functions/macros:
   * `lua_isyieldable`
-  * `lua_getextraspace`
   * `lua_arith` (new operators missing)
   * `lua_push(v)fstring` (new formats missing)
   * `lua_upvalueid` (5.1)
@@ -236,4 +236,5 @@ This package contains code written by:
   [21]: https://github.com/keplerproject/lua-compat-5.3/wiki/luaL_checkversion
   [22]: https://github.com/keplerproject/lua-compat-5.3/wiki/luaL_Buffer
   [23]: https://github.com/keplerproject/lua-compat-5.3/wiki/coroutine.running
+  [24]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_getextraspace
 

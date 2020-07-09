@@ -165,8 +165,7 @@ COMPAT53_API void lua_rawsetp(lua_State *L, int i, const void *p);
 
 #define lua_rawlen(L, i) lua_objlen((L), (i))
 
-#define lua_tointegerx COMPAT53_CONCAT(COMPAT53_PREFIX, _tointegerx)
-COMPAT53_API lua_Integer lua_tointegerx (lua_State *L, int i, int *isnum);
+#define lua_tointeger(L, i) lua_tointegerx((L), (i), NULL)
 
 #define lua_tonumberx COMPAT53_CONCAT(COMPAT53_PREFIX, _tonumberx)
 COMPAT53_API lua_Number lua_tonumberx (lua_State *L, int i, int *isnum);
@@ -294,8 +293,14 @@ typedef int (*lua_KFunction)(lua_State *L, int status, lua_KContext ctx);
 #define lua_geti COMPAT53_CONCAT(COMPAT53_PREFIX, _geti)
 COMPAT53_API int lua_geti (lua_State *L, int index, lua_Integer i);
 
+#define lua_getextraspace COMPAT53_CONCAT(COMPAT53_PREFIX, _getextraspace)
+COMPAT53_API void *lua_getextraspace (lua_State *L);
+
 #define lua_isinteger COMPAT53_CONCAT(COMPAT53_PREFIX, _isinteger)
 COMPAT53_API int lua_isinteger (lua_State *L, int index);
+
+#define lua_tointegerx COMPAT53_CONCAT(COMPAT53_PREFIX, _tointegerx_53)
+COMPAT53_API lua_Integer lua_tointegerx (lua_State *L, int i, int *isnum);
 
 #define lua_numbertointeger(n, p) \
   ((*(p) = (lua_Integer)(n)), 1)
@@ -337,7 +342,6 @@ COMPAT53_API void luaL_requiref (lua_State *L, const char *modname,
 
 /* XXX not implemented:
  * lua_isyieldable
- * lua_getextraspace
  * lua_arith (new operators)
  * lua_pushfstring (new formats)
  */
@@ -395,11 +399,11 @@ COMPAT53_API void luaL_requiref (lua_State *L, const char *modname,
 
 
 /* other Lua versions */
-#if !defined(LUA_VERSION_NUM) || LUA_VERSION_NUM < 501 || LUA_VERSION_NUM > 503
+#if !defined(LUA_VERSION_NUM) || LUA_VERSION_NUM < 501 || LUA_VERSION_NUM > 504
 
-#  error "unsupported Lua version (i.e. not Lua 5.1, 5.2, or 5.3)"
+#  error "unsupported Lua version (i.e. not Lua 5.1, 5.2, 5.3, or 5.4)"
 
-#endif /* other Lua versions except 5.1, 5.2, and 5.3 */
+#endif /* other Lua versions except 5.1, 5.2, 5.3, and 5.4 */
 
 
 
