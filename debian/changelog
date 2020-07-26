@@ -1,3 +1,9 @@
+liblua-cqueues (20200726) unstable; urgency=low
+
+  * Fix compilation with Lua 5.4 (#239)
+
+ -- Daurnimator <quae@daurnimator.com>  Sun, 26 Jul 2020 21:33:39 +1000
+
 liblua-cqueues (20200603) unstable; urgency=low
 
   * Fix compilation with GCC 10 (#233)
