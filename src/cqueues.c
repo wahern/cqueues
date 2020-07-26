@@ -2011,7 +2011,7 @@ static _Bool auxL_xcopy(lua_State *from, lua_State *to, int count) {
 
 
 static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinfo *I, struct thread *T) {
-	int otop = lua_gettop(L), nargs, status, tmp_status, index;
+	int otop = lua_gettop(L), nargs, nres, status, tmp_status, index;
 	struct event *event;
 
 	status = lua_status(T->L);
@@ -2050,19 +2050,20 @@ static cqs_status_t cqueue_resume(lua_State *L, struct cqueue *Q, struct callinf
 	timer_del(Q, &T->timer);
 
 	cstack_push(Q->cstack, &(struct stackinfo){ Q, L, I->self, T->L });
-#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM >= 504
-	int nres;
-	status = lua_resume(T->L, L, nargs, &nres);
-#else
+
+#if LUA_VERSION_NUM < 504
 	status = lua_resume(T->L, L, nargs);
+	nres = lua_gettop(T->L);
+#else
+	status = lua_resume(T->L, L, nargs, &nres);
 #endif
 
 	cstack_pop(Q->cstack);
 
 	switch (status) {
 	case LUA_YIELD:
-		if (lua_islightuserdata(T->L, 1) && lua_topointer(T->L, 1) == CQUEUE__POLL) {
-			for (index = 2; index <= lua_gettop(T->L); index++) {
+		if (nres > 0 && lua_islightuserdata(T->L, 1) && lua_topointer(T->L, 1) == CQUEUE__POLL) {
+			for (index = 2; index <= nres; index++) {
 				switch (lua_type(T->L, index)) {
 				case LUA_TNIL:
 					continue;
