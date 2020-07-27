@@ -980,7 +980,10 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 	if ((error = lso_prepsocket(S)))
 		goto error;
 
-	(void)so_connect(S->socket);
+	if ((error = so_connect(S->socket))) {
+		S->ibuf.error = error;
+		S->obuf.error = error;
+	}
 
 	return 1;
 error:
@@ -989,25 +992,6 @@ error:
 
 	return 2;
 } /* lso_connect2() */
-
-
-static lso_nargs_t lso_connect1(lua_State *L) {
-	struct luasocket *S = lso_checkself(L, 1);
-	int error;
-
-	so_clear(S->socket);
-
-	if (!(error = so_connect(S->socket))) {
-		lua_pushvalue(L, 1);
-
-		return 1;
-	} else {
-		lua_pushnil(L);
-		lua_pushinteger(L, error);
-
-		return 2;
-	}
-} /* lso_connect1() */
 
 
 static lso_nargs_t lso_listen2(lua_State *L) {
@@ -1068,7 +1052,10 @@ static lso_nargs_t lso_listen2(lua_State *L) {
 	if ((error = lso_prepsocket(S)))
 		goto error;
 
-	(void)so_listen(S->socket);
+	if ((error = so_listen(S->socket))) {
+		S->ibuf.error = error;
+		S->obuf.error = error;
+	}
 
 	return 1;
 error:
@@ -1077,25 +1064,6 @@ error:
 
 	return 2;
 } /* lso_listen2() */
-
-
-static lso_nargs_t lso_listen1(lua_State *L) {
-	struct luasocket *S = lso_checkself(L, 1);
-	int error;
-
-	so_clear(S->socket);
-
-	if (!(error = so_listen(S->socket))) {
-		lua_pushvalue(L, 1);
-
-		return 1;
-	} else {
-		lua_pushnil(L);
-		lua_pushinteger(L, error);
-
-		return 2;
-	}
-} /* lso_listen1() */
 
 
 /* luasec compat */
@@ -1697,6 +1665,69 @@ static lso_nargs_t lso_clearerr(struct lua_State *L) {
 } /* lso_clearerr() */
 
 
+#define LSO_CHECKERRS(L, iobuf) do { \
+	if (!(iobuf).error) \
+		return 0; \
+	if (++(iobuf).numerrs > (iobuf).maxerrs) \
+		luaL_error((L), "exceeded unchecked error limit (%s)", cqs_strerror((iobuf).error)); \
+	return (iobuf).error; \
+} while (0)
+
+static lso_error_t lso_checkrcverrs(lua_State *L, struct luasocket *S) {
+	LSO_CHECKERRS(L, S->ibuf);
+} /* lso_checkrcverrs() */
+
+static lso_error_t lso_checksnderrs(lua_State *L, struct luasocket *S) {
+	LSO_CHECKERRS(L, S->obuf);
+} /* lso_checksnderrs() */
+
+
+static lso_nargs_t lso_connect1(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	int error;
+
+	if ((error = lso_checkrcverrs(L, S)) || (error = lso_checksnderrs(L, S)))
+		goto error;
+
+	so_clear(S->socket);
+
+	if ((error = so_connect(S->socket)))
+		goto error;
+
+	lua_pushvalue(L, 1);
+
+	return 1;
+
+error:
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_connect1() */
+
+
+static lso_nargs_t lso_listen1(lua_State *L) {
+	struct luasocket *S = lso_checkself(L, 1);
+	int error;
+
+	if ((error = lso_checkrcverrs(L, S)) || (error = lso_checksnderrs(L, S)))
+		goto error;
+
+	so_clear(S->socket);
+
+	if ((error = so_listen(S->socket)))
+		goto error;
+
+	return 1;
+
+error:
+	lua_pushnil(L);
+	lua_pushinteger(L, error);
+
+	return 2;
+} /* lso_listen1() */
+
+
 static lso_error_t lso_fill(struct luasocket *S, size_t limit) {
 	struct iovec iov;
 	size_t prepbuf, count;
@@ -1972,23 +2003,6 @@ static struct lso_rcvop lso_checkrcvop(lua_State *L, int index, int mode) {
 
 	return op;
 } /* lso_checkrcvop() */
-
-
-#define LSO_CHECKERRS(L, iobuf) do { \
-	if (!(iobuf).error) \
-		return 0; \
-	if (++(iobuf).numerrs > (iobuf).maxerrs) \
-		luaL_error((L), "exceeded unchecked error limit (%s)", cqs_strerror((iobuf).error)); \
-	return (iobuf).error; \
-} while (0)
-
-static lso_error_t lso_checkrcverrs(lua_State *L, struct luasocket *S) {
-	LSO_CHECKERRS(L, S->ibuf);
-} /* lso_checkrcverrs() */
-
-static lso_error_t lso_checksnderrs(lua_State *L, struct luasocket *S) {
-	LSO_CHECKERRS(L, S->obuf);
-} /* lso_checksnderrs() */
 
 
 static lso_error_t lso_preprcv(lua_State *L, struct luasocket *S) {
