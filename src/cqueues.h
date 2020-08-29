@@ -128,7 +128,9 @@
 #endif
 
 #if CQS_USE_47BIT_LIGHTUSERDATA_HACK
-#define CQS_UNIQUE_LIGHTUSERDATA_MASK(p) ((void *)((intptr_t)(p) & ((1UL<<47)-1)))
+/* alignment of 32 gives us 47 + 5 = 52 bits */
+#define CQS_UNIQUE_LIGHTUSERDATA_ALIGNMENT 32
+#define CQS_UNIQUE_LIGHTUSERDATA_MASK(p) ((void *)((intptr_t)(p) >> 5))
 #else
 #define CQS_UNIQUE_LIGHTUSERDATA_MASK(p) ((void *)(p))
 #endif

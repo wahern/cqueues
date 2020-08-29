@@ -1094,7 +1094,11 @@ int luaopen__cqueues_condition(lua_State *L) {
 
 #define CQUEUE_CLASS "Continuation Queue"
 
-const char *cqueue__poll = "poll magic"; // signals multilevel yield
+const char *cqueue__poll
+#ifdef CQS_UNIQUE_LIGHTUSERDATA_ALIGNMENT
+__attribute__ ((aligned (CQS_UNIQUE_LIGHTUSERDATA_ALIGNMENT)))
+#endif
+ = "poll magic"; // signals multilevel yield
 
 typedef int auxref_t;
 
