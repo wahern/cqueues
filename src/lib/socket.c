@@ -752,34 +752,42 @@ static so_error_t so_ftype(int fd, mode_t *mode, int *domain, int *type, int *pr
 	struct stat st;
 	int error;
 
-	if (0 != fstat(fd, &st))
-		return errno;
 
-	*mode = S_IFMT & st.st_mode;
+	if (*mode == 0) {
+		if (0 != fstat(fd, &st))
+			return errno;
+		*mode = S_IFMT & st.st_mode;
+	}
 
 	if (!S_ISSOCK(*mode))
 		return 0;
 
+	if (*domain == 0) {
 #if defined SO_DOMAIN
-	if (0 != getsockopt(fd, SOL_SOCKET, SO_DOMAIN, domain, &(socklen_t){ sizeof *domain })) {
-		if (errno != ENOPROTOOPT)
-			return errno;
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_DOMAIN, domain, &(socklen_t){ sizeof *domain })) {
+			if (errno != ENOPROTOOPT)
+				return errno;
 
+			if ((error = so_ffamily(fd, domain)))
+				return error;
+		}
+#else
 		if ((error = so_ffamily(fd, domain)))
 			return error;
-	}
-#else
-	if ((error = so_ffamily(fd, domain)))
-		return error;
 #endif
+	}
 
-	if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, type, &(socklen_t){ sizeof *type }))
-		return errno;
+	if (*type == 0) {
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_TYPE, type, &(socklen_t){ sizeof *type }))
+			return errno;
+	}
 
 #if defined SO_PROTOCOL
-	if (0 != getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){ sizeof *protocol })) {
-		if (errno != ENOPROTOOPT)
-			return errno;
+	if (*protocol == 0) {
+		if (0 != getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, protocol, &(socklen_t){ sizeof *protocol })) {
+			if (errno != ENOPROTOOPT)
+				return errno;
+		}
 	}
 #else
 	(void)protocol;
@@ -795,19 +803,28 @@ static int so_type2mask(mode_t, int, int, int);
 int so_socket(int domain, int type, const struct so_options *opts, int *_error) {
 	int error, fd, flags, mask, need;
 
-#if defined SOCK_CLOEXEC
-	if (-1 == (fd = socket(domain, type|SOCK_CLOEXEC, 0)))
-		goto syerr;
-#else
-	if (-1 == (fd = socket(domain, type, 0)))
-		goto syerr;
-#endif
-
 	flags = so_opts2flags(opts, &mask);
 	mask &= so_type2mask(S_IFSOCK, domain, type, 0);
 	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
 
-	if ((error = so_setfl(fd, flags, mask, need)))
+#if defined SOCK_NONBLOCK
+	if (flags & SO_F_NONBLOCK) {
+		type |= SOCK_NONBLOCK;
+	}
+	mask &= ~SO_F_NONBLOCK;
+#endif
+#if defined SOCK_CLOEXEC
+	if (flags & SO_F_CLOEXEC) {
+		type |= SOCK_CLOEXEC;
+	}
+	mask &= ~SO_F_CLOEXEC;
+#endif
+
+	if (-1 == (fd = socket(domain, type, 0)))
+		goto syerr;
+
+	/* assumes natural state of socket is all flags off */
+	if ((error = so_setfl(fd, flags, mask&flags, need)))
 		goto error;
 
 	return fd;
@@ -890,7 +907,14 @@ int so_cloexec(int fd, _Bool cloexec) {
 #if _WIN32
 	return 0;
 #else
-	if (-1 == fcntl(fd, F_SETFD, cloexec))
+	int flags, newflags;
+
+	if (-1 == (flags = fcntl(fd, F_GETFD)))
+		return so_syerr();
+
+	newflags = (cloexec ? ~0 : ~FD_CLOEXEC) & (flags | FD_CLOEXEC);
+
+	if (flags != newflags && (-1 == fcntl(fd, F_SETFD, flags)))
 		return so_syerr();
 
 	return 0;
@@ -899,10 +923,14 @@ int so_cloexec(int fd, _Bool cloexec) {
 
 
 int so_nonblock(int fd, _Bool nonblock) {
-	int flags, mask = (nonblock)? ~0 : (~O_NONBLOCK);
+	int flags, newflags;
 
-	if (-1 == (flags = fcntl(fd, F_GETFL))
-	||  -1 == fcntl(fd, F_SETFL, mask & (flags | O_NONBLOCK)))
+	if (-1 == (flags = fcntl(fd, F_GETFL)))
+		return so_syerr();
+
+	newflags = (nonblock ? ~0 : ~O_NONBLOCK) & (flags | O_NONBLOCK);
+
+	if (flags != newflags && (-1 == fcntl(fd, F_SETFL, newflags)))
 		return so_syerr();
 
 	return 0;
@@ -982,11 +1010,15 @@ int so_nopush(int fd, _Bool nopush) {
 
 int so_nosigpipe(int fd, _Bool nosigpipe) {
 #if defined O_NOSIGPIPE
-	int flags, mask = (nosigpipe)? ~0 : (~O_NOSIGPIPE);
+	int flags, newflags;
 
-	if (-1 == (flags = fcntl(fd, F_GETFL))
-	||  -1 == fcntl(fd, F_SETFL, mask & (flags | O_NOSIGPIPE)))
-		return errno;
+	if (-1 == (flags = fcntl(fd, F_GETFL)))
+		return so_syerr();
+
+	newflags = (nosigpipe ? ~0 : ~O_NOSIGPIPE) & (flags | O_NOSIGPIPE);
+
+	if (flags != newflags && (-1 == fcntl(fd, F_SETFL, newflags)))
+		return so_syerr();
 
 	return 0;
 #elif defined F_SETNOSIGPIPE
@@ -1293,11 +1325,6 @@ struct socket {
 
 	struct so_stat st;
 
-	struct {
-		_Bool rd;
-		_Bool wr;
-	} shut;
-
 	struct addrinfo *host;
 
 	short events;
@@ -1451,6 +1478,10 @@ static int so_socket_(struct socket *so) {
 	if (-1 == (so->fd = so_socket(so->host->ai_family, so->host->ai_socktype, &so->opts, &error)))
 		return error;
 
+	so->mode = S_IFSOCK;
+	so->domain = so->host->ai_family;
+	so->type = so->host->ai_socktype;
+	so->protocol = 0;
 	if ((error = so_ftype(so->fd, &so->mode, &so->domain, &so->type, &so->protocol)))
 		return error;
 
@@ -1661,17 +1692,6 @@ static int so_rstlowat_(struct socket *so) {
 } /* so_rstlowat_() */
 
 
-static int so_shutwr_(struct socket *so) {
-	if (so->fd != -1 && 0 != shutdown(so->fd, SHUT_WR))
-		return so_soerr();
-
-	so->shut.wr = 1;
-	so->st.sent.eof = 1;
-
-	return 0;
-} /* so_shutwr_() */
-
-
 static _Bool so_isconn(int fd) {
 		struct sockaddr sa;
 		socklen_t slen = sizeof sa;
@@ -1679,8 +1699,8 @@ static _Bool so_isconn(int fd) {
 		return 0 == getpeername(fd, &sa, &slen) || so_soerr() != SO_ENOTCONN;
 } /* so_isconn() */
 
-static int so_shutrd_(struct socket *so) {
-	if (so->fd != -1 && 0 != shutdown(so->fd, SHUT_RD)) {
+static int so_shutdown_(struct socket *so, int how) {
+	if (so->fd != -1 && 0 != shutdown(so->fd, how)) {
 		/*
 		 * NOTE: OS X will fail with ENOTCONN if the requested
 		 * SHUT_RD or SHUT_WR flag is already set, including if the
@@ -1693,7 +1713,9 @@ static int so_shutrd_(struct socket *so) {
 			return SO_ENOTCONN;
 	}
 
-	so->shut.rd = 1;
+	if (how == SHUT_WR || how == SHUT_RDWR) {
+		so->st.sent.eof = 1;
+	}
 
 	return 0;
 } /* so_shutrd_() */
@@ -1800,17 +1822,11 @@ exec:
 
 		goto exec;
 	case SO_S_SHUTWR:
-		if ((error = so_shutwr_(so)))
-			goto error;
-
-		so->done |= state;
-
-		goto exec;
 	case SO_S_SHUTRD:
-		if ((error = so_shutrd_(so)))
+		if ((error = so_shutdown_(so, (so->todo & SO_S_SHUTRD)?(so->todo & SO_S_SHUTWR)?SHUT_RDWR:SHUT_RD:SHUT_WR)))
 			goto error;
 
-		so->done |= state;
+		so->done |= (so->todo & (SO_S_SHUTWR|SO_S_SHUTRD));
 
 		goto exec;
 	} /* so_exec() */
@@ -2167,6 +2183,44 @@ error:
 
 	return -1;
 } /* so_accept() */
+
+
+struct socket *so_accept_socket(struct socket *accept_so, const struct so_options *opts, int *error_) {
+	union sockaddr_any saddr;
+	struct socket *so;
+	int flags, mask, need, error;
+
+	if (!(so = so_make(opts, &error)))
+		goto error;
+
+	if (-1 == (so->fd = so_accept(accept_so, &saddr.sa, &(socklen_t){ sizeof saddr }, &error)))
+		goto error;
+
+	so->mode = S_IFSOCK;
+	so->domain = saddr.sa.sa_family;
+
+	if ((error = so_ftype(so->fd, &so->mode, &so->domain, &so->type, &so->protocol)))
+		goto error;
+
+	flags = so_opts2flags(opts, &mask);
+	mask &= so_type2mask(so->mode, so->domain, so->type, so->protocol);
+	need = ~(SO_F_NODELAY|SO_F_NOPUSH|SO_F_NOSIGPIPE|SO_F_OOBINLINE);
+	/* we accept with CLOEXEC set */
+	mask &= ~SO_F_CLOEXEC;
+	/* reuseaddr doesn't matter, the socket is already bound */
+	mask &= ~SO_F_REUSEADDR;
+
+	if ((error = so_rstfl(so->fd, &so->flags, flags, mask, need)))
+		goto error;
+
+	return so;
+error:
+	so_close(so);
+
+	*error_ = error;
+
+	return 0;
+} /* so_accept_socket() */
 
 
 static void so_resetssl(struct socket *so) {
