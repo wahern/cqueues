@@ -519,6 +519,14 @@ static int alert_rearm(struct kpoll *kp) {
 #endif
 } /* alert_rearm() */
 
+static int alert_pollfd(struct kpoll *kp) {
+#if ENABLE_PORTS
+	return kp->fd;
+#else
+	return kp->alert.fd[0];
+#endif
+} /* alert_pollfd() */
+
 
 static int kpoll_init(struct kpoll *kp) {
 	int error;
@@ -2473,6 +2481,44 @@ static int cqueue_reset(lua_State *L) {
 } /* cqueue_reset() */
 
 
+static int cqueue_pollset(lua_State *L) {
+	struct cqueue *Q = cqueue_checkself(L, 1);
+	struct fileno *fileno;
+	lua_Integer r=0, w=0, p=0;
+	lua_newtable(L); /* POLLIN */
+	lua_newtable(L); /* POLLOUT */
+	lua_newtable(L); /* POLLPRI */
+
+	/* the fd woken by conditions */
+	lua_pushinteger(L, alert_pollfd(&Q->kp));
+	lua_rawseti(L, -4, ++r);
+
+	LIST_FOREACH(fileno, &Q->fileno.polling, le) {
+		if (fileno->state & POLLIN) {
+			lua_pushinteger(L, fileno->fd);
+			lua_rawseti(L, -4, ++r);
+		}
+		if (fileno->state & POLLOUT) {
+			lua_pushinteger(L, fileno->fd);
+			lua_rawseti(L, -3, ++w);
+		}
+		if (fileno->state & POLLPRI) {
+			lua_pushinteger(L, fileno->fd);
+			lua_rawseti(L, -2, ++p);
+		}
+	}
+
+	lua_pushinteger(L, r);
+	lua_setfield(L, -4, "n");
+	lua_pushinteger(L, w);
+	lua_setfield(L, -3, "n");
+	lua_pushinteger(L, p);
+	lua_setfield(L, -2, "n");
+
+	return 3;
+} /* cqueue_pollset() */
+
+
 cqs_error_t cqs_sigmask(int how, const sigset_t *set, sigset_t *oset) {
 	if (oset)
 		sigemptyset(oset);
@@ -2891,6 +2937,7 @@ static const luaL_Reg cqueue_methods[] = {
 	{ "pollfd",  &cqueue_pollfd },
 	{ "events",  &cqueue_events },
 	{ "timeout", &cqueue_timeout },
+	{ "pollset", &cqueue_pollset },
 	{ "close",   &cqueue_close },
 	{ NULL,      NULL }
 }; /* cqueue_methods[] */
