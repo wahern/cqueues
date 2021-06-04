@@ -295,6 +295,14 @@ static inline double tv2f(const struct timeval *tv) {
 } /* tv2f() */
 
 
+static inline double gettime(void) {
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+
+	return ts2f(&ts);
+} /* gettime() */
+
 static inline double monotime(void) {
 	struct timespec ts;
 
@@ -2708,6 +2716,13 @@ static int cqueue_interpose(lua_State *L) {
 } /* cqueue_interpose() */
 
 
+static int cqueue_gettime(lua_State *L) {
+	lua_pushnumber(L, gettime());
+
+	return 1;
+} /* cqueue_gettime() */
+
+
 static int cqueue_monotime(lua_State *L) {
 	lua_pushnumber(L, monotime());
 
@@ -2906,6 +2921,7 @@ static const luaL_Reg cqueues_globals[] = {
 	{ "create",    &cqueue_create },
 	{ "type",      &cqueue_type },
 	{ "interpose", &cqueue_interpose },
+	{ "gettime",   &cqueue_gettime },
 	{ "monotime",  &cqueue_monotime },
 	{ "cancel",    &cstack_cancel },
 	{ "reset",     &cstack_reset },

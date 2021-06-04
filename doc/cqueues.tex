@@ -261,6 +261,9 @@ Return the string ``controller'' if $obj$ is a controller object, or $nil$ other
 \subsubsection[\routine{cqueues.interpose}]{\routine{cqueues.interpose(name, function)}}
 Add or interpose a \cqueues controller class method. Returns the previous method, if any.
 
+\subsubsection[\routine{cqueues.gettime}]{\routine{cqueues.gettime()}}
+Return the system's epoch time, usually clock\_gettime(CLOCK\_REALTIME).
+
 \subsubsection[\routine{cqueues.monotime}]{\routine{cqueues.monotime()}}
 Return the system's monotonic clock time, usually clock\_gettime(CLOCK\_MONOTONIC).
 
