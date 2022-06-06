@@ -135,7 +135,7 @@ int socket_v_api(void) {
 #endif
 
 #ifndef HAVE_SSL_IS_SERVER
-#define HAVE_SSL_IS_SERVER OPENSSL_PREREQ(1,1,0)
+#define HAVE_SSL_IS_SERVER (OPENSSL_PREREQ(1,1,0) || LIBRESSL_PREREQ(3,5,0))
 #endif
 
 #ifndef HAVE_SSL_UP_REF
@@ -2539,7 +2539,7 @@ static int bio_destroy(BIO *bio) {
 	return 1;
 } /* bio_destroy() */
 
-#if !OPENSSL_PREREQ(1,1,0)
+#if !OPENSSL_PREREQ(1,1,0) && !LIBRESSL_PREREQ(3,5,0)
 static BIO_METHOD bio_methods = {
 	BIO_TYPE_SOURCE_SINK,
 	"struct socket*",
@@ -2559,7 +2559,9 @@ static BIO_METHOD *so_get_bio_methods() {
 #else
 static BIO_METHOD *bio_methods = NULL;
 
+#ifndef LIBRESSL_VERSION_NUMBER
 static CRYPTO_ONCE bio_methods_init_once = CRYPTO_ONCE_STATIC_INIT;
+#endif
 
 static void bio_methods_init(void) {
 	int type = BIO_get_new_index();
@@ -2580,7 +2582,9 @@ static void bio_methods_init(void) {
 
 static BIO_METHOD *so_get_bio_methods() {
 	if (bio_methods == NULL) {
+#ifndef LIBRESSL_VERSION_NUMBER
 		CRYPTO_THREAD_run_once(&bio_methods_init_once, bio_methods_init);
+#endif
 	}
 	return bio_methods;
 } /* so_get_bio_methods() */
