@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 
-make
+sudo apt-get -y install liblua5.2-dev
+make LUA_APIS="5.2"
