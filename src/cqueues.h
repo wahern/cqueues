@@ -40,7 +40,9 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
+#if LUA_VERSION_NUM < 503
 #include "../vendor/compat53/c-api/compat-5.3.h"
+#endif
 
 
 /*
@@ -645,5 +647,14 @@ syerr:
 	SAY("%d: %s", fd, strerror(errno));
 } /* cqs_debugfd() */
 
+/* From compat-5.3.h to compile without compat53 if >= 503
+ * helper macro for defining continuation functions (for every version
+ *  * *except* Lua 5.2) */
+#if LUA_VERSION_NUM >= 503
+#ifndef LUA_KFUNCTION
+#define LUA_KFUNCTION(_name) \
+  static int (_name)(lua_State *L, int status, lua_KContext ctx)
+#endif
+#endif
 
 #endif /* CQUEUES_H */

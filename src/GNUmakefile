@@ -22,7 +22,13 @@ VENDOR_$(d) = $(or $(CQUEUES_VENDOR),$(shell $(<D)/../mk/changelog author))
 VERSION_$(d) = $(or $(CQUEUES_VERSION),$(shell $(<D)/../mk/changelog version))
 COMMIT_$(d) = $(shell $(<D)/../mk/changelog commit)
 
+ifneq ($(1), 5.3)
+ifneq ($(1), 5.4)
 CPPFLAGS_$(d) = $(ALL_CPPFLAGS) -DCOMPAT53_PREFIX=cqueues
+else
+CPPFLAGS_$(d) = $(ALL_CPPFLAGS)
+endif
+endif
 CFLAGS_$(d) = $(ALL_CFLAGS)
 SOFLAGS_$(d) = $(ALL_SOFLAGS)
 LDFLAGS_$(d) = $(ALL_LDFLAGS)
@@ -50,9 +56,17 @@ define BUILD_$(d)
 $$(d)/$(1)/cqueues.so: $$(addprefix $$(d)/$(1)/, $$(OBJS_$(d))) $$(d)/lib/libnonlua.a
 	$$(CC) -o $$@ $$^ $$(SOFLAGS_$$(abspath $$(@D)/..)) $$(LDFLAGS_$$(abspath $$(@D)/..)) $$(LIBS_$$(abspath $$(@D)/..))
 
+ifneq ($(1), 5.3)
+ifneq ($(1), 5.4)
 $$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/../vendor/compat53/c-api/compat-5.3.h $$(d)/config.h
 	$$(MKDIR) -p $$(@D)
 	$$(CC) $$(CFLAGS_$$(<D)) $$(ALL_LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) -c -o $$@ $$<
+else
+$$(d)/$(1)/%.o: $$(d)/%.c $$(d)/cqueues.h $$(d)/config.h
+	$$(MKDIR) -p $$(@D)
+	$$(CC) $$(CFLAGS_$$(<D)) $$(ALL_LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$$(<D)) -c -o $$@ $$<
+endif
+endif
 
 $$(d)/$(1)/cqueues.o: $$(d)/lib/llrb.h
 
