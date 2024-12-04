@@ -12,7 +12,7 @@ include $(d)/../GNUmakefile
 .PHONY: $(d)/check check
 
 $(d)/check:
-	@for V in 5.1 5.2 5.3; do \
+	@for V in 5.1 5.2 5.3 5.4; do \
 		printf "Building $${V}... "; \
 		if (cd $(@D) && ./regress.sh -r"$${V}" build >/dev/null 2>&1); then \
 			printf "OK\n"; \
