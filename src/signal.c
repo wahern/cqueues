@@ -533,7 +533,8 @@ static int ls_default(lua_State *L) {
 } /* ls_default() */
 
 
-static void ls_noop() {
+static void ls_noop(int signum) {
+	(void)signum;
 	return;
 } /* ls_noop() */
 
