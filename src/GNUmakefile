@@ -68,11 +68,13 @@ $$(d)/$(1)/notify.o: $$(d)/lib/notify.h
 
 ifneq ($(1), 5.3)
 ifneq ($(1), 5.4)
+ifneq ($(1), 5.5)
 $$(d)/$(1)/compat53.o: $$(d)/../vendor/compat53/c-api/compat-5.3.c $$(d)/../vendor/compat53/c-api/compat-5.3.h $$(d)/config.h
 	$$(MKDIR) -p $$(@D)
 	$$(CC) $$(CFLAGS_$(d)) $$(ALL_LUA$(subst .,,$(1))_CPPFLAGS) $$(CPPFLAGS_$(d)) -c -o $$@ $$<
 
 $$(d)/$(1)/cqueues.so: $$(d)/$(1)/compat53.o
+endif
 endif
 endif
 
@@ -86,14 +88,16 @@ $(eval $(call BUILD_$(d),5.1))
 $(eval $(call BUILD_$(d),5.2))
 $(eval $(call BUILD_$(d),5.3))
 $(eval $(call BUILD_$(d),5.4))
+$(eval $(call BUILD_$(d),5.5))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
-.SECONDARY: all all5.1 all5.2 all5.3 all5.4
+.SECONDARY: all all5.1 all5.2 all5.3 all5.4 all5.5
 
 all5.1: liblua5.1-cqueues
 all5.2: liblua5.2-cqueues
 all5.3: liblua5.3-cqueues
 all5.4: liblua5.4-cqueues
+all5.5: liblua5.5-cqueues
 all: $(foreach API,$(strip $(LUA_APIS)),all$(API))
 
 endif
@@ -160,23 +164,26 @@ $(eval $(call INSTALL_$(d),5.1,$$(lua51cpath),$$(lua51path)))
 $(eval $(call INSTALL_$(d),5.2,$$(lua52cpath),$$(lua52path)))
 $(eval $(call INSTALL_$(d),5.3,$$(lua53cpath),$$(lua53path)))
 $(eval $(call INSTALL_$(d),5.4,$$(lua54cpath),$$(lua54path)))
+$(eval $(call INSTALL_$(d),5.5,$$(lua55cpath),$$(lua55path)))
 
 ifneq "$(filter $(abspath $(d)/..)/%, $(abspath $(firstword $(MAKEFILE_LIST))))" ""
 
-.SECONDARY: install5.1 install5.2 install5.3 install5.4 install
+.SECONDARY: install5.1 install5.2 install5.3 install5.4 install5.5 install
 
 install5.1: liblua5.1-cqueues-install
 install5.2: liblua5.2-cqueues-install
 install5.3: liblua5.3-cqueues-install
 install5.4: liblua5.4-cqueues-install
+install5.5: liblua5.5-cqueues-install
 install: $(foreach API,$(strip $(LUA_APIS)),install$(API))
 
-.PHONY: uninstall5.1 uninstall5.2 uninstall5.3 uninstall
+.PHONY: uninstall5.1 uninstall5.2 uninstall5.3 uninstall5.4 uninstall5.5 uninstall
 
 uninstall5.1: liblua5.1-cqueues-uninstall
 uninstall5.2: liblua5.2-cqueues-uninstall
 uninstall5.3: liblua5.3-cqueues-uninstall
 uninstall5.4: liblua5.4-cqueues-uninstall
+uninstall5.5: liblua5.5-cqueues-uninstall
 uninstall: $(foreach API,$(strip $(LUA_APIS)),uninstall$(API))
 
 endif
@@ -188,7 +195,7 @@ endif
 .PHONY: $(d)/clean $(d)/clean~ clean clean~
 
 $(d)/clean:
-	rm -rf $(@D)/errno.c $(@D)/errno.c.tmp $(@D)/config.h $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3
+	rm -rf $(@D)/errno.c $(@D)/errno.c.tmp $(@D)/config.h $(@D)/*.dSYM $(@D)/5.1 $(@D)/5.2 $(@D)/5.3 $(@D)/5.4 $(@D)/5.5
 
 $(d)/clean~: $(d)/clean
 	rm -f $(@D)/*~
@@ -212,16 +219,19 @@ $(d)/help:
 	@echo "      all5.2 - build 5.2/cqueues.so"
 	@echo "      all5.3 - build 5.3/cqueues.so"
 	@echo "      all5.4 - build 5.4/cqueues.so"
+	@echo "      all5.5 - build 5.5/cqueues.so"
 	@echo "     install - install all API targets"
 	@echo "  install5.1 - install cqueues Lua 5.1 modules"
 	@echo "  install5.2 - install cqueues Lua 5.2 modules"
 	@echo "  install5.3 - install cqueues Lua 5.3 modules"
 	@echo "  install5.4 - install cqueues Lua 5.4 modules"
+	@echo "  install5.5 - install cqueues Lua 5.5 modules"
 	@echo "   uninstall - uninstall all API targets"
 	@echo "uninstall5.1 - uninstall cqueues Lua 5.1 modules"
 	@echo "uninstall5.2 - uninstall cqueues Lua 5.2 modules"
 	@echo "uninstall5.3 - uninstall cqueues Lua 5.3 modules"
 	@echo "uninstall5.4 - uninstall cqueues Lua 5.4 modules"
+	@echo "uninstall5.5 - uninstall cqueues Lua 5.5 modules"
 	@echo "       clean - rm binary targets, object files, debugging symbols, etc"
 	@echo "      clean~ - clean + rm *~"
 	@echo "        help - echo this help message"
@@ -238,11 +248,14 @@ $(d)/help:
 	@echo 'lua53cpath - install path for Lua 5.3 C modules ($(value lua53cpath))'
 	@echo ' lua54path - install path for Lua 5.4 modules ($(value lua54path))'
 	@echo 'lua54cpath - install path for Lua 5.4 C modules ($(value lua54cpath))'
+	@echo ' lua55path - install path for Lua 5.5 modules ($(value lua55path))'
+	@echo 'lua55cpath - install path for Lua 5.5 C modules ($(value lua55cpath))'
 	@echo ""
 	@echo 'LUA51_CPPFLAGS - cpp flags for Lua 5.1 headers ($(LUA51_CPPFLAGS))'
 	@echo 'LUA52_CPPFLAGS - cpp flags for Lua 5.2 headers ($(LUA52_CPPFLAGS))'
 	@echo 'LUA53_CPPFLAGS - cpp flags for Lua 5.3 headers ($(LUA53_CPPFLAGS))'
 	@echo 'LUA54_CPPFLAGS - cpp flags for Lua 5.4 headers ($(LUA54_CPPFLAGS))'
+	@echo 'LUA55_CPPFLAGS - cpp flags for Lua 5.5 headers ($(LUA55_CPPFLAGS))'
 	@echo ""
 	@echo "(NOTE: all the common GNU-style paths are supported, including"
 	@echo "prefix, bindir, libdir, datadir, includedir, and DESTDIR.)"
