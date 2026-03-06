@@ -478,7 +478,7 @@ static int ct_setfarg(lua_State *L, struct cthread *ct, struct cthread_arg *arg,
 		}
 
 		arg->v.pointer = EXTENSION (void *)f;
-		arg->iscfunction = 1;
+		arg->iscfunction = -1;
 	} else {
 		lua_State *T;
 		luaL_Buffer B;
@@ -629,7 +629,7 @@ static int ct_start(lua_State *L) {
 #if LUA_VERSION_NUM >= 503
 			if (lua_isinteger(L, index)) {
 				arg->v.integer = lua_tointeger(L, index);
-				arg->isinteger = 1;
+				arg->isinteger = -1;
 				arg->type = LUA_TNUMBER;
 				break;
 			}
