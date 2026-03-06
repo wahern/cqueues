@@ -615,7 +615,7 @@ static int ct_start(lua_State *L) {
 
 	luaL_checktype(L, 1, LUA_TFUNCTION);
 
-	if (!(ct->tmp.arg = calloc(sizeof *ct->tmp.arg, top)))
+	if (!(ct->tmp.arg = calloc(top, sizeof *ct->tmp.arg)))
 		goto syerr;
 
 	for (int index = 1; index <= top; index++) {
