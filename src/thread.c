@@ -301,7 +301,7 @@ static void ct_release(struct cthread *ct) {
 
 static void *ct_enter(void *arg) {
 	struct cthread *ct = arg, **ud;
-	lua_State *L = NULL;
+	lua_State *L;
 	int error;
 
 	/*
