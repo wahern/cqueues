@@ -48,6 +48,13 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+#if defined(__FreeBSD__)
+#undef ENABLE_INOTIFY
+#undef HAVE_INOTIFY_INIT
+#undef ENABLE_FEN
+#undef HAVE_PORT_H
+#endif
+
 #ifndef ENABLE_INOTIFY
 #define ENABLE_INOTIFY HAVE_INOTIFY_INIT
 #endif
