@@ -937,7 +937,7 @@ error:
 	return error;
 } /* fen_post() */
 
-#else
+#elif ENABLE_KQUEUE
 #define NFY_STEP kq_step
 #define NFY_POST kq_post
 
@@ -1121,7 +1121,9 @@ int notify_add(struct notify *nfy, const char *name, int flags) {
 	LIST_INSERT_HEAD(&nfy->defunct, file, sle);
 	LLRB_INSERT(files, &nfy->files, file);
 
-#if ENABLE_KQUEUE
+#if ENABLE_INOTIFY
+	/* Nothing specific to do here */
+#elif ENABLE_KQUEUE
 	if ((error = kq_readd(nfy, file)))
 		goto error;
 
