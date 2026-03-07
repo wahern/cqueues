@@ -39,6 +39,10 @@
 #include <dirent.h>	/* DIR fdopendir(3) opendir(3) readdir_r(3) closedir(3) */
 #include <poll.h>	/* POLLIN poll(2) */
 
+#if defined(__FreeBSD__)
+#include <sys/param.h> /* For __FreeBSD_version */
+#endif
+
 #include "notify.h"
 #include "llrb.h"
 
@@ -58,6 +62,14 @@
 
 #ifndef ENABLE_KQUEUE
 #define ENABLE_KQUEUE HAVE_KQUEUE
+#endif
+
+/*
+ * Note: inotify support exists in FreeBSD-15 and later.
+ * For now just keep using kqueue.
+ */
+#if defined(__FreeBSD__) && __FreeBSD_version >= 150000
+#undef ENABLE_INOTIFY
 #endif
 
 #ifndef HAVE_O_CLOEXEC
