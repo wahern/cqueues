@@ -629,44 +629,48 @@ static int kpoll_ctl(struct kpoll *kp, int fd, short *state, short events, void 
 
 	return 0;
 #elif ENABLE_KQUEUE
-	struct kevent event;
-
-	if (*state == events)
-		return 0;
+	struct kevent changelist[2];
+	int nchanges = 0;
 
 	if (events & POLLIN) {
 		if (!(*state & POLLIN)) {
-			KP_SET(&event, fd, EVFILT_READ, EV_ADD, 0, 0, udata);
+			KP_SET(changelist+nchanges, fd, EVFILT_READ, EV_ADD, 0, 0, udata);
+			nchanges++;
+		}
+	} else if (*state & POLLIN) {
+		KP_SET(changelist+nchanges, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+		nchanges++;
+	}
 
-			if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
-				return errno;
+	if (events & POLLOUT) {
+		if (!(*state & POLLOUT)) {
+			KP_SET(changelist+nchanges, fd, EVFILT_WRITE, EV_ADD, 0, 0, udata);
+			nchanges++;
+		}
+	} else if (*state & POLLOUT) {
+		KP_SET(changelist+nchanges, fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+		nchanges++;
+	}
 
+	if (0 == nchanges)
+		return 0;
+
+	if (0 != kevent(kp->fd, changelist, nchanges, NULL, 0, &(struct timespec){ 0, 0 }))
+		return errno;
+
+	if (events & POLLIN) {
+		if (!(*state & POLLIN)) {
 			*state |= POLLIN;
 		}
 	} else if (*state & POLLIN) {
-		KP_SET(&event, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
-
-		if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
-			return errno;
-
 		*state &= ~POLLIN;
 	}
 
 	if (events & POLLOUT) {
 		if (!(*state & POLLOUT)) {
-			KP_SET(&event, fd, EVFILT_WRITE, EV_ADD, 0, 0, udata);
-
-			if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
-				return errno;
-
 			*state |= POLLOUT;
 		}
 	} else if (*state & POLLOUT) {
-		KP_SET(&event, fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
-
-		if (0 != kevent(kp->fd, &event, 1, NULL, 0, &(struct timespec){ 0, 0 }))
-			return errno;
-
 		*state &= ~POLLOUT;
 	}
 
@@ -1558,14 +1562,14 @@ static cqs_error_t fileno_signal(struct cqueue *Q, struct fileno *fileno, short 
 	int error = 0, _error;
 
 	LIST_FOREACH(event, &fileno->events, fle) {
-		/* XXX: If POLLPRI should we always mark as pending? */
-		if (event->events & events)
+		if (event->events & events) {
 			event->pending = 1;
 
-		thread_move(event->thread, &Q->thread.pending);
+			thread_move(event->thread, &Q->thread.pending);
 
-		if ((_error = cqueue_tryalert(Q)))
-			error = _error;
+			if ((_error = cqueue_tryalert(Q)))
+				error = _error;
+		}
 	}
 
 	return error;
