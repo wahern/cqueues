@@ -2404,8 +2404,8 @@ static lso_nargs_t lso_uncork(lua_State *L) {
 static lso_nargs_t lso_pending(lua_State *L) {
 	struct luasocket *S = lso_checkself(L, 1);
 
-	lua_pushunsigned(L, fifo_rlen(&S->ibuf.fifo));
-	lua_pushunsigned(L, fifo_rlen(&S->obuf.fifo));
+	lua_pushinteger(L, fifo_rlen(&S->ibuf.fifo));
+	lua_pushinteger(L, fifo_rlen(&S->obuf.fifo));
 
 	return 2;
 } /* lso_pending() */
