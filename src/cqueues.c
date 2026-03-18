@@ -811,6 +811,9 @@ static int kpoll_wait(struct kpoll *kp, double timeout) {
 
 #if LUA_VERSION_NUM >= 502
 LUA_KFUNCTION(auxlib_tostringk) {
+	(void)status;
+	(void)ctx;
+
 	if (luaL_getmetafield(L, 1, "__tostring")) {
 		lua_pushfstring(L, "%s: %p", luaL_typename(L, 1), lua_topointer(L, 1));
 	} else {
@@ -2208,6 +2211,8 @@ static double cqueue_timeout_(struct cqueue *Q) {
 
 #if LUA_VERSION_NUM >= 502
 LUA_KFUNCTION(cqueue_step_cont) {
+	(void)status;
+	(void)ctx;
 #else
 static int cqueue_step_cont(lua_State *L) {
 #endif
