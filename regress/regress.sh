@@ -72,6 +72,8 @@ lua53path="${CQUEUES_SRCDIR}/regress/.local/share/5.3"
 lua53cpath="${CQUEUES_SRCDIR}/regress/.local/lib/5.3"
 lua54path="${CQUEUES_SRCDIR}/regress/.local/share/5.4"
 lua54cpath="${CQUEUES_SRCDIR}/regress/.local/lib/5.4"
+lua55path="${CQUEUES_SRCDIR}/regress/.local/share/5.5"
+lua55cpath="${CQUEUES_SRCDIR}/regress/.local/lib/5.5"
 
 export LUA_PATH="${lua51path}/?.lua;${CQUEUES_SRCDIR}/regress/?.lua;${LUA_PATH:-;}"
 export LUA_CPATH="${lua51cpath}/?.so;${LUA_CPATH:-;}"
@@ -81,6 +83,8 @@ export LUA_PATH_5_3="${lua53path}/?.lua;${CQUEUES_SRCDIR}/regress/?.lua;${LUA_PA
 export LUA_CPATH_5_3="${lua53cpath}/?.so;${LUA_CPATH_5_3:-;}"
 export LUA_PATH_5_4="${lua54path}/?.lua;${CQUEUES_SRCDIR}/regress/?.lua;${LUA_PATH_5_4:-;}"
 export LUA_CPATH_5_4="${lua54cpath}/?.so;${LUA_CPATH_5_4:-;}"
+export LUA_PATH_5_5="${lua55path}/?.lua;${CQUEUES_SRCDIR}/regress/?.lua;${LUA_PATH_5_5:-;}"
+export LUA_CPATH_5_5="${lua55cpath}/?.so;${LUA_CPATH_5_5:-;}"
 
 
 if [ "${0##*/}" = "regress.sh" ]; then
@@ -92,7 +96,8 @@ if [ "${0##*/}" = "regress.sh" ]; then
 			lua51path="${lua51path}" lua51cpath="${lua51cpath}" \
 			lua52path="${lua52path}" lua52cpath="${lua52cpath}" \
 			lua53path="${lua53path}" lua53cpath="${lua53cpath}" \
-			lua54path="${lua54path}" lua54cpath="${lua54cpath}")
+			lua54path="${lua54path}" lua54cpath="${lua54cpath}" \
+			lua55path="${lua55path}" lua55cpath="${lua55cpath}")
 		exit $?
 		;;
 	*)
@@ -108,7 +113,8 @@ else
 			lua51path="${lua51path}" lua51cpath="${lua51cpath}" \
 			lua52path="${lua52path}" lua52cpath="${lua52cpath}" \
 			lua53path="${lua53path}" lua53cpath="${lua53cpath}" \
-			lua54path="${lua54path}" lua54cpath="${lua54cpath}")
+			lua54path="${lua54path}" lua54cpath="${lua54cpath}" \
+			lua55path="${lua55path}" lua55cpath="${lua55cpath}")
 	fi
 
 	if [ ! -d "${CQUEUES_SRCDIR}/regress/.local/lib/5.3" ] || ! runlua -e 'require"_cqueues"' >>/dev/null 2>&1; then
