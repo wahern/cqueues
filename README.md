@@ -46,7 +46,7 @@ to cache the build environment.
 
 ### Lua APIs
 
-`cqueues` targets the three latest Lua APIs---5.1, 5.2, and 5.3---and all
+`cqueues` targets the five latest Lua APIs---5.1, 5.2, 5.3, 5.4 and 5.5---and all
 can be compiled simultaneously. Supported build targets are automatically
 detected by default. To override API autodetection specify `LUA_APIS`. For
 example,
@@ -60,7 +60,7 @@ $ make LUA_APIS="5.2 5.3"
 
 All the common GNU-style compiler variables are supported, including `CC`,
 `CPPFLAGS`, `CFLAGS`, `LDFLAGS`, `SOFLAGS`, and `LIBS`. Note that you can
-specify the path to both Lua 5.1, 5.2, and 5.3 include headers at the same
+specify the path to Lua 5.1, 5.2, 5.3, 5.4 and 5.5 include headers at the same
 time in `CPPFLAGS`; the build system will work things out to ensure the
 correct headers are loaded at compile-time. To specify them explicitly
 provide
@@ -68,6 +68,8 @@ provide
   - `LUA51_CPPFLAGS` - preprocessor flags for Lua 5.1
   - `LUA52_CPPFLAGS` - preprocessor flags for Lua 5.2
   - `LUA53_CPPFLAGS` - preprocessor flags for Lua 5.3
+  - `LUA54_CPPFLAGS` - preprocessor flags for Lua 5.4
+  - `LUA55_CPPFLAGS` - preprocessor flags for Lua 5.5
 
 To completely override all internally-defined flags, specify the
 `ALL_`-prefixed variant of any of the above. For example, specify
@@ -93,6 +95,10 @@ including `prefix`, `bindir`, `libdir`, `datadir`, `includedir`, and
   - `lua52cpath` - install path for Lua 5.2 C modules, e.g. `$(prefix)/lib/lua/5.2`
   - `lua53path`  - install path for Lua 5.3 modules, e.g. `$(prefix)/share/lua/5.3`
   - `lua53cpath` - install path for Lua 5.3 C modules, e.g. `$(prefix)/lib/lua/5.3`
+  - `lua54path`  - install path for Lua 5.4 modules, e.g. `$(prefix)/share/lua/5.4`
+  - `lua54cpath` - install path for Lua 5.4 C modules, e.g. `$(prefix)/lib/lua/5.4`
+  - `lua55path`  - install path for Lua 5.5 modules, e.g. `$(prefix)/share/lua/5.5`
+  - `lua55cpath` - install path for Lua 5.5 C modules, e.g. `$(prefix)/lib/lua/5.5`
 
 
 ### Caching Environment
@@ -104,8 +110,8 @@ an individual basis after this.
 
 ## Build Targets
 
-`cqueues` targets the Lua 5.1 (LuaJIT), 5.2, and 5.3 API. For various reasons
-the build system is capable of building all three modules simultaneously in
+`cqueues` targets the Lua 5.1 (LuaJIT), 5.2, 5.3, 5.4 and 5.5 API. For various reasons
+the build system is capable of building all five modules simultaneously in
 a single Make invocation. Therefore, there are many seemingly superfluous
 target names, either out of necessity or for convenience.
 
@@ -124,19 +130,33 @@ Build Lua 5.2 cqueues modules
 
 Build Lua 5.3 cqueues modules
 
+#### liblua5.4-cqueues
+
+Build Lua 5.4 cqueues modules
+
+#### liblua5.5-cqueues
+
+Build Lua 5.5 cqueues modules
+
 #### all5.1
 
 Synonym for liblua5.1-cqueues
-
 
 #### all5.2
 
 Synonym for liblua5.2-cqueues
 
-
 #### all5.3
 
 Synonym for liblua5.3-cqueues
+
+#### all5.4
+
+Synonym for liblua5.4-cqueues
+
+#### all5.5
+
+Synonym for liblua5.5-cqueues
 
 #### all
 
@@ -157,6 +177,14 @@ Install Lua 5.2 cqueues modules
 
 Install Lua 5.3 cqueues modules
 
+#### liblua5.4-cqueues-install
+
+Install Lua 5.4 cqueues modules
+
+#### liblua5.5-cqueues-install
+
+Install Lua 5.5 cqueues modules
+
 #### install5.1
 
 Invokes liblua5.1-cqueues-install
@@ -168,6 +196,14 @@ Invokes liblua5.2-cqueues-install
 #### install5.3
 
 Invokes liblua5.3-cqueues-install
+
+#### install5.4
+
+Invokes liblua5.4-cqueues-install
+
+#### install5.5
+
+Invokes liblua5.5-cqueues-install
 
 #### install
 
@@ -188,6 +224,14 @@ Uninstall Lua 5.2 cqueues modules
 
 Uninstall Lua 5.3 cqueues modules
 
+#### liblua5.4-cqueues-uninstall
+
+Uninstall Lua 5.4 cqueues modules
+
+#### liblua5.5-cqueues-uninstall
+
+Uninstall Lua 5.5 cqueues modules
+
 #### uninstall5.1
 
 Invokes liblua5.1-cqueues-uninstall
@@ -199,6 +243,14 @@ Invokes liblua5.2-cqueues-uninstall
 #### uninstall5.3
 
 Invokes liblua5.3-cqueues-uninstall
+
+#### uninstall5.4
+
+Invokes liblua5.4-cqueues-uninstall
+
+#### uninstall5.5
+
+Invokes liblua5.5-cqueues-uninstall
 
 #### uninstall
 
