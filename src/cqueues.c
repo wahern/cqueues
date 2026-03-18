@@ -1267,7 +1267,7 @@ static cqs_error_t cqueue_tryalert(struct cqueue *Q) {
 } /* cqueue_tryalert() */
 
 static void err_setvfstring(lua_State *L, struct callinfo *I, const char *fmt, va_list ap) {
-	lua_pushvfstring(L, fmt, ap);
+	if (NULL == lua_pushvfstring(L, fmt, ap)) lua_error(L);
 	I->error.value = lua_gettop(L);
 } /* err_setvfstring() */
 
