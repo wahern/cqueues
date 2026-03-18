@@ -2539,7 +2539,7 @@ static int bio_destroy(BIO *bio) {
 	return 1;
 } /* bio_destroy() */
 
-#if !OPENSSL_PREREQ(1,1,0)
+#if !OPENSSL_PREREQ(1,1,0) && !LIBRESSL_PREREQ(3,5,0)
 static BIO_METHOD bio_methods = {
 	BIO_TYPE_SOURCE_SINK,
 	"struct socket*",
