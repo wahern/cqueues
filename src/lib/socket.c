@@ -135,7 +135,7 @@ int socket_v_api(void) {
 #endif
 
 #ifndef HAVE_SSL_IS_SERVER
-#define HAVE_SSL_IS_SERVER OPENSSL_PREREQ(1,1,0)
+#define HAVE_SSL_IS_SERVER (OPENSSL_PREREQ(1,1,0) || LIBRESSL_PREREQ(2,7,0))
 #endif
 
 #ifndef HAVE_SSL_UP_REF
