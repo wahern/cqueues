@@ -211,8 +211,8 @@ function regress.searchpath(name, paths, sep, rep)
 
 	local nofile = {}
 
-	for path in paths:gmatch("([^;]+)") do
-		path = path:gsub("%?", (name:gsub(sep, rep):gsub("%%", "%%%%")))
+	for path_expression in paths:gmatch("([^;]+)") do
+		local path = path_expression:gsub("%?", (name:gsub(sep, rep):gsub("%%", "%%%%")))
 		local fh = io.open(path, "rb")
 		if fh then
 			fh:close()
