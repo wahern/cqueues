@@ -951,7 +951,7 @@ static lso_nargs_t lso_connect2(lua_State *L) {
 			port = luaL_checkstring(L, -1);
 		}
 	} else {
-		opts = *so_opts();
+		opts = *so_opts(.sin_reuseaddr = 0);
 		host = luaL_checkstring(L, 1);
 		port = luaL_checkstring(L, 2);
 		family = luaL_optinteger(L, 3, AF_UNSPEC);
@@ -1337,13 +1337,14 @@ static lso_nargs_t lso_pair(lua_State *L) {
 	a = lso_newsocket(L, type);
 	b = lso_newsocket(L, type);
 
+#if defined SOCK_NONBLOCK
+	type |= SOCK_NONBLOCK;
+#endif
 #if defined SOCK_CLOEXEC
-	if (0 != socketpair(AF_UNIX, type|SOCK_CLOEXEC, PF_UNSPEC, fd))
-		goto syerr;
-#else
+	type |= SOCK_CLOEXEC;
+#endif
 	if (0 != socketpair(AF_UNIX, type, PF_UNSPEC, fd))
 		goto syerr;
-#endif
 
 	opts.fd_close.arg = a;
 	opts.fd_close.cb = &lso_closefd;
@@ -2738,23 +2739,19 @@ static lso_nargs_t lso_accept(lua_State *L) {
 
 	S = lso_newsocket(L, A->type);
 
+	if ((error = lso_prepsocket(S)))
+		goto error;
+
 	opts.fd_close.arg = S;
 	opts.fd_close.cb = &lso_closefd;
 
 	so_clear(A->socket);
 
-	if (-1 == (fd = so_accept(A->socket, 0, 0, &error)))
-		goto error;
-
-	if ((error = lso_prepsocket(S)))
-		goto error;
-
-	if (!(S->socket = so_fdopen(fd, &opts, &error)))
+	if (!(S->socket = so_accept_socket(A->socket, &opts, &error)))
 		goto error;
 
 	return 1;
 error:
-	cqs_closefd(&fd);
 	lua_pushnil(L);
 	lua_pushinteger(L, error);
 
