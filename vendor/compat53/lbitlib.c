@@ -19,8 +19,18 @@
 #if defined(LUA_COMPAT_BITLIB)		/* { */
 
 
-#define pushunsigned(L,n)	lua_pushinteger(L, (lua_Integer)(n))
-#define checkunsigned(L,i)	((lua_Unsigned)luaL_checkinteger(L,i))
+#define pushunsigned(L,n)	(sizeof(lua_Integer) > 4 ? lua_pushinteger(L, (lua_Integer)(n)) : lua_pushnumber(L, (lua_Number)(n)))
+static lua_Unsigned checkunsigned(lua_State *L, int i) {
+  if (sizeof(lua_Integer) > 4)
+    return (lua_Unsigned)luaL_checkinteger(L, i);
+  else {
+    lua_Number d = luaL_checknumber(L, i);
+    if (d < 0)
+      d = (d + 1) + (~(lua_Unsigned)0);
+    luaL_argcheck(L, d >= 0 && d <= (~(lua_Unsigned)0), i, "value out of range");
+    return (lua_Unsigned)d;
+  }
+}
 
 
 /* number of bits to consider in a number */

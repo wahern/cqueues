@@ -1,4 +1,5 @@
-[![Build Status](https://travis-ci.org/keplerproject/lua-compat-5.3.svg?branch=master)](https://travis-ci.org/keplerproject/lua-compat-5.3)
+[![Compat53 Status](https://github.com/lunarmodules/lua-compat-5.3/workflows/compat53-tests/badge.svg)](https://github.com/lunarmodules/lua-compat-5.3/actions?workflow=compat53-tests)
+[![Bit32 Status](https://github.com/lunarmodules/lua-compat-5.3/workflows/bit32-multi-arch-tests/badge.svg)](https://github.com/lunarmodules/lua-compat-5.3/actions?workflow=bit32-multi-arch-tests)
 
 # lua-compat-5.3
 
@@ -116,6 +117,8 @@ For Lua 5.1 additionally:
 * `io.write` and `file:write` return file handle
 * `io.lines` and `file:lines` accept format arguments (like `io.read`)
   (see [here][10] and [here][11])
+* `file:close` returns three results when a process is opened
+  with `io.popen`
 * `debug.setmetatable` returns object
 * `debug.getuservalue` (see [here][12])
 * `debug.setuservalue` (see [here][13])
@@ -214,27 +217,27 @@ This package contains code written by:
 
 
   [1]: http://www.inf.puc-rio.br/~roberto/struct/
-  [2]: http://github.com/keplerproject/lua-compat-5.2/
-  [3]: http://keplerproject.org/compat/
-  [4]: https://github.com/keplerproject/lua-compat-5.3/wiki/string_packing
-  [5]: https://github.com/keplerproject/lua-compat-5.3/wiki/math.type
-  [6]: https://github.com/keplerproject/lua-compat-5.3/wiki/pattern_matching
-  [7]: https://github.com/keplerproject/lua-compat-5.3/wiki/pairs
-  [8]: https://github.com/keplerproject/lua-compat-5.3/wiki/package.searchpath
-  [9]: https://github.com/keplerproject/lua-compat-5.3/wiki/os.execute
-  [10]: https://github.com/keplerproject/lua-compat-5.3/wiki/io.lines
-  [11]: https://github.com/keplerproject/lua-compat-5.3/wiki/file.lines
-  [12]: https://github.com/keplerproject/lua-compat-5.3/wiki/debug.getuservalue
-  [13]: https://github.com/keplerproject/lua-compat-5.3/wiki/debug.setuservalue
-  [14]: https://github.com/keplerproject/lua-compat-5.3/wiki/yieldable_c_functions
-  [15]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_dump
-  [16]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_getuservalue
-  [17]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_setuservalue
-  [18]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_stringtonumber
-  [19]: https://github.com/keplerproject/lua-compat-5.3/wiki/luaL_Stream
-  [20]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_arith
-  [21]: https://github.com/keplerproject/lua-compat-5.3/wiki/luaL_checkversion
-  [22]: https://github.com/keplerproject/lua-compat-5.3/wiki/luaL_Buffer
-  [23]: https://github.com/keplerproject/lua-compat-5.3/wiki/coroutine.running
-  [24]: https://github.com/keplerproject/lua-compat-5.3/wiki/lua_getextraspace
+  [2]: http://github.com/lunarmodules/lua-compat-5.2/
+  [3]: http://lunarmodules.org/compat/
+  [4]: https://github.com/lunarmodules/lua-compat-5.3/wiki/string_packing
+  [5]: https://github.com/lunarmodules/lua-compat-5.3/wiki/math.type
+  [6]: https://github.com/lunarmodules/lua-compat-5.3/wiki/pattern_matching
+  [7]: https://github.com/lunarmodules/lua-compat-5.3/wiki/pairs
+  [8]: https://github.com/lunarmodules/lua-compat-5.3/wiki/package.searchpath
+  [9]: https://github.com/lunarmodules/lua-compat-5.3/wiki/os.execute
+  [10]: https://github.com/lunarmodules/lua-compat-5.3/wiki/io.lines
+  [11]: https://github.com/lunarmodules/lua-compat-5.3/wiki/file.lines
+  [12]: https://github.com/lunarmodules/lua-compat-5.3/wiki/debug.getuservalue
+  [13]: https://github.com/lunarmodules/lua-compat-5.3/wiki/debug.setuservalue
+  [14]: https://github.com/lunarmodules/lua-compat-5.3/wiki/yieldable_c_functions
+  [15]: https://github.com/lunarmodules/lua-compat-5.3/wiki/lua_dump
+  [16]: https://github.com/lunarmodules/lua-compat-5.3/wiki/lua_getuservalue
+  [17]: https://github.com/lunarmodules/lua-compat-5.3/wiki/lua_setuservalue
+  [18]: https://github.com/lunarmodules/lua-compat-5.3/wiki/lua_stringtonumber
+  [19]: https://github.com/lunarmodules/lua-compat-5.3/wiki/luaL_Stream
+  [20]: https://github.com/lunarmodules/lua-compat-5.3/wiki/lua_arith
+  [21]: https://github.com/lunarmodules/lua-compat-5.3/wiki/luaL_checkversion
+  [22]: https://github.com/lunarmodules/lua-compat-5.3/wiki/luaL_Buffer
+  [23]: https://github.com/lunarmodules/lua-compat-5.3/wiki/coroutine.running
+  [24]: https://github.com/lunarmodules/lua-compat-5.3/wiki/lua_getextraspace
 

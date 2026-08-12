@@ -1,0 +1,100 @@
+name: compat53-tests
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+jobs:
+  compat53-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - luaVersion: "lua=5.1"
+            compiler: gcc
+            external: false
+          - luaVersion: "lua=5.1"
+            compiler: gcc
+            external: true
+          - luaVersion: "lua=5.1"
+            compiler: g++
+            external: true
+          - luaVersion: "lua=5.1"
+            compiler: clang
+            external: false
+          - luaVersion: "luajit=@v2.1 --compat=none"
+            compiler: gcc
+            external: false
+          - luaVersion: "luajit=@v2.1 --compat=none"
+            compiler: gcc
+            external: true
+          - luaVersion: "luajit=@v2.1 --compat=all"
+            compiler: gcc
+            external: false
+          - luaVersion: "luajit=@v2.1 --compat=all"
+            compiler: gcc
+            external: true
+          - luaVersion: "lua=5.2"
+            compiler: gcc
+            external: false
+          - luaVersion: "lua=5.2"
+            compiler: gcc
+            external: true
+          - luaVersion: "lua=5.2"
+            compiler: g++
+            external: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: install Lua
+        run: |
+          sudo apt install libreadline-dev
+          pip3 install --user hererocks
+          ~/.local/bin/hererocks old --${{ matrix.luaVersion }}
+          test -e old/bin/lua || (cd old/bin && ln -s luajit* lua)
+          ~/.local/bin/hererocks new --lua=5.3
+      - name: compile C modules
+        run: |
+          export CC=${{ matrix.compiler }} CFLAGS="-Wall -Wextra -Ic-api -O2 -fPIC"
+          export DEF="" SRC=""
+          if [ "${{ matrix.external }}" = true ]; then DEF="-DCOMPAT53_PREFIX=compat53" SRC="c-api/compat-5.3.c"; fi
+          ${CC} ${CFLAGS} -Iold/include ${DEF} -shared -o old/testmod.so tests/testmod.c ${SRC}
+          ${CC} ${CFLAGS} -Inew/include ${DEF} -shared -o new/testmod.so tests/testmod.c ${SRC}
+          ${CC} ${CFLAGS} -Iold/include ${DEF} -shared -o old/compat53.so ltablib.c lutf8lib.c lstrlib.c liolib.c ${SRC}
+      - name: run test scripts
+        run: |
+          (cd old && bin/lua ../tests/test.lua) > old.txt
+          (cd new && bin/lua ../tests/test.lua) > new.txt
+      - name: compare script output
+        run: diff old.txt new.txt || true
+
+  compat53-install:
+    strategy:
+      fail-fast: false  # https://github.com/actions/runner-images#available-images
+      matrix:  # https://www.lua.org/versions.html
+        os: [ubuntu-latest]
+        lua-version: [5.1, 5.2, 5.3, 5.4, 5.5]
+        include:
+          - os: macos-latest
+            lua-version: 5.1
+          - os: macos-latest
+            lua-version: 5.5
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo "${{ runner.os }} on ${{ runner.arch }}"
+      - uses: actions/checkout@v7
+      - uses: luarocks/gh-actions-lua@master
+        with:
+          luaVersion: ${{ matrix.lua-version }}
+      - uses: luarocks/gh-actions-luarocks@master
+        with:
+          luaRocksVersion: "3.13.0"
+      - run: lua -v && luarocks --version
+      - run: luarocks lint rockspecs/compat53-scm-1.rockspec
+      # Install the local version of compat53.
+      - run: luarocks --local make rockspecs/compat53-scm-1.rockspec
+      - run: luarocks list && luarocks show compat53
+      - run: luarocks --local remove compat53
+      # Install the public version of compat53.
+      - run: luarocks install --check-lua-versions compat53
+      - run: luarocks list && luarocks show compat53
