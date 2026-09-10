@@ -1,7 +1,7 @@
 package = "compat53"
 version = "0.4-1"
 source = {
-   url = "https://github.com/keplerproject/lua-compat-5.3/archive/v0.4.zip",
+   url = "https://github.com/lunarmodules/lua-compat-5.3/archive/v0.4.zip",
    dir = "lua-compat-5.3-0.4",
 }
 description = {
@@ -12,7 +12,7 @@ description = {
       It does *not* make Lua 5.2 (or even 5.1) entirely compatible
       with Lua 5.3, but it brings the API closer to that of Lua 5.3.
    ]],
-   homepage = "https://github.com/keplerproject/lua-compat-5.3",
+   homepage = "https://github.com/lunarmodules/lua-compat-5.3",
    license = "MIT"
 }
 dependencies = {

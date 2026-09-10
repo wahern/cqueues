@@ -1,7 +1,7 @@
 package = "bit32"
 version = "5.3.5-1"
 source = {
-   url = "https://github.com/keplerproject/lua-compat-5.3/archive/v0.9.zip",
+   url = "https://github.com/lunarmodules/lua-compat-5.3/archive/v0.9.zip",
    dir = "lua-compat-5.3-0.9",
 }
 description = {

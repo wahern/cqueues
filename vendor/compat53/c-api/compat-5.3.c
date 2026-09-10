@@ -28,9 +28,10 @@
 #endif /* VC++ _fsopen for share-allowed file read */
 
 #ifndef COMPAT53_HAVE_STRERROR_R
-#  if (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) || \
+#  if (!defined(_WIN32)) && \
+      ((defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) || \
       (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600) || \
-      defined(__APPLE__)
+      defined(__APPLE__))
 #    define COMPAT53_HAVE_STRERROR_R 1
 #  else /* none of the defines matched: define to 0 */
 #    define COMPAT53_HAVE_STRERROR_R 0
@@ -713,6 +714,14 @@ void luaL_pushresult (luaL_Buffer_53 *B) {
 
 /* definitions for Lua 5.1 and Lua 5.2 */
 #if defined( LUA_VERSION_NUM ) && LUA_VERSION_NUM <= 502
+
+
+COMPAT53_API const char *lua_pushlstring (lua_State *L, const char *s, size_t len) {
+#undef lua_pushlstring
+  lua_pushlstring(L, len > 0 ? s : "", len);
+#define lua_pushlstring COMPAT53_CONCAT(COMPAT53_PREFIX, _pushlstring_53)
+  return lua_tostring(L, -1);
+}
 
 
 COMPAT53_API int lua_geti (lua_State *L, int index, lua_Integer i) {
