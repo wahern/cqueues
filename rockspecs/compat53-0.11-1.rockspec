@@ -1,8 +1,8 @@
 package = "compat53"
-version = "0.8-1"
+version = "0.11-1"
 source = {
-   url = "https://github.com/lunarmodules/lua-compat-5.3/archive/v0.8.zip",
-   dir = "lua-compat-5.3-0.8",
+   url = "https://github.com/lunarmodules/lua-compat-5.3/archive/v0.11.zip",
+   dir = "lua-compat-5.3-0.11",
 }
 description = {
    summary = "Compatibility module providing Lua-5.3-style APIs for Lua 5.2 and 5.1",
@@ -27,6 +27,7 @@ build = {
       ["compat53.utf8"] = "lutf8lib.c",
       ["compat53.table"] = "ltablib.c",
       ["compat53.string"] = "lstrlib.c",
+      ["compat53.io"] = "liolib.c",
    }
 }
 
