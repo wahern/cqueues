@@ -1295,6 +1295,10 @@ Returns the string ``promise'' if $obj$ is a promise, or $nil$ otherwise.
 
 Returns a new promise object. $f$ is an optional function to run asynchronously, to which any subsequent arguments are passed. $f$ is called using \fn{pcall}, and the return values of \fn{pcall} are passed directly to \fn{promise:set}.
 
+\subsubsection[\fn{promise.interpose}]{\fn{promise.interpose(name, function)}}
+
+Add or interpose a promise class method. Returns the previous method, if any.
+
 \subsubsection[\fn{promise:status}]{\fn{promise:status()}}
 
 Returns ``pending'' if the promise is yet unresolved, ``fulfilled'' if the promise has been resolved (\fn{promise:get} will return the values), or ``rejected'' if the promise failed (\fn{promise:get} will throw an error).

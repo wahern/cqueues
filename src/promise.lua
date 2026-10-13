@@ -34,6 +34,12 @@ local loader = function(loader, ...)
 		return (mt == promise and "promise") or nil
 	end -- promise.type
 
+	function promise.interpose(method, newfunc)
+		local oldfunc = promise[method]
+		promise[method] = newfunc
+		return oldfunc
+	end
+
 	function promise:set(ok, ...)
 		assert3(self.state == "pending", "attempt to set value of resolved promise")
 
