@@ -36,6 +36,9 @@
 #include <sys/socket.h>
 
 #include <pthread.h>
+#if (HAVE_OPENBSD_PTHREAD || HAVE_FREEBSD_PTHREAD)
+#include <pthread_np.h>
+#endif
 
 #include <dlfcn.h>
 
@@ -759,6 +762,97 @@ static int ct_timeout(lua_State *L) {
 	return 0;
 } /* ct_timeout() */
 
+#if HAVE_PTHREAD_SETNAME
+static int ct_setname(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+	char  *name = luaL_checkstring(L, 2);
+	int rc;
+#if HAVE_GLIBC_PTHREAD
+	rc = pthread_setname_np(ct->id, name);
+#elif HAVE_NETBSD_PTHREAD
+	rc = pthread_setname_np(ct->id, "%s", name);
+#elif (HAVE_FREEBSD_PTHREAD || HAVE_OPENBSD_PTHREAD)
+	rc = 0;
+	/* from FreeBSD & OpenBSD man page:
+	  Because of the debugging nature of this function, all errors that may
+	  appear inside are silently ignored.
+	*/
+	pthread_set_name_np(ct->id, name);
+#elif HAVE_MACOSX_PTHREAD
+	if (pthread_equal(ct->id, pthread_self())) {
+		lua_pushboolean(L, 0);
+		lua_pushliteral(L, "thread name cannot be set from outside the thread on this platform");
+		lua_pushinteger(L, EPERM);
+		return 3;
+	}
+	rc = pthread_setname_np(name);
+#endif
+	switch(rc) {
+		case 0:
+			lua_pushboolean(L, 1);
+			return 1;
+		case ERANGE:
+			lua_pushboolean(L, 0);
+			lua_pushliteral(L, "thread name too long");
+			lua_pushinteger(L, rc);
+			return 3;
+		case EINVAL:
+			lua_pushboolean(L, 0);
+			lua_pushliteral(L, "invalid parameter when setting thread name");
+			lua_pushinteger(L, rc);
+			return 3;
+		case ENOMEM:
+			lua_pushboolean(L, 0);
+			lua_pushliteral(L, "out of memory when setting thread name");
+			lua_pushinteger(L, rc);
+			return 3;
+	}
+} /* ct_setname() */
+#else
+static int ct_setname(lua_State *L) {
+	lua_pushnil(L);
+	lua_pushliteral(L, "setname() not supported on this platform");
+	lua_pushinteger(L, EPERM);
+	return 3;
+} /* ct_setname() */
+#endif
+
+
+#if HAVE_PTHREAD_GETNAME
+static int ct_getname(lua_State *L) {
+	struct cthread *ct = ct_checkthread(L, 1);
+	char   buf[128];
+	int rc = EINVAL;
+	/*all the pthread_getname_np interfaces are the same where supported*/
+	rc = pthread_getname_np(ct->id, buf, 128);
+	switch(rc) {
+		case ERANGE:
+			lua_pushnil(L);
+			lua_pushliteral(L, "thread name too long");
+			lua_pushinteger(L, rc);
+			return 3;
+		case EINVAL:
+			lua_pushnil(L);
+			lua_pushliteral(L, "invalid parameter when getting thread name");
+			lua_pushinteger(L, rc);
+			return 3;
+		case ENOMEM:
+			lua_pushnil(L);
+			lua_pushliteral(L, "out of memory when getting thread name");
+			lua_pushinteger(L, rc);
+			return 3;
+	}
+	lua_pushstring(L, buf);
+	return 1;
+} /* ct_getname() */
+#else
+static int ct_getname(lua_State *L) {
+	lua_pushnil(L);
+	lua_pushliteral(L, "getname() not supported on this platform");
+	lua_pushinteger(L, EPERM);
+	return 3;
+} /* ct_getname() */
+#endif
 
 static int ct__eq(lua_State *L) {
 	struct cthread **a = luaL_testudata(L, 1, CQS_THREAD);
@@ -808,6 +902,8 @@ static const luaL_Reg ct_methods[] = {
 	{ "pollfd",  &ct_pollfd },
 	{ "events",  &ct_events },
 	{ "timeout", &ct_timeout },
+	{ "setname", &ct_setname },
+	{ "getname", &ct_getname },
 	{ NULL,      NULL }
 };
 
