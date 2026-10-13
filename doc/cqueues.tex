@@ -640,8 +640,9 @@ Flushes the output buffer. Mode is one of the ``nlf'' flags described in \method
 \subsubsection[\fn{socket:fill}]{\fn{socket:fill(size[, timeout])}}
 Fills the input buffer with `size' bytes. Returns true on success, false and an error code on failure.
 
-\subsubsection[{\fn{socket:unget}}]{\fn{socket:unget(string)}}
+\subsubsection[{\fn{socket:unget}}]{\fn{socket:unget(string [, mode])}}
 Writes `string' to the head of the socket input buffer.
+$mode$ should be in the format described at \method{socket:setmode}
 
 \subsubsection[{\fn{socket:pending}}]{\fn{socket:pending()}}
 Returns two numbers---the counts of buffered bytes in the input and output streams. This does not include the bytes in the kernel's buffer.
